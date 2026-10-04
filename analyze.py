@@ -38,6 +38,7 @@ import numpy as np
 import plots
 
 AXES = ["PE", "CE", "PE*", "CE*"]
+TYPES = ["compromise", "burial", "pushover"]
 PARAMS = ["voters", "cands", "dims", "clusters", "spread", "width", "rounds", "samples", "group_size"]
 
 
@@ -66,7 +67,7 @@ def arrays(rows):
     ei = {e: i for i, e in enumerate(eids)}
     mi = {m: j for j, m in enumerate(methods)}
     E, M = len(eids), len(methods)
-    A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "dis"]}
+    A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "dis"] + TYPES}
     den = np.zeros(E)
     has = np.zeros(E)
     for r in rows:
@@ -80,6 +81,8 @@ def arrays(rows):
         else:
             A["num_l"][i, j], A["cw_l"][i, j] = num, pcw
             A["dis"][i, j] = float(r["dissonance"])
+            for t in TYPES:
+                A[t][i, j] = float(r.get(t) or "nan")      # older CSVs have no strategy types
     return methods, A, den, has
 
 
@@ -93,6 +96,7 @@ def axis_values(W, A, den, has):
         "PE*": (W @ A["num_l"]) / d[:, None],
         "CE*": (W @ A["cw_l"]) / h[:, None],
         "dissonance": (W @ A["dis"]) / W.sum(axis=1)[:, None],
+        **{t: (W @ A[t]) / W.sum(axis=1)[:, None] for t in TYPES},
     }
 
 
@@ -117,7 +121,7 @@ def analyse_condition(rows, boot, rng):
     dom = dominance(np.stack([point[a][0] for a in AXES], axis=1))
     dominated_by = [[(methods[j], share[i, j]) for j in np.flatnonzero(dom[i])] for i in range(len(methods))]
     res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs}
-    for a in AXES + ["dissonance"]:
+    for a in AXES + ["dissonance"] + TYPES:
         res[a] = point[a][0]
         res[a + "_lo"], res[a + "_hi"] = np.percentile(bs[a], [2.5, 97.5], axis=0)
     return res
@@ -148,8 +152,9 @@ def main():
     ap.add_argument("--out", default="analysis")
     ap.add_argument("--boot", type=int, default=1000, help="bootstrap replicates")
     ap.add_argument("--compare", nargs="*", default=[], help='pairs "A:B" for paired differences')
-    ap.add_argument("--hide", nargs="*", default=["Random ballot", "Random pair runoff"],
-                    help="methods left out of the scatter plots (they stay in tables and heatmaps)")
+    ap.add_argument("--hide", nargs="*", default=["Random ballot", "Random pair runoff", "Anti-plurality", "TRASH"],
+                    help="methods left out of the scatter plots (they stay in tables and heatmaps); "
+                         "give --hide with no names to show all")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -170,7 +175,7 @@ def main():
     with open(os.path.join(a.out, "summary.csv"), "w", newline="") as f:
         w = csv.writer(f)
         cols = []
-        for x in AXES + ["dissonance"]:
+        for x in AXES + ["dissonance"] + TYPES:
             cols += [x, x + "_lo", x + "_hi"]
         w.writerow(PARAMS + ["condition", "elections", "method"] + cols + ["dominated_by"])
         for key, r in results.items():
@@ -199,7 +204,11 @@ def main():
           "same elections: use the paired differences for those, not overlapping intervals.",
           "- Two methods whose paired difference interval includes 0 are tied at this sample size; their order "
           "in the table is not a finding.",
-          "- The strategic axes (PE*, CE*) depend on the group size: see the README section on coordination.", ""]
+          "- The strategic axes (PE*, CE*) depend on the group size: see the README section on coordination.",
+          "- **Compromise, burial, push-over** are shares of voters whose learned ballot reverses a real preference, "
+          "by kind (see strategy.strategy_types): compromise raises a liked second choice above the favourite, "
+          "push-over raises a disliked candidate to the top, burial keeps the favourite on top and reverses a "
+          "preference below it.", ""]
     if len(results) > 1:
         L += ["## Across conditions", "", "![axes](axes-heatmap.png)", ""]
     for key, r in results.items():
@@ -209,11 +218,12 @@ def main():
               f"{p['voters']} voters, {p['cands']} candidates, {p['clusters']} clusters, spread {p['spread']}, "
               f"width {p['width']}; learning {p['rounds']} rounds × {p['samples']} poll samples, "
               f"group size {p['group_size'] if p['group_size'] != '0' else 'unlimited'}.", "",
-              "| Method | PE | CE | PE* | CE* | Dissonance | Dominated by |",
-              "|---|---|---|---|---|---|---|"]
+              "| Method | PE | CE | PE* | CE* | Dissonance | Compromise | Burial | Push-over | Dominated by |",
+              "|---|---|---|---|---|---|---|---|---|---|"]
         for j in np.argsort(-r["PE"], kind="stable"):
             L.append(f"| {r['methods'][j]} | "
                      + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in AXES + ["dissonance"])
+                     + " | " + " | ".join(f"{r[t][j] * 100:.1f}%" for t in TYPES)
                      + f" | {dom_text(r['dominated_by'][j], limit=3)} |")
         L += ["", f"![strategy arrows](arrows-{r['tag']}.png)", "", f"![strategy shifts](shift-{r['tag']}.png)", "",
               f"![dissonance](dissonance-{r['tag']}.png)", ""]

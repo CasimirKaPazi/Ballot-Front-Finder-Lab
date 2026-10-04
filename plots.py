@@ -1,13 +1,14 @@
 """Static plots for analyze.py (matplotlib, PNG).
 
-Points share one colour; method identity is carried by direct labels, never by colour,
-since there are far more methods than distinguishable hues. Heatmaps use a single-hue blue ramp.
+Method identity is carried by direct labels, never by colour, since there are far more methods
+than distinguishable hues. In the arrow plot, the learned-ballot points are coloured by dissonance
+on a single-hue red ramp (light = honest, dark = much reversed preference). Heatmaps use blue.
 """
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, Normalize
 
 SURFACE = "#fcfcfb"
 INK = "#0b0b0b"
@@ -15,6 +16,8 @@ INK2 = "#52514e"
 MUTED = "#8b8a85"
 GRID = "#e6e5e1"
 POINT = "#2a78d6"   # learned-ballot points
+# Sequential red for dissonance; lightest step still visible on the surface
+REDS = LinearSegmentedColormap.from_list("dissonance", ["#f7c4bf", "#ef8f86", "#e34948", "#b8302f", "#7f1d1d"])
 HEAT = LinearSegmentedColormap.from_list("heat", ["#f3f7fd", "#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"])
 
 plt.rcParams.update({
@@ -59,9 +62,14 @@ def _visible(r, hide):
 
 
 def arrows(r, path, hide):
-    """Honest (open circle) -> learned ballots (filled) in the PE / CE plane, all methods together."""
+    """Honest (open circle) -> learned ballots (filled) in the PE / CE plane, all methods together.
+    Filled points are coloured by the dissonance of the learned ballots."""
     idx = _visible(r, hide)
-    fig, ax = plt.subplots(figsize=(8.6, 6.6))
+    # cap the colour scale at the 90th percentile, so one extreme method does not wash out the rest
+    vals = np.array([r["dissonance"][j] * 100 for j in idx])
+    dmax = max(0.5, float(np.percentile(vals, 90)))
+    norm = Normalize(0, dmax, clip=True)
+    fig, ax = plt.subplots(figsize=(9.2, 6.6))
     texts, anchors = [], []
     for j in idx:
         x0, y0 = r["PE"][j] * 100, r["CE"][j] * 100
@@ -69,12 +77,17 @@ def arrows(r, path, hide):
         ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
                     arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.1, shrinkA=4, shrinkB=5, mutation_scale=9))
         ax.scatter([x0], [y0], s=34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
-        ax.scatter([x1], [y1], s=58, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=4)
+        ax.scatter([x1], [y1], s=64, color=REDS(norm(r["dissonance"][j] * 100)), edgecolors=MUTED,
+                   linewidths=0.6, zorder=4)
         anchors.append((x1, y1))
         texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
     ax.set_xlabel("PE, proportional efficiency (%)")
     ax.set_ylabel("CE, Condorcet efficiency (%)")
     ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}", loc="left")
+    cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=REDS), ax=ax, fraction=0.035, pad=0.02,
+                      extend="max" if vals.max() > dmax else "neither")
+    cb.set_label("dissonance of learned ballots (%)", color=INK2)
+    cb.outline.set_visible(False)
     fig.tight_layout()
     _repel(ax, texts, anchors)
     fig.savefig(path, dpi=150)

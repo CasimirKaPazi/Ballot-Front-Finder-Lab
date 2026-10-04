@@ -93,8 +93,16 @@ Smaller groups mean more groups, and run time grows with their number: `--group-
 | VSE, RBE | efficiency against random candidate and random ballot, sincere ballots |
 | dissonance | mean cognitive dissonance of the learned ballots (below) |
 | settled | share of elections where no group changed its ballot in the last round; cycles never settle |
+| compromise, burial, pushover | shares of voters whose learned ballot reverses a real preference, by kind (below) |
 
 The front (`on_front`) uses PE, CE, PE_learned and CE_learned.
+
+**Strategy types** (`strategy.strategy_types`), among voters whose learned ballot reverses at least one real preference:
+- *compromise*: the favourite is not at the top, and the best-liked top candidate is liked above the voter's mean (a viable second choice raised);
+- *push-over*: the favourite is not at the top, and every top candidate is liked below the mean (a weak candidate raised, to steer eliminations or runoffs);
+- *burial*: the favourite stays at the top, but a preference further down is reversed.
+
+The three are exclusive. For score ballots, "burial" includes small reversals among lower-rated candidates, so a high burial share can go with low dissonance.
 
 **Cognitive dissonance** (`strategy.dissonance`), per voter: for every pair the ballot orders (a above b) while the voter likes b more, add `u[b] − u[a]`; divide by the sum of `|u[a] − u[b]|` over all pairs. 0 means the ballot never claims a preference the voter does not hold (true for every sincere ballot, since rounding and leaving candidates level never reverse an order). 1 means every preference is reversed. Example, utilities 0.5 / 0.3 / 0.15 / 0.05: voting for the second choice in plurality gives 0.13, voting for the last gives 0.53.
 
@@ -156,11 +164,11 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 
 | File | Shows |
 |---|---|
-| `arrows-<c>.png` | PE/CE plane, every method's shift from honest (open) to learned ballots (filled, labelled) in one picture |
+| `arrows-<c>.png` | PE/CE plane, every method's shift from honest (open) to learned ballots (filled, labelled) in one picture; filled points coloured by dissonance (red ramp, capped at the 90th percentile of the plotted methods) |
 | `shift-<c>.png` | the same shifts as one row per method, PE and CE panels; easier to read per method |
 | `dissonance-<c>.png` | PE* and CE* against dissonance |
 | `axes-heatmap.png` | the four axes, methods × conditions (when there are several) |
 
-Methods are identified by labels, not colour. Random ballot and Random pair runoff are left out of the scatter plots by default (`--hide`), since their distance compresses the scale; they stay in tables and heatmaps.
+Methods are identified by labels, not colour. Random ballot, Random pair runoff, Anti-plurality and TRASH are left out of the scatter plots by default (`--hide`), since their distance compresses the scale; they stay in tables and heatmaps. `--hide` with no names shows all.
 
 Sample size: with 160 elections per condition the intervals of single values are about ±3 points and many paired differences are still ties. For conclusions, several hundred elections per condition and at least two seeds are advisable.

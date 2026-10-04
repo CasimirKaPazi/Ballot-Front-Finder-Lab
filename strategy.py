@@ -87,6 +87,24 @@ def dissonance(B, u):
     return (above * loss).sum(axis=(1, 2)) / np.where(total > 0, total, 1)
 
 
+def strategy_types(B, u):
+    """Shares of voters whose ballot reverses at least one real preference, by kind:
+      compromise - the favourite is not at the top, and the best-liked top candidate is liked
+                   above the voter's mean (a viable second choice raised)
+      push-over  - the favourite is not at the top, and every top candidate is liked below the
+                   mean (a weak candidate raised, to steer eliminations or runoffs)
+      burial     - the favourite stays at the top, but a preference further down is reversed
+    The three are exclusive; sincere voters count in none."""
+    rev = ((B[:, :, None] > B[:, None, :]) & (u[:, :, None] < u[:, None, :])).any(axis=(1, 2))
+    top = B >= B.max(axis=1, keepdims=True)
+    fav_top = top[np.arange(len(B)), u.argmax(axis=1)]
+    best_top = np.where(top, u, -np.inf).max(axis=1)
+    above_mean = best_top >= u.mean(axis=1)
+    return {"compromise": float(np.mean(rev & ~fav_top & above_mean)),
+            "pushover": float(np.mean(rev & ~fav_top & ~above_mean)),
+            "burial": float(np.mean(rev & fav_top))}
+
+
 def poll_tallies(tally, B, polls):
     """Winner probabilities on each poll sample, shape (samples, C)."""
     return np.array([tally(B[idx]) for idx in polls])

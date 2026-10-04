@@ -25,7 +25,7 @@ import numpy as np
 
 from scenario import Scenario, electorate
 from methods import METHODS, select
-from strategy import learn
+from strategy import learn, strategy_types
 from metrics import election_row, summarize, pareto
 
 
@@ -37,13 +37,13 @@ def one_election(args):
     for name in names:
         m = METHODS[name]
         out.append({"election": e, "method": name, "ballots": "sincere", **election_row(u, m.honest(u)),
-                    "dissonance": 0.0, "settled": 1})
+                    "dissonance": 0.0, "settled": 1, "compromise": 0.0, "pushover": 0.0, "burial": 0.0})
         # Each method learns with its own random stream, keyed by name, so results stay
         # the same when methods are added or reordered.
         mrng = np.random.default_rng([seed, e, zlib.crc32(name.encode())])
         B, settled, dis = learn(m, u, mrng, rounds, samples, group_size)
         out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, m.tally(B)),
-                    "dissonance": dis, "settled": int(settled)})
+                    "dissonance": dis, "settled": int(settled), **strategy_types(B, u)})
     return out
 
 
