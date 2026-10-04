@@ -75,6 +75,9 @@ def uniform_max(v):
 
 def orders_by(values):
     """All orderings high-to-low consistent with values (every order of tied groups)."""
+    order = np.argsort(-values, kind="stable")
+    if np.all(np.diff(values[order]) < -1e-8):   # no ties: exactly one order
+        return [list(order)]
     vals = np.unique(np.round(values, 9))[::-1]
     groups = [list(np.flatnonzero(np.abs(values - x) < 1e-8)) for x in vals]
     return [[c for p in parts for c in p] for parts in product(*[permutations(g) for g in groups])]

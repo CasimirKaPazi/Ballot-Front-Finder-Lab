@@ -7,7 +7,7 @@ python test_methods.py           # hand-built checks
 python run.py --elections 200    # one scenario, all methods, sincere and learned ballots
 ```
 
-400 elections with all 19 methods take about 7.5 minutes on 2 cores.
+400 elections with all 19 methods take about 3.5 minutes on 2 cores; time scales linearly with cores.
 
 ## Files
 

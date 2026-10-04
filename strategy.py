@@ -64,9 +64,14 @@ def dissonance(B, u):
     return (above * loss).sum(axis=(1, 2)) / np.where(total > 0, total, 1)
 
 
-def group_value(tally, B, polls, Ug):
+def poll_tallies(tally, B, polls):
+    """Winner probabilities on each poll sample, shape (samples, C)."""
+    return np.array([tally(B[idx]) for idx in polls])
+
+
+def group_value(P, Ug):
     """Expected total utility of a group, averaged over poll samples."""
-    return float(np.mean([tally(B[idx]) @ Ug for idx in polls]))
+    return float(np.mean(P @ Ug))
 
 
 def learn(method, u, rng, rounds=15, samples=10):
@@ -85,6 +90,7 @@ def learn(method, u, rng, rounds=15, samples=10):
     changed_last = True
     for _ in range(rounds):
         polls = rng.integers(0, n, (samples, n))
+        P_cur = poll_tallies(method.tally, B, polls)   # current ballots, tallied once per change
         changed_last = False
         for g in rng.permutation(len(groups)):
             mem = groups[g]
@@ -97,8 +103,9 @@ def learn(method, u, rng, rounds=15, samples=10):
                 prop_rows = np.broadcast_to(prop, (len(mem), C))
             B2 = B.copy()
             B2[mem] = prop_rows
-            if group_value(method.tally, B2, polls, Ug[g]) > group_value(method.tally, B, polls, Ug[g]) + 1e-12:
-                B = B2
+            P_new = poll_tallies(method.tally, B2, polls)
+            if group_value(P_new, Ug[g]) > group_value(P_cur, Ug[g]) + 1e-12:
+                B, P_cur = B2, P_new
                 shared[g] = None if to_sincere else prop
                 changed_last = True
     return B, not changed_last, float(dissonance(B, u).mean())
