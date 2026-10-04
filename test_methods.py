@@ -42,6 +42,12 @@ check("MDDA (R and B dominated by G)", METHODS["MDDA"].honest(u), [0, 1, 0, 0])
 check("BTR-IRV (K out vs G, B out vs G, G beats R)", METHODS["BTR-IRV"].honest(u), [0, 1, 0, 0])
 check("Benham (Condorcet winner at once)", METHODS["Benham"].honest(u), [0, 1, 0, 0])
 
+# TRASH: plurality winner R, anti-plurality all veto K -> R, G, B tie for fewest lasts.
+# Runoffs R vs G (G preferred 5-4, so R wins), R vs B (R preferred 6-3, so B wins), R vs R (R).
+check("TRASH", METHODS["TRASH"].honest(u), [2 / 3, 0, 1 / 3, 0])
+# MARA-Bottom: every non-zero rating is approval
+check("MARA-Bottom", METHODS["MARA-Bottom"].honest(u), [0, 1, 0, 0])
+
 # Exact three-way tie: each method shares probability equally among R, G, B
 t = profile([(3, [0.55, 0.17, 0.15, 0.13]), (3, [0.15, 0.55, 0.17, 0.13]), (3, [0.17, 0.15, 0.55, 0.13])])
 for m in ["Plurality", "IRV", "Copeland", "Score", "STAR", "BTR-score", "MARS", "MARA", "MARA-Top", "MJ",

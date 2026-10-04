@@ -9,7 +9,7 @@ python sweep.py --group-size 1 10 0 --seeds 1 2          # grid of conditions ->
 python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> analysis/
 ```
 
-300 elections with all 25 methods take about 7 minutes on 2 cores; time scales linearly with cores. Use `--methods` or `--exclude` to run fewer.
+300 elections with all 27 methods take about 7.5 minutes on 2 cores; time scales linearly with cores. Use `--methods` or `--exclude` to run fewer.
 
 ## Files
 
@@ -121,7 +121,9 @@ The front (`on_front`) uses PE, CE, PE_learned and CE_learned.
 | MARS | 0–5 | as BTR-score; each match adds share preferring to score as share of maximum |
 | MARA | 0–5 | ratings 3–5 are approvals; order by approvals; each match adds voters preferring to approvals |
 | MARA-Top | 0–5 | as MARA, but only a 5 counts as approval |
+| MARA-Bottom | 0–5 | as MARA, but only a 0 counts as rejection (ratings 1–5 are approvals) |
 | Anti-plurality | veto (one name against) | fewest vetoes wins; sincere: against the least liked |
+| TRASH | ranking | "This Random Acronym Sounds Honest": the plurality winner and the anti-plurality winner (fewest last places) meet in a runoff, and the one ranked lower by more voters wins; if both are the same candidate, it wins. A deliberately bad reference |
 | Condorcet-random-drop | ranking | Condorcet winner if there is one; otherwise voters are dropped one at a time in random order until the rest have one. Averaged over 32 fixed random orders (the same on every call), so probabilities come in steps of 1/32 |
 | SICT | ranking, ties allowed | Symmetrical ICT: p(X,Y) if (X>Y) + (X=Y at bottom) > (Y>X) + (X=Y at top); X beats Y if p(X,Y) and not p(Y,X), or both and (X>Y) > (Y>X). One unbeaten candidate wins; none or all unbeaten: most first places; otherwise most first places among the unbeaten. Sincere ballots are strict; ties are learned |
 | MDDA | truncated ranking (ranked = approved) | disqualify every candidate that more than half the voters rank some other candidate above (unless all would be); most approved remaining wins. Sincere: rank everyone above the mean |

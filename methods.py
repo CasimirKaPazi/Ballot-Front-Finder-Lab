@@ -330,6 +330,31 @@ def t_mara_top(B):
     return mara(B, MAXS)
 
 
+def t_mara_bottom(B):
+    """MARA-Bottom: only a 0 counts as rejection; ratings 1-5 are approvals."""
+    return mara(B, 1)
+
+
+def t_trash(B):
+    """TRASH (This Random Acronym Sounds Honest): the plurality winner and the anti-plurality winner
+    (fewest last places) meet in a runoff, and the one ranked lower by more voters wins.
+    If both are the same candidate, it wins. Ties at each stage are split uniformly."""
+    C = B.shape[1]
+    first = np.bincount(B.argmax(axis=1), minlength=C).astype(float)
+    last = np.bincount(B.argmin(axis=1), minlength=C).astype(float)
+    pw, aw = uniform_max(first), uniform_max(-last)
+    M = margins(B)
+    P = np.zeros(C)
+    for a in np.flatnonzero(pw):
+        for b in np.flatnonzero(aw):
+            w = pw[a] * aw[b]
+            if a == b:
+                P[a] += w
+            else:
+                runoff(P, -M, a, b, w)        # reversed majority: the less preferred one wins
+    return P
+
+
 def has_cw(M, alive):
     """Index of the Condorcet winner among alive candidates (strict majority over each), or None."""
     for c in alive:
@@ -476,7 +501,9 @@ METHODS = {
     "MARS": Method("score", t_mars),
     "MARA": Method("score", t_mara),
     "MARA-Top": Method("score", t_mara_top),
+    "MARA-Bottom": Method("score", t_mara_bottom),
     "Anti-plurality": Method("veto", t_sum),
+    "TRASH": Method("rank", t_trash),
     "Condorcet-random-drop": Method("rank", t_condorcet_drop),
     "SICT": Method("weak", t_sict),
     "MDDA": Method("trunc", t_mdda),
