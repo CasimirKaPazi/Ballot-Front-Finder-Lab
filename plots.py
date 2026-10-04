@@ -1,23 +1,20 @@
 """Static plots for analyze.py (matplotlib, PNG).
 
-Colour encodes one thing only: front membership probability, on a single-hue blue ramp
-(light = rarely on the front, dark = always). Method identity is carried by direct labels,
-never by colour, since there are far more methods than distinguishable hues.
+Points share one colour; method identity is carried by direct labels, never by colour,
+since there are far more methods than distinguishable hues. Heatmaps use a single-hue blue ramp.
 """
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.colors import LinearSegmentedColormap
 
 SURFACE = "#fcfcfb"
 INK = "#0b0b0b"
 INK2 = "#52514e"
 MUTED = "#8b8a85"
 GRID = "#e6e5e1"
-# Sequential blue, steps 150 ... 700 of the reference ramp (lightest kept visible on the surface)
-RAMP = ["#b7d3f6", "#86b6ef", "#5598e7", "#2a78d6", "#1c5cab", "#104281", "#0d366b"]
-CMAP = LinearSegmentedColormap.from_list("front", RAMP)
+POINT = "#2a78d6"   # learned-ballot points
 HEAT = LinearSegmentedColormap.from_list("heat", ["#f3f7fd", "#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"])
 
 plt.rcParams.update({
@@ -57,23 +54,38 @@ def _repel(ax, texts, anchors, iterations=300):
             ax.plot([x, tx], [y, ty], color="#c4c3be", lw=0.8, zorder=1)
 
 
-def _colorbar(fig, ax):
-    sm = plt.cm.ScalarMappable(norm=Normalize(0, 1), cmap=CMAP)
-    cb = fig.colorbar(sm, ax=ax, fraction=0.035, pad=0.02)
-    cb.set_label("front probability", color=INK2)
-    cb.outline.set_visible(False)
-
-
 def _visible(r, hide):
     return [j for j, m in enumerate(r["methods"]) if m not in hide]
 
 
 def arrows(r, path, hide):
-    """Dumbbell chart: per method, honest (open circle) -> learned ballots (filled), for PE and CE.
-    Rows sorted by front probability; filled marks coloured by it."""
-    idx = sorted(_visible(r, hide), key=lambda j: r["front_prob"][j])
+    """Honest (open circle) -> learned ballots (filled) in the PE / CE plane, all methods together."""
+    idx = _visible(r, hide)
+    fig, ax = plt.subplots(figsize=(8.6, 6.6))
+    texts, anchors = [], []
+    for j in idx:
+        x0, y0 = r["PE"][j] * 100, r["CE"][j] * 100
+        x1, y1 = r["PE*"][j] * 100, r["CE*"][j] * 100
+        ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
+                    arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.1, shrinkA=4, shrinkB=5, mutation_scale=9))
+        ax.scatter([x0], [y0], s=34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
+        ax.scatter([x1], [y1], s=58, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=4)
+        anchors.append((x1, y1))
+        texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
+    ax.set_xlabel("PE, proportional efficiency (%)")
+    ax.set_ylabel("CE, Condorcet efficiency (%)")
+    ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}", loc="left")
+    fig.tight_layout()
+    _repel(ax, texts, anchors)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def shift(r, path, hide):
+    """The same shifts as a dumbbell chart: one row per method, PE and CE panels. Rows sorted by PE."""
+    idx = sorted(_visible(r, hide), key=lambda j: r["PE"][j])
     names = [r["methods"][j] for j in idx]
-    fig, axs = plt.subplots(1, 2, figsize=(11, 0.9 + 0.32 * len(idx)), sharey=True)
+    fig, axs = plt.subplots(1, 2, figsize=(10.5, 0.9 + 0.32 * len(idx)), sharey=True)
     for ax, (a0, a1, title) in zip(axs, [("PE", "PE*", "PE: proportional efficiency (%)"),
                                          ("CE", "CE*", "CE: Condorcet efficiency (%)")]):
         for y, j in enumerate(idx):
@@ -83,12 +95,11 @@ def arrows(r, path, hide):
                             arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.2, shrinkA=4, shrinkB=5,
                                             mutation_scale=8))
             ax.scatter([x0], [y], s=34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
-            ax.scatter([x1], [y], s=58, color=CMAP(r["front_prob"][j]), edgecolors=SURFACE, linewidths=1.5, zorder=4)
+            ax.scatter([x1], [y], s=58, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=4)
         ax.set_xlabel(title)
         ax.grid(axis="y", visible=False)
     axs[0].set_yticks(range(len(idx)), names)
     axs[0].set_title(f"What strategy does: honest (open) → learned ballots (filled)\n{r['label']}", loc="left")
-    _colorbar(fig, axs[1])
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -96,7 +107,7 @@ def arrows(r, path, hide):
 
 def dissonance(r, path, hide):
     """PE* and CE* against dissonance, side by side. No marginal intervals: they show how much
-    single values vary between elections, not how surely methods differ (front probability does)."""
+    single values vary between elections, not how surely methods differ (paired differences do)."""
     idx = _visible(r, hide)
     fig, axs = plt.subplots(1, 2, figsize=(11, 5.2), sharex=True)
     for ax, axis, name in zip(axs, ["PE*", "CE*"], ["PE* (learned ballots, %)", "CE* (learned ballots, %)"]):
@@ -104,23 +115,23 @@ def dissonance(r, path, hide):
         for j in idx:
             x, y = r["dissonance"][j] * 100, r[axis][j] * 100
             anchors.append((x, y))
-            ax.scatter([x], [y], s=60, color=CMAP(r["front_prob"][j]), edgecolors=SURFACE, linewidths=1.5, zorder=3)
+            ax.scatter([x], [y], s=60, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=3)
             texts.append(ax.text(x + 0.12, y, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=4))
         ax.set_xlabel("cognitive dissonance of learned ballots (%)")
         ax.set_ylabel(name)
         ax.set_xlim(left=0)
         _repel(ax, texts, anchors)
     axs[0].set_title(f"Quality under strategy against dissonance (lower right is worse)\n{r['label']}", loc="left")
-    _colorbar(fig, axs[1])
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
 
 
 def _row_order(results):
+    """Methods sorted by honest PE, averaged over conditions."""
     methods = results[0]["methods"]
-    mean_fp = np.mean([[r["front_prob"][r["methods"].index(m)] for m in methods] for r in results], axis=0)
-    return [methods[j] for j in np.argsort(-mean_fp, kind="stable")]
+    mean_pe = np.mean([[r["PE"][r["methods"].index(m)] for m in methods] for r in results], axis=0)
+    return [methods[j] for j in np.argsort(-mean_pe, kind="stable")]
 
 
 def _heat(ax, data, rows, cols, fmt, vmin, vmax, cmap):
@@ -137,18 +148,6 @@ def _heat(ax, data, rows, cols, fmt, vmin, vmax, cmap):
             dark = (v - vmin) / (vmax - vmin + 1e-12) > 0.55
             ax.text(k, i, fmt.format(v), ha="center", va="center", fontsize=7.5,
                     color="#ffffff" if dark else INK)
-
-
-def front_heatmap(results, path):
-    rows = _row_order(results)
-    cols = [r["label"] for r in results]
-    data = np.array([[r["front_prob"][r["methods"].index(m)] for r in results] for m in rows])
-    fig, ax = plt.subplots(figsize=(1.6 + 1.1 * len(cols), 0.9 + 0.3 * len(rows)))
-    _heat(ax, data, rows, cols, "{:.2f}", 0, 1, HEAT)
-    ax.set_title("Front probability by condition", loc="left")
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
 
 
 def axes_heatmap(results, axes, path):

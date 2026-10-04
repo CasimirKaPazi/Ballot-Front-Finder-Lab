@@ -16,16 +16,17 @@ Axes (higher is better):
     PE*, CE*     the same with learned ballots
 Dissonance (lower is better) is reported alongside, not used for the front.
 
-Front membership probability: the share of bootstrap replicates in which a method is not
-dominated on the four axes by any other method in the set. Layer: depth in non-dominated
-sorting of the point estimates (1 = on the front, 2 = on the front once layer 1 is removed, ...).
+Dominated by: for each method, the methods that are at least as good on all four axes and better
+on at least one, judged on the point estimates. Each is followed by the share of bootstrap
+replicates in which that dominance holds. This is a pointer for interpretation, not a verdict:
+the values themselves are the result.
 
 Outputs in --out (a directory):
-    summary.csv                one row per (condition, method): estimates, CIs, front_prob, layer
+    summary.csv                one row per (condition, method): estimates, intervals, dominated_by
     report.md                  tables per condition, comparisons, plots
-    arrows-<c>.png             per condition: honest -> strategic in the PE/CE plane
+    arrows-<c>.png             per condition: honest -> strategic in the PE/CE plane, all methods together
+    shift-<c>.png              per condition: the same shifts as one row per method (PE and CE panels)
     dissonance-<c>.png         per condition: PE* and CE* against dissonance
-    front-heatmap.png          front probability, methods x conditions (if several conditions)
     axes-heatmap.png           all four axes, methods x conditions (if several conditions)
 """
 import argparse
@@ -95,27 +96,14 @@ def axis_values(W, A, den, has):
     }
 
 
-def front_mask(P):
-    """P: (M x K) points, higher is better. True where not dominated."""
-    ge = (P[None, :, :] >= P[:, None, :]).all(axis=2)   # ge[i, j]: j >= i on every axis
+def dominance(P):
+    """P: (M x K) points, higher is better. dom[i, j] is True when j dominates i:
+    at least as good on every axis and better on at least one."""
+    ge = (P[None, :, :] >= P[:, None, :]).all(axis=2)
     gt = (P[None, :, :] > P[:, None, :]).any(axis=2)
     dom = ge & gt
     np.fill_diagonal(dom, False)
-    return ~dom.any(axis=1)
-
-
-def layers(P):
-    """Non-dominated sorting depth for points P (M x K)."""
-    M = len(P)
-    layer = np.zeros(M, dtype=int)
-    left = np.arange(M)
-    k = 1
-    while len(left):
-        f = front_mask(P[left])
-        layer[left[f]] = k
-        left = left[~f]
-        k += 1
-    return layer
+    return dom
 
 
 def analyse_condition(rows, boot, rng):
@@ -125,10 +113,10 @@ def analyse_condition(rows, boot, rng):
     point = axis_values(np.ones((1, E)), A, den, has)
     bs = axis_values(W, A, den, has)
     P_b = np.stack([bs[a] for a in AXES], axis=2)            # B x M x 4
-    front_prob = np.mean([front_mask(P_b[b]) for b in range(boot)], axis=0)
-    P = np.stack([point[a][0] for a in AXES], axis=1)
-    res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "front_prob": front_prob,
-           "layer": layers(P), "boot": bs}
+    share = np.mean([dominance(P_b[b]) for b in range(boot)], axis=0)
+    dom = dominance(np.stack([point[a][0] for a in AXES], axis=1))
+    dominated_by = [[(methods[j], share[i, j]) for j in np.flatnonzero(dom[i])] for i in range(len(methods))]
+    res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs}
     for a in AXES + ["dissonance"]:
         res[a] = point[a][0]
         res[a + "_lo"], res[a + "_hi"] = np.percentile(bs[a], [2.5, 97.5], axis=0)
@@ -140,6 +128,13 @@ def label(key, varying):
     names = {"group_size": "group size", "cands": "candidates"}
     return ", ".join(f"{names.get(k, k)} {p[k] if not (k == 'group_size' and p[k] == '0') else 'unlimited'}"
                      for k in varying) or "single condition"
+
+
+def dom_text(items, sep=", ", limit=None):
+    items = sorted(items, key=lambda t: -t[1])
+    shown = items[:limit] if limit else items
+    text = sep.join(f"{m} ({s:.2f})" for m, s in shown) or "—"
+    return text + (f" +{len(items) - len(shown)} more" if len(items) > len(shown) else "")
 
 
 def fmt(x, lo, hi, pct=True):
@@ -177,18 +172,18 @@ def main():
         cols = []
         for x in AXES + ["dissonance"]:
             cols += [x, x + "_lo", x + "_hi"]
-        w.writerow(PARAMS + ["condition", "elections", "method"] + cols + ["front_prob", "layer"])
+        w.writerow(PARAMS + ["condition", "elections", "method"] + cols + ["dominated_by"])
         for key, r in results.items():
             for j, m in enumerate(r["methods"]):
                 w.writerow(list(key) + [r["tag"], r["elections"], m]
-                           + [f"{r[x][j]:.5f}" for x in cols] + [f"{r['front_prob'][j]:.3f}", r["layer"][j]])
+                           + [f"{r[x][j]:.5f}" for x in cols] + [dom_text(r["dominated_by"][j], "; ")])
 
     # plots
     for key, r in results.items():
         plots.arrows(r, os.path.join(a.out, f"arrows-{r['tag']}.png"), a.hide)
+        plots.shift(r, os.path.join(a.out, f"shift-{r['tag']}.png"), a.hide)
         plots.dissonance(r, os.path.join(a.out, f"dissonance-{r['tag']}.png"), a.hide)
     if len(results) > 1:
-        plots.front_heatmap(list(results.values()), os.path.join(a.out, "front-heatmap.png"))
         plots.axes_heatmap(list(results.values()), AXES, os.path.join(a.out, "axes-heatmap.png"))
 
     # report.md
@@ -196,19 +191,17 @@ def main():
     L += [f"Input: {', '.join(os.path.basename(p) for p in a.csv)}. Bootstrap: {a.boot} paired replicates "
           "over elections. Brackets are 95% intervals.", ""]
     L += ["How to read this:", "",
-          "- **Front probability** is the share of bootstrap replicates in which a method is not beaten on all "
-          "four axes (PE, CE, PE*, CE*) by another method. It is relative to the methods included: adding or "
-          "removing a method can change it.",
-          "- **Layer** is the depth in non-dominated sorting of the point estimates. Layer 1 is the front.",
+          "- The values are the result. **Dominated by** lists the methods that are at least as good on all four "
+          "axes (PE, CE, PE*, CE*) and better on one, with the share of bootstrap replicates in which that holds. "
+          "It is a pointer for interpretation, relative to the methods included, not a verdict.",
           "- The intervals in the tables are for each value on its own. They are wide because elections differ "
           "a lot from each other. Comparisons between methods are much more precise, because all methods face the "
-          "same elections: use front probability and the paired differences for those, not overlapping intervals.",
+          "same elections: use the paired differences for those, not overlapping intervals.",
           "- Two methods whose paired difference interval includes 0 are tied at this sample size; their order "
           "in the table is not a finding.",
           "- The strategic axes (PE*, CE*) depend on the group size: see the README section on coordination.", ""]
     if len(results) > 1:
-        L += ["## Across conditions", "", "![front probability](front-heatmap.png)", "",
-              "![axes](axes-heatmap.png)", ""]
+        L += ["## Across conditions", "", "![axes](axes-heatmap.png)", ""]
     for key, r in results.items():
         p = dict(zip(PARAMS, key))
         L += [f"## {r['tag']}: {r['label']}", "",
@@ -216,14 +209,14 @@ def main():
               f"{p['voters']} voters, {p['cands']} candidates, {p['clusters']} clusters, spread {p['spread']}, "
               f"width {p['width']}; learning {p['rounds']} rounds × {p['samples']} poll samples, "
               f"group size {p['group_size'] if p['group_size'] != '0' else 'unlimited'}.", "",
-              "| Method | Layer | Front prob. | PE | CE | PE* | CE* | Dissonance |",
-              "|---|---|---|---|---|---|---|---|"]
-        order = sorted(range(len(r["methods"])), key=lambda j: (r["layer"][j], -r["front_prob"][j], -r["PE"][j]))
-        for j in order:
-            L.append(f"| {r['methods'][j]} | {r['layer'][j]} | {r['front_prob'][j]:.2f} | "
+              "| Method | PE | CE | PE* | CE* | Dissonance | Dominated by |",
+              "|---|---|---|---|---|---|---|"]
+        for j in np.argsort(-r["PE"], kind="stable"):
+            L.append(f"| {r['methods'][j]} | "
                      + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in AXES + ["dissonance"])
-                     + " |")
-        L += ["", f"![strategy arrows](arrows-{r['tag']}.png)", "", f"![dissonance](dissonance-{r['tag']}.png)", ""]
+                     + f" | {dom_text(r['dominated_by'][j], limit=3)} |")
+        L += ["", f"![strategy arrows](arrows-{r['tag']}.png)", "", f"![strategy shifts](shift-{r['tag']}.png)", "",
+              f"![dissonance](dissonance-{r['tag']}.png)", ""]
         if a.compare:
             L += ["Paired differences (first minus second), percentage points:", "",
                   "| Pair | " + " | ".join(AXES + ["dissonance"]) + " |", "|---|" + "---|" * 5]

@@ -4,8 +4,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# VPS
+# Output
 results*
+sweep-elections*
+analysis*
 
 # Other
 .~*
