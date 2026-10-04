@@ -13,8 +13,9 @@ Also reported: VSE and RBE (sincere), cognitive dissonance of the learned ballot
 (see strategy.dissonance), share of elections where learning settled (cycles never do).
 
 Outputs (prefix set by --out):
-    <out>-elections.csv   one row per (election, method, ballots)
-    <out>-summary.csv     one row per method, with on_front for the PE/CE/SR front
+    <out>-elections.csv   one row per (election, method, ballots), with the run's parameters
+                          as columns, so several runs can be combined (see analyze.py)
+    <out>-summary.csv     one row per method, with on_front for the PE/CE/PE*/CE* front
 """
 import argparse
 import csv
@@ -45,6 +46,20 @@ def one_election(args):
     return out
 
 
+# Run parameters written into every row of the elections CSV
+PARAMS = ["voters", "cands", "dims", "clusters", "spread", "width", "rounds", "samples", "group_size", "seed"]
+
+
+def simulate(p, elections, workers=None):
+    """Run one condition. p: dict with the keys in PARAMS. Returns rows with p as columns."""
+    sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"])
+    jobs = [(sc, p["seed"], e, p["rounds"], p["samples"], p["group_size"]) for e in range(elections)]
+    with Pool(workers) as pool:
+        rows = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
+    meta = {k: p[k] for k in PARAMS}
+    return [{**meta, **r} for r in rows]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--elections", type=int, default=200)
@@ -63,10 +78,8 @@ def main():
     ap.add_argument("--out", default="results")
     a = ap.parse_args()
 
-    sc = Scenario(a.voters, a.cands, a.dims, a.clusters, a.spread, a.width)
-    jobs = [(sc, a.seed, e, a.rounds, a.samples, a.group_size) for e in range(a.elections)]
-    with Pool(a.workers) as pool:
-        results = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
+    p = {k: getattr(a, k) for k in PARAMS}
+    results = simulate(p, a.elections, a.workers)
 
     with open(f"{a.out}-elections.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(results[0]))

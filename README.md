@@ -1,10 +1,12 @@
 # Voting Pareto Lab
 
-Python 3 + NumPy only. Honest and learned-strategy elections, evaluated on a Pareto front.
+Python 3 + NumPy; the analysis also needs matplotlib. Honest and learned-strategy elections, evaluated on a Pareto front.
 
 ```
-python test_methods.py           # hand-built checks
-python run.py --elections 200    # one scenario, all methods, sincere and learned ballots
+python test_methods.py                                   # hand-built checks
+python run.py --elections 200                            # one condition, prints a table
+python sweep.py --group-size 1 10 0 --seeds 1 2 --out sw # grid of conditions into one CSV
+python analyze.py sw-elections.csv --out analysis --compare "BTR-score:STAR"
 ```
 
 400 elections with all 19 methods take about 3.5 minutes on 2 cores; time scales linearly with cores.
@@ -17,7 +19,10 @@ python run.py --elections 200    # one scenario, all methods, sincere and learne
 | `methods.py` | Ballot types, sincere ballots, exact tallies on ballot matrices (ties shared) |
 | `strategy.py` | Learning engine and cognitive dissonance |
 | `metrics.py` | Efficiencies for three baselines, Condorcet efficiency, Pareto front |
-| `run.py` | Tallies every electorate with sincere and learned ballots, runs in parallel, writes CSV |
+| `run.py` | Tallies every electorate with sincere and learned ballots, runs in parallel, writes CSV with the run's parameters as columns |
+| `sweep.py` | Runs a grid of conditions and seeds into one CSV |
+| `analyze.py` | Paired bootstrap, front probabilities, layers, paired comparisons, Markdown report |
+| `plots.py` | The analysis plots |
 | `test_methods.py` | Hand-built checks |
 
 ## Strategy engine
@@ -113,3 +118,38 @@ The front (`on_front`) uses PE, CE, PE_learned and CE_learned.
 | MARA-Top | 0–5 | as MARA, but only a 5 counts as approval |
 
 Pairwise preferences always come from the ballot itself, so equal ratings count as no preference. All ties are broken uniformly among the tied candidates and counted exactly.
+
+## Analysis
+
+`analyze.py` reads one or more elections CSVs. Rows with the same parameters except the seed form one **condition**; seeds are pooled as replications.
+
+**Uncertainty: paired bootstrap.** All methods face the same electorates, so each bootstrap replicate redraws whole elections with replacement and recomputes every method on that same draw (1000 replicates by default). This keeps comparisons paired: two methods can differ clearly even when the interval of each value on its own is wide, because elections differ much more from each other than methods differ within an election.
+
+**What is reported per condition and method:**
+
+| Output | Meaning |
+|---|---|
+| PE, CE, PE*, CE*, dissonance | point estimate and 95% interval of each value on its own |
+| front probability | share of replicates in which the method is not beaten on all four axes by another method |
+| layer | depth in non-dominated sorting of the point estimates (1 = front) |
+| paired differences (`--compare "A:B"`) | difference A − B per axis with a 95% interval; marked as a tie when the interval includes 0 |
+
+**How to interpret:**
+- Read **front probability**, not a single front. It settles close calls honestly: a method on the front in 98% of replicates is robust, one at 40% is a coin flip at this sample size.
+- Front membership is **relative to the methods included**. Adding or removing a method can change it.
+- The axes are kept separate on purpose. Each carries its own value judgement (utilitarian or majoritarian, honest or strategic); no weighting into a single score.
+- Read results **per condition first**. The strategic axes depend strongly on the group size (see Coordination). Pooling across conditions only says how robust a pattern is.
+- An ordering between two methods only counts if their paired difference is not a tie.
+
+**Plots** (in `--out`):
+
+| File | Shows |
+|---|---|
+| `arrows-<c>.png` | per method, honest → learned ballots, for PE and CE; rows sorted by front probability |
+| `dissonance-<c>.png` | PE* and CE* against dissonance; points coloured by front probability |
+| `front-heatmap.png` | front probability, methods × conditions (when there are several) |
+| `axes-heatmap.png` | the four axes, methods × conditions |
+
+Colour encodes front probability only (single-hue blue); methods are identified by labels. Random ballot and Random pair runoff are left out of the scatter plots by default (`--hide`), since their distance compresses the scale; they stay in tables and heatmaps.
+
+Sample size: with 160 elections per condition the intervals of single values are about ±3 points and front probabilities still swing between conditions. For conclusions, several hundred elections per condition and at least two seeds are advisable.
