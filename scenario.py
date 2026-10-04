@@ -1,0 +1,32 @@
+"""Electorate generator: spatial model with voter clusters and absolute utilities.
+
+Utilities are not normalised. A voter's utility for a candidate is exp(-distance / width):
+1 at zero distance, falling toward 0 far away. Zero therefore means "infinitely far",
+which gives the proportional baseline (tau = 1) a meaning.
+"""
+from dataclasses import dataclass
+import numpy as np
+
+
+@dataclass
+class Scenario:
+    n_voters: int = 99      # odd, so pairwise majorities rarely tie
+    n_cands: int = 4
+    dims: int = 2           # issue-space dimensions
+    n_clusters: int = 3     # voter clusters
+    spread: float = 0.5     # standard deviation of voters around their cluster centre
+    width: float = 1.0      # distance scale of the utility fall-off
+
+
+def electorate(sc: Scenario, rng: np.random.Generator):
+    """Return utilities u[v, c] > 0 for one election."""
+    centres = rng.normal(0.0, 1.0, (sc.n_clusters, sc.dims))
+    # Cluster sizes vary: Dirichlet weights, so some elections have a dominant cluster
+    weights = rng.dirichlet(np.ones(sc.n_clusters))
+    vc = rng.choice(sc.n_clusters, sc.n_voters, p=weights)
+    voters = centres[vc] + rng.normal(0.0, sc.spread, (sc.n_voters, sc.dims))
+    # Candidates are drawn from the same distribution as voters
+    cc = rng.choice(sc.n_clusters, sc.n_cands, p=weights)
+    cands = centres[cc] + rng.normal(0.0, sc.spread, (sc.n_cands, sc.dims))
+    d = np.linalg.norm(voters[:, None, :] - cands[None, :, :], axis=2)
+    return np.exp(-d / sc.width)
