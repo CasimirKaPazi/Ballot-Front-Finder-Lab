@@ -9,7 +9,7 @@ python sweep.py --group-size 1 10 0 --seeds 1 2          # grid of conditions ->
 python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> analysis/
 ```
 
-300 elections with all 27 methods take about 7.5 minutes on 2 cores; time scales linearly with cores. Use `--methods` or `--exclude` to run fewer.
+300 elections with all 27 methods take about 10 minutes on 2 cores; time scales linearly with cores. Use `--methods` or `--exclude` to run fewer.
 
 ## Files
 
@@ -40,8 +40,8 @@ python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> analysis
   - score: set one candidate to a different value 0–5
 
   A group that deviates sometimes (15%) proposes going back to sincere.
-- **Acceptance:** a proposal is kept only if it raises the group's expected utility.
-- **Rounds:** 15, groups in random order each round.
+- **Acceptance:** a proposal is kept only if it raises the group's expected utility. A return to sincere is also kept when it is not worse: voters prefer honesty when indifferent. Without this, a deviation that once paid off stays forever once it stops mattering, and dissonance keeps growing with the number of rounds instead of reflecting what strategy actually pays.
+- **Rounds:** 20, groups in random order each round. In a test with 50 voters and 6 candidates, PE*, CE* and dissonance changed only within noise between 20 and 40 rounds; at 10 rounds they were still moving.
 - **Random streams:** each method learns with its own random stream per election, keyed by the method's name, so results do not change when methods are added or reordered.
 
 ## Parameters
@@ -51,7 +51,7 @@ Scenario flags as in step 1 (`--voters`, `--cands`, `--dims`, `--clusters`, `--s
 | Flag | Default | Meaning |
 |---|---|---|
 | `--elections` | 200 | electorates |
-| `--rounds` | 15 | learning rounds |
+| `--rounds` | 20 | learning rounds |
 | `--samples` | 10 | poll resamples per round |
 | `--group-size` | 0 | most voters that coordinate as one group; 0 = whole ranking group, 1 = every voter alone |
 | `--workers` | all cores | parallel processes |

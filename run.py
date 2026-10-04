@@ -72,7 +72,7 @@ def main():
     ap.add_argument("--clusters", type=int, default=3)
     ap.add_argument("--spread", type=float, default=0.5)
     ap.add_argument("--width", type=float, default=1.0)
-    ap.add_argument("--rounds", type=int, default=15, help="learning rounds")
+    ap.add_argument("--rounds", type=int, default=20, help="learning rounds")
     ap.add_argument("--samples", type=int, default=10, help="poll samples per round")
     ap.add_argument("--group-size", type=int, default=0,
                     help="max voters coordinating as one group (0 = whole ranking group, 1 = individual)")

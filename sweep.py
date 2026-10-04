@@ -29,7 +29,7 @@ def main():
     ap.add_argument("--clusters", type=int, nargs="+", default=[3])
     ap.add_argument("--spread", type=float, nargs="+", default=[0.5])
     ap.add_argument("--width", type=float, nargs="+", default=[1.0])
-    ap.add_argument("--rounds", type=int, nargs="+", default=[15])
+    ap.add_argument("--rounds", type=int, nargs="+", default=[20])
     ap.add_argument("--samples", type=int, nargs="+", default=[10])
     ap.add_argument("--group-size", type=int, nargs="+", default=[0])
     ap.add_argument("--seeds", type=int, nargs="+", default=[1])

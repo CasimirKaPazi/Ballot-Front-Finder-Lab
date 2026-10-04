@@ -10,7 +10,9 @@ Loop (rounds):
   - Groups take turns in random order. A group proposes a ballot for all its members:
     usually a small change to its current shared ballot, sometimes a return to sincere.
   - The group keeps the proposal if its members' total expected utility, averaged over
-    the poll samples, goes up.
+    the poll samples, goes up. A return to sincere is also kept when it is not worse:
+    voters prefer honesty when indifferent, so deviations that stopped paying off fade out
+    instead of accumulating.
 Voters start sincere. A group that has never deviated proposes changes to the sincere
 ballot of its average member.
 """
@@ -115,7 +117,7 @@ def group_value(P, Ug):
     return float(np.mean(P @ Ug))
 
 
-def learn(method, u, rng, rounds=15, samples=10, group_size=0):
+def learn(method, u, rng, rounds=20, samples=10, group_size=0):
     """Return learned ballots, whether learning settled, and mean cognitive dissonance."""
     n, C = u.shape
     sincere = method.sincere(u)
@@ -147,7 +149,8 @@ def learn(method, u, rng, rounds=15, samples=10, group_size=0):
             B2 = B.copy()
             B2[mem] = prop_rows
             P_new = poll_tallies(method.tally, B2, polls)
-            if group_value(P_new, Ug[g]) > group_value(P_cur, Ug[g]) + 1e-12:
+            gain = group_value(P_new, Ug[g]) - group_value(P_cur, Ug[g])
+            if gain > 1e-12 or (to_sincere and gain >= -1e-12):   # honesty wins ties
                 B, P_cur = B2, P_new
                 shared[g] = None if to_sincere else prop
                 changed_last = True
