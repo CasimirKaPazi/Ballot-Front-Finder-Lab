@@ -7,6 +7,9 @@ A ballot matrix B has one row per voter and one column per candidate:
   "score"    0..5
   "rankapp"  ranking with an approval line: rank points (C-1 ... 0), plus C for approved
              candidates, who are always the top k of the ranking
+  "veto"     -1 for the one candidate voted against, 0 for all others
+  "weak"     ranking with ties allowed: levels 0 ... C-1, higher is better, equal = tied
+  "trunc"    truncated ranking: the k ranked candidates get k ... 1, unranked ones 0 (tied last)
 Every tally returns exact winner probabilities; ties are split uniformly among
 the tied candidates and counted exactly.
 
@@ -15,6 +18,9 @@ Sincere ballots from utilities u[v, c]:
   approval - every candidate above the voter's mean utility
   score    - 0..5, stretched to the voter's own utility range, rounded
   rankapp  - ranking by utility, approval line below the last candidate above the mean
+  veto     - against the least liked candidate
+  weak     - strict ranking by utility (ties are only used strategically)
+  trunc    - rank every candidate above the voter's mean utility, leave the rest unranked
 """
 from dataclasses import dataclass
 from itertools import permutations, product
@@ -57,8 +63,20 @@ def rankapp_ballots(u):
     return rank_ballots(u) + u.shape[1] * approval_ballots(u)
 
 
+def veto_ballots(u):
+    B = np.zeros_like(u)
+    B[np.arange(u.shape[0]), u.argmin(axis=1)] = -1
+    return B
+
+
+def trunc_ballots(u):
+    R, A = rank_ballots(u), approval_ballots(u)
+    k = A.sum(axis=1, keepdims=True)
+    return np.where(A > 0, R - (u.shape[1] - k) + 1, 0.0)   # top k get k ... 1
+
+
 SINCERE = {"fav": fav_ballots, "rank": rank_ballots, "approval": approval_ballots, "score": score_ballots,
-           "rankapp": rankapp_ballots}
+           "rankapp": rankapp_ballots, "veto": veto_ballots, "weak": rank_ballots, "trunc": trunc_ballots}
 
 
 # ---------- helpers ----------
@@ -312,6 +330,120 @@ def t_mara_top(B):
     return mara(B, MAXS)
 
 
+def has_cw(M, alive):
+    """Index of the Condorcet winner among alive candidates (strict majority over each), or None."""
+    for c in alive:
+        if all(M[c, d] > 0 for d in alive if d != c):
+            return c
+    return None
+
+
+def t_btr_irv(B):
+    """Each round the two candidates with the fewest first choices meet pairwise; the loser is out."""
+    C = B.shape[1]
+    M = margins(B)
+    P = np.zeros(C)
+
+    def go(alive, w):
+        if len(alive) == 1:
+            P[alive[0]] += w
+            return
+        first = np.bincount(B[:, alive].argmax(axis=1), minlength=len(alive)).astype(float)
+        for a, b, wp in top_two(-first):                  # the two lowest first-choice counts
+            ca, cb = alive[a], alive[b]
+            x = M[ca, cb]
+            for loser, wl in ([(cb, 1.0)] if x > 0 else [(ca, 1.0)] if x < 0 else [(ca, .5), (cb, .5)]):
+                go([c for c in alive if c != loser], w * wp * wl)
+
+    go(list(range(C)), 1.0)
+    return P
+
+
+def t_benham(B):
+    """IRV, but a Condorcet winner among the remaining candidates wins at once."""
+    C = B.shape[1]
+    M = margins(B)
+    P = np.zeros(C)
+
+    def go(alive, w):
+        cw = has_cw(M, alive)
+        if cw is not None or len(alive) == 1:
+            P[cw if cw is not None else alive[0]] += w
+            return
+        first = np.bincount(B[:, alive].argmax(axis=1), minlength=len(alive))
+        low = np.flatnonzero(first == first.min())
+        for i in low:
+            go([c for j, c in enumerate(alive) if j != i], w / len(low))
+
+    go(list(range(C)), 1.0)
+    return P
+
+
+DROP_ORDERS = 32
+_DROP = {}
+
+
+def t_condorcet_drop(B):
+    """Condorcet winner if there is one. Otherwise voters are dropped one at a time in random order
+    until the remaining ballots have a Condorcet winner. Averaged over DROP_ORDERS fixed random
+    orders (the same orders on every call, so comparisons during learning carry no extra noise)."""
+    n, C = B.shape
+    if n not in _DROP:
+        _DROP[n] = np.random.default_rng(12345).permuted(np.tile(np.arange(n), (DROP_ORDERS, 1)), axis=1)
+    D = np.sign(B[:, :, None] - B[:, None, :])          # each voter's contribution to the margins
+    M0 = D.sum(axis=0)
+    alive = list(range(C))
+    cw = has_cw(M0, alive)
+    P = np.zeros(C)
+    if cw is not None:
+        P[cw] = 1.0
+        return P
+    for order in _DROP[n]:
+        M = M0.copy()
+        for v in order:
+            M -= D[v]
+            cw = has_cw(M, alive)
+            if cw is not None:
+                P[cw] += 1
+                break
+        else:
+            P += 1 / C
+    return P / DROP_ORDERS
+
+
+def t_sict(B):
+    """Symmetrical ICT on rankings with ties. p(X,Y): (X>Y) + (X=Y at bottom) > (Y>X) + (X=Y at top).
+    X beats Y if p(X,Y) and not p(Y,X), or both and (X>Y) > (Y>X). One unbeaten candidate wins;
+    if none or all are unbeaten, most first places wins; otherwise most first places among the unbeaten."""
+    gt = (B[:, :, None] > B[:, None, :]).sum(axis=0)
+    top = B == B.max(axis=1, keepdims=True)
+    bot = B == B.min(axis=1, keepdims=True)
+    eq_top = (top[:, :, None] & top[:, None, :]).sum(axis=0)
+    eq_bot = (bot[:, :, None] & bot[:, None, :]).sum(axis=0)
+    p = gt + eq_bot > gt.T + eq_top
+    beats = (p & ~p.T) | (p & p.T & (gt > gt.T))
+    np.fill_diagonal(beats, False)
+    unbeaten = ~beats.any(axis=0)
+    first = top.sum(axis=0).astype(float)
+    if unbeaten.sum() == 1:
+        return unbeaten.astype(float)
+    if unbeaten.sum() in (0, B.shape[1]):
+        return uniform_max(first)
+    return uniform_max(np.where(unbeaten, first, -1.0))
+
+
+def t_mdda(B):
+    """Majority Defeat Disqualification Approval: ranked = approved. A candidate is disqualified if
+    more than half the voters rank some other candidate strictly above it (unless that would
+    disqualify everyone); the most approved remaining candidate wins."""
+    n = B.shape[0]
+    gt = (B[:, :, None] > B[:, None, :]).sum(axis=0)     # gt[a, b]: voters ranking a above b
+    dominated = (gt > n / 2).any(axis=0)
+    keep = ~dominated if not dominated.all() else np.ones_like(dominated)
+    app = (B > 0).sum(axis=0).astype(float)
+    return uniform_max(np.where(keep, app, -1.0))
+
+
 @dataclass
 class Method:
     ballot: str
@@ -344,4 +476,25 @@ METHODS = {
     "MARS": Method("score", t_mars),
     "MARA": Method("score", t_mara),
     "MARA-Top": Method("score", t_mara_top),
+    "Anti-plurality": Method("veto", t_sum),
+    "Condorcet-random-drop": Method("rank", t_condorcet_drop),
+    "SICT": Method("weak", t_sict),
+    "MDDA": Method("trunc", t_mdda),
+    "BTR-IRV": Method("rank", t_btr_irv),
+    "Benham": Method("rank", t_benham),
 }
+
+
+def select(include=None, exclude=None):
+    """Method names to run: `include` starts from none, `exclude` from all. Matching ignores case."""
+    lookup = {k.lower(): k for k in METHODS}
+
+    def resolve(names):
+        bad = [x for x in names if x.lower() not in lookup]
+        if bad:
+            raise SystemExit(f"unknown method(s): {', '.join(bad)}. Available: {', '.join(METHODS)}")
+        return {lookup[x.lower()] for x in names}
+
+    chosen = resolve(include) if include else set(METHODS)
+    chosen -= resolve(exclude or [])
+    return [k for k in METHODS if k in chosen]

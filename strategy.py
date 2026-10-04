@@ -48,6 +48,26 @@ def mutate(b, ballot, rng):
         else:
             k = min(C - 1, max(1, k + (1 if rng.random() < 0.5 else -1)))
         b = pts + C * (pts >= C - k)
+    elif ballot == "veto":
+        cur = int(b.argmin())
+        new = (cur + 1 + rng.integers(C - 1)) % C
+        b[:] = 0
+        b[new] = -1
+    elif ballot == "weak":
+        c = rng.integers(C)
+        b[c] = (b[c] + 1 + rng.integers(C - 1)) % C          # any other level; equal levels are ties
+    elif ballot == "trunc":
+        ranked = [int(c) for c in np.argsort(-b, kind="stable") if b[c] > 0]
+        order = ranked + list(rng.permutation([c for c in range(C) if b[c] == 0]))
+        k = len(ranked)
+        if rng.random() < 0.5:
+            i, j = rng.choice(C, 2, replace=False)
+            order[i], order[j] = order[j], order[i]
+        else:
+            k = min(C - 1, max(1, k + (1 if rng.random() < 0.5 else -1)))
+        b = np.zeros(C)
+        for pos, c in enumerate(order[:k]):
+            b[c] = k - pos
     elif ballot == "score":
         c = rng.integers(C)
         b[c] = (b[c] + 1 + rng.integers(MAXS)) % (MAXS + 1)

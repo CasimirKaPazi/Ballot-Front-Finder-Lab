@@ -24,17 +24,18 @@ from multiprocessing import Pool
 import numpy as np
 
 from scenario import Scenario, electorate
-from methods import METHODS
+from methods import METHODS, select
 from strategy import learn
 from metrics import election_row, summarize, pareto
 
 
 def one_election(args):
-    sc, seed, e, rounds, samples, group_size = args
+    sc, seed, e, rounds, samples, group_size, names = args
     rng = np.random.default_rng([seed, e])
     u = electorate(sc, rng)
     out = []
-    for name, m in METHODS.items():
+    for name in names:
+        m = METHODS[name]
         out.append({"election": e, "method": name, "ballots": "sincere", **election_row(u, m.honest(u)),
                     "dissonance": 0.0, "settled": 1})
         # Each method learns with its own random stream, keyed by name, so results stay
@@ -50,10 +51,12 @@ def one_election(args):
 PARAMS = ["voters", "cands", "dims", "clusters", "spread", "width", "rounds", "samples", "group_size", "seed"]
 
 
-def simulate(p, elections, workers=None):
-    """Run one condition. p: dict with the keys in PARAMS. Returns rows with p as columns."""
+def simulate(p, elections, workers=None, names=None):
+    """Run one condition. p: dict with the keys in PARAMS; names: methods (default all).
+    Returns rows with p as columns."""
+    names = names or list(METHODS)
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"])
-    jobs = [(sc, p["seed"], e, p["rounds"], p["samples"], p["group_size"]) for e in range(elections)]
+    jobs = [(sc, p["seed"], e, p["rounds"], p["samples"], p["group_size"], names) for e in range(elections)]
     with Pool(workers) as pool:
         rows = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
     meta = {k: p[k] for k in PARAMS}
@@ -75,18 +78,20 @@ def main():
                     help="max voters coordinating as one group (0 = whole ranking group, 1 = individual)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=None)
+    ap.add_argument("--methods", nargs="+", default=None, help="run only these methods (start from none)")
+    ap.add_argument("--exclude", nargs="+", default=None, help="run all methods except these")
     ap.add_argument("--out", default="results")
     a = ap.parse_args()
 
     p = {k: getattr(a, k) for k in PARAMS}
-    results = simulate(p, a.elections, a.workers)
+    names = select(a.methods, a.exclude)
+    results = simulate(p, a.elections, a.workers, names)
 
     with open(f"{a.out}-elections.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(results[0]))
         w.writeheader()
         w.writerows(results)
 
-    names = list(METHODS)
     summ = {}
     for m in names:
         sinc = [r for r in results if r["method"] == m and r["ballots"] == "sincere"]

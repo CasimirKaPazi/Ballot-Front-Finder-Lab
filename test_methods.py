@@ -34,10 +34,19 @@ check("Baldwin (K out, B out, G beats R)", METHODS["Baldwin"].honest(u), [0, 1, 
 check("MJ (R and G median 3, R wins on removal)", METHODS["MJ"].honest(u), [1, 0, 0, 0])
 check("MARA-Top", METHODS["MARA-Top"].honest(u), [1, 0, 0, 0])
 
+# Methods added later, same 4-3-2 profile (G is the Condorcet winner)
+check("Anti-plurality (everyone vetoes K: R, G, B tie)", METHODS["Anti-plurality"].honest(u), [1 / 3, 1 / 3, 1 / 3, 0])
+check("Condorcet-random-drop", METHODS["Condorcet-random-drop"].honest(u), [0, 1, 0, 0])
+check("SICT", METHODS["SICT"].honest(u), [0, 1, 0, 0])
+check("MDDA (R and B dominated by G)", METHODS["MDDA"].honest(u), [0, 1, 0, 0])
+check("BTR-IRV (K out vs G, B out vs G, G beats R)", METHODS["BTR-IRV"].honest(u), [0, 1, 0, 0])
+check("Benham (Condorcet winner at once)", METHODS["Benham"].honest(u), [0, 1, 0, 0])
+
 # Exact three-way tie: each method shares probability equally among R, G, B
 t = profile([(3, [0.55, 0.17, 0.15, 0.13]), (3, [0.15, 0.55, 0.17, 0.13]), (3, [0.17, 0.15, 0.55, 0.13])])
 for m in ["Plurality", "IRV", "Copeland", "Score", "STAR", "BTR-score", "MARS", "MARA", "MARA-Top", "MJ",
-          "Top-two runoff", "Approval runoff", "BTR-Borda", "Minimax", "Baldwin", "Borda"]:
+          "Top-two runoff", "Approval runoff", "BTR-Borda", "Minimax", "Baldwin", "Borda",
+          "Anti-plurality", "SICT", "MDDA", "BTR-IRV", "Benham"]:
     check(f"{m} three-way tie", METHODS[m].honest(t), [1 / 3, 1 / 3, 1 / 3, 0])
 
 # Baseline lottery from the example: utilities 100, 50, 25, 25 -> 50%, 25%, 12.5%, 12.5%
@@ -49,3 +58,19 @@ for m, fn in METHODS.items():
     p = fn.honest(u)
     assert abs(p.sum() - 1) < 1e-9, m
 print("all probabilities sum to 1")
+
+# Condorcet-random-drop on a cycle: R>G>B, G>B>R, B>R>G (3 each), K last for all.
+# Dropping voters resolves the cycle; the result should be close to symmetric and never K.
+cyc = profile([(3, [0.5, 0.3, 0.15, 0.05]), (3, [0.05, 0.5, 0.3, 0.15]), (3, [0.3, 0.05, 0.5, 0.15])])
+p = METHODS["Condorcet-random-drop"].honest(cyc)
+print("Condorcet-random-drop on a cycle:", np.round(p, 3))
+assert abs(p.sum() - 1) < 1e-9 and p[3] == 0 and p[:3].min() > 0.15
+
+# SICT: equal-first ranking by a compromising faction keeps the compromise unbeaten
+w = np.array([[3, 3, 1, 0]] * 4 + [[1, 2, 3, 0]] * 3 + [[2, 3, 1, 0]] * 2, dtype=float)   # 4 voters rank R=G top
+print("SICT with R and G ranked equal first by 4 voters:", np.round(METHODS["SICT"].tally(w), 3))
+
+from methods import select
+assert select(["star", "SICT"]) == ["STAR", "SICT"]
+assert "Plurality" not in select(None, ["plurality"]) and len(select()) == len(METHODS)
+print("method selection ok")
