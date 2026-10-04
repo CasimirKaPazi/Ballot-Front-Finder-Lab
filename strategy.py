@@ -1,5 +1,8 @@
 """Learned strategy: groups of voters with the same sincere ranking learn a shared ballot.
 
+Coordination: `group_size` caps how many voters move together. Each ranking group is split
+at random into subgroups of at most that size; 0 means no cap (whole ranking groups).
+
 Loop (rounds):
   - A fresh "poll" is drawn each round: `samples` bootstrap resamples of the electorate
     (voters drawn with replacement). This stands in for uncertainty about how others vote,
@@ -74,7 +77,7 @@ def group_value(P, Ug):
     return float(np.mean(P @ Ug))
 
 
-def learn(method, u, rng, rounds=15, samples=10):
+def learn(method, u, rng, rounds=15, samples=10, group_size=0):
     """Return learned ballots, whether learning settled, and mean cognitive dissonance."""
     n, C = u.shape
     sincere = method.sincere(u)
@@ -84,6 +87,8 @@ def learn(method, u, rng, rounds=15, samples=10):
     for v, k in enumerate(keys):
         groups.setdefault(k, []).append(v)
     groups = [np.array(m) for m in groups.values()]
+    if group_size > 0:   # split each ranking group at random into subgroups of at most group_size
+        groups = [part for m in groups for part in np.array_split(rng.permutation(m), -(-len(m) // group_size))]
     shared = [None] * len(groups)              # None = members vote sincerely
     ref = [SINCERE[method.ballot](u[m].mean(axis=0, keepdims=True))[0] for m in groups]
     Ug = [u[m].sum(axis=0) for m in groups]

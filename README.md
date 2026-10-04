@@ -22,7 +22,7 @@ python run.py --elections 200    # one scenario, all methods, sincere and learne
 
 ## Strategy engine
 
-- **Groups:** voters with the same sincere ranking. A group either votes sincerely (each member their own sincere ballot) or casts one shared ballot.
+- **Groups:** voters with the same sincere ranking, optionally split at random into subgroups of at most `--group-size` voters (see Coordination below). A group either votes sincerely (each member their own sincere ballot) or casts one shared ballot.
 - **Polls:** each round draws 10 bootstrap resamples of the electorate. A proposal is judged by the group's total expected utility averaged over these samples, so a group gains in proportion to how often it would be pivotal, not only when it is decisive in the exact electorate.
 - **Proposals:** one small change to the group's ballot:
   - one name: switch to another candidate
@@ -45,7 +45,33 @@ Scenario flags as in step 1 (`--voters`, `--cands`, `--dims`, `--clusters`, `--s
 | `--elections` | 200 | electorates |
 | `--rounds` | 15 | learning rounds |
 | `--samples` | 10 | poll resamples per round |
+| `--group-size` | 0 | most voters that coordinate as one group; 0 = whole ranking group, 1 = every voter alone |
 | `--workers` | all cores | parallel processes |
+
+## Coordination: what the strategic axes measure
+
+How many voters move together decides which strategies pay, and the methods differ sharply in this.
+
+- **Compromise** (voting for a viable candidate instead of a hopeless favourite) pays even for a single voter. It is the main strategy in Top-two runoff and IRV, and it tends to carry the Condorcet winner into the final round.
+- **Burial** (ranking or rating a rival below a candidate one likes less, to create a cycle or to drop the rival in a runoff) only pays when many voters do it together. A single voter out of 99 is almost never pivotal for it. It is the main strategy against Condorcet methods, STAR and BTR-score, and it targets exactly the Condorcet winner.
+
+Diagnostic run, 60 elections, default scenario, CE with learned ballots:
+
+| Method | whole ranking groups | every voter alone | burial (groups / alone) |
+|---|---|---|---|
+| Top-two runoff | 94.9 | 94.1 | 0.1% / 0.3% |
+| IRV | 96.6 | 91.5 | 1.8% / 1.0% |
+| Copeland | 83.6 | 100.0 | 20.1% / 2.0% |
+| Minimax | 89.8 | 100.0 | 20.6% / 1.3% |
+| BTR-Borda | 91.5 | 100.0 | 23.2% / 1.2% |
+| BTR-score | 89.8 | 96.6 | 20.5% / 2.8% |
+| STAR | 89.8 | 98.3 | 18.6% / 3.1% |
+
+So with the default (`--group-size 0`, whole ranking groups) the strategic axes measure resistance to **organised factional strategy**: every voter with the same ranking follows one recommendation. That is the case most favourable to burial. With `--group-size 1` they measure resistance to **individual strategy**, where burial almost never pays. Reality lies in between, and results under strategy should always be read together with the group size used.
+
+A second, smaller asymmetry: learning is myopic. A burying group does not anticipate that the Condorcet winner's supporters may bury back, or that the cycle it creates can elect a candidate it likes even less (the chicken dilemma). This probably makes burial look somewhat more attractive than it would be to far-sighted voters.
+
+Smaller groups mean more groups, and run time grows with their number: `--group-size 1` takes roughly six times as long as the default.
 
 ## Axes and other outputs
 

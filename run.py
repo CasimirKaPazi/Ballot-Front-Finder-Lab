@@ -29,7 +29,7 @@ from metrics import election_row, summarize, pareto
 
 
 def one_election(args):
-    sc, seed, e, rounds, samples = args
+    sc, seed, e, rounds, samples, group_size = args
     rng = np.random.default_rng([seed, e])
     u = electorate(sc, rng)
     out = []
@@ -39,7 +39,7 @@ def one_election(args):
         # Each method learns with its own random stream, keyed by name, so results stay
         # the same when methods are added or reordered.
         mrng = np.random.default_rng([seed, e, zlib.crc32(name.encode())])
-        B, settled, dis = learn(m, u, mrng, rounds, samples)
+        B, settled, dis = learn(m, u, mrng, rounds, samples, group_size)
         out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, m.tally(B)),
                     "dissonance": dis, "settled": int(settled)})
     return out
@@ -56,13 +56,15 @@ def main():
     ap.add_argument("--width", type=float, default=1.0)
     ap.add_argument("--rounds", type=int, default=15, help="learning rounds")
     ap.add_argument("--samples", type=int, default=10, help="poll samples per round")
+    ap.add_argument("--group-size", type=int, default=0,
+                    help="max voters coordinating as one group (0 = whole ranking group, 1 = individual)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--out", default="results")
     a = ap.parse_args()
 
     sc = Scenario(a.voters, a.cands, a.dims, a.clusters, a.spread, a.width)
-    jobs = [(sc, a.seed, e, a.rounds, a.samples) for e in range(a.elections)]
+    jobs = [(sc, a.seed, e, a.rounds, a.samples, a.group_size) for e in range(a.elections)]
     with Pool(a.workers) as pool:
         results = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
 
@@ -92,7 +94,8 @@ def main():
             w.writerow([m] + [f"{summ[m][c]:.4f}" for c in cols] + [int(i in front)])
 
     print(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.clusters} clusters, "
-          f"spread {a.spread}, width {a.width}; learning {a.rounds} rounds x {a.samples} poll samples; seed {a.seed}")
+          f"spread {a.spread}, width {a.width}; learning {a.rounds} rounds x {a.samples} poll samples, "
+          f"group size {a.group_size or 'unlimited'}; seed {a.seed}")
     print(f"{'method':<20}{'PE':>7}{'CE':>7}{'PE*':>7}{'CE*':>7}{'dissonance':>12}{'settled':>9}  front")
     for m in sorted(names, key=lambda m: -summ[m]["PE"]):
         s = summ[m]
