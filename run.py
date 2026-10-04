@@ -18,6 +18,7 @@ Outputs (prefix set by --out):
 """
 import argparse
 import csv
+import zlib
 from multiprocessing import Pool
 import numpy as np
 
@@ -35,7 +36,10 @@ def one_election(args):
     for name, m in METHODS.items():
         out.append({"election": e, "method": name, "ballots": "sincere", **election_row(u, m.honest(u)),
                     "dissonance": 0.0, "settled": 1})
-        B, settled, dis = learn(m, u, rng, rounds, samples)
+        # Each method learns with its own random stream, keyed by name, so results stay
+        # the same when methods are added or reordered.
+        mrng = np.random.default_rng([seed, e, zlib.crc32(name.encode())])
+        B, settled, dis = learn(m, u, mrng, rounds, samples)
         out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, m.tally(B)),
                     "dissonance": dis, "settled": int(settled)})
     return out
@@ -89,10 +93,10 @@ def main():
 
     print(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.clusters} clusters, "
           f"spread {a.spread}, width {a.width}; learning {a.rounds} rounds x {a.samples} poll samples; seed {a.seed}")
-    print(f"{'method':<14}{'PE':>7}{'CE':>7}{'PE*':>7}{'CE*':>7}{'dissonance':>12}{'settled':>9}  front")
+    print(f"{'method':<20}{'PE':>7}{'CE':>7}{'PE*':>7}{'CE*':>7}{'dissonance':>12}{'settled':>9}  front")
     for m in sorted(names, key=lambda m: -summ[m]["PE"]):
         s = summ[m]
-        print(f"{m:<14}{s['PE']*100:7.1f}{s['CE']*100:7.1f}{s['PE_learned']*100:7.1f}{s['CE_learned']*100:7.1f}"
+        print(f"{m:<20}{s['PE']*100:7.1f}{s['CE']*100:7.1f}{s['PE_learned']*100:7.1f}{s['CE_learned']*100:7.1f}"
               f"{s['dissonance']*100:11.1f}%{s['settled']*100:8.0f}%"
               f"  {'*' if names.index(m) in front else ''}")
     print("PE*, CE*: with learned ballots")

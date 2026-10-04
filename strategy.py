@@ -36,6 +36,15 @@ def mutate(b, ballot, rng):
             if 0 < b.sum() < C:
                 break
             b[c] = 1 - b[c]
+    elif ballot == "rankapp":
+        pts = np.where(b >= C, b - C, b)
+        k = int((b >= C).sum())
+        if rng.random() < 0.5:
+            i, j = rng.choice(C, 2, replace=False)
+            pts[i], pts[j] = pts[j], pts[i]
+        else:
+            k = min(C - 1, max(1, k + (1 if rng.random() < 0.5 else -1)))
+        b = pts + C * (pts >= C - k)
     elif ballot == "score":
         c = rng.integers(C)
         b[c] = (b[c] + 1 + rng.integers(MAXS)) % (MAXS + 1)

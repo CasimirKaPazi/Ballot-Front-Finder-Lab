@@ -5,6 +5,8 @@ A ballot matrix B has one row per voter and one column per candidate:
   "rank"     rank points: best C-1 ... worst 0
   "approval" 0/1
   "score"    0..5
+  "rankapp"  ranking with an approval line: rank points (C-1 ... 0), plus C for approved
+             candidates, who are always the top k of the ranking
 Every tally returns exact winner probabilities; ties are split uniformly among
 the tied candidates and counted exactly.
 
@@ -12,6 +14,7 @@ Sincere ballots from utilities u[v, c]:
   rank     - order by utility
   approval - every candidate above the voter's mean utility
   score    - 0..5, stretched to the voter's own utility range, rounded
+  rankapp  - ranking by utility, approval line below the last candidate above the mean
 """
 from dataclasses import dataclass
 from itertools import permutations, product
@@ -50,7 +53,12 @@ def score_ballots(u):
     return np.rint(MAXS * (u - mn) / d)
 
 
-SINCERE = {"fav": fav_ballots, "rank": rank_ballots, "approval": approval_ballots, "score": score_ballots}
+def rankapp_ballots(u):
+    return rank_ballots(u) + u.shape[1] * approval_ballots(u)
+
+
+SINCERE = {"fav": fav_ballots, "rank": rank_ballots, "approval": approval_ballots, "score": score_ballots,
+           "rankapp": rankapp_ballots}
 
 
 # ---------- helpers ----------
@@ -96,6 +104,47 @@ def bottom_two_runoff(order_values, match):
     for o in orders:
         climb(o, C - 2, o[C - 1], w0)
     return P
+
+
+def top_two(values):
+    """Finalist pairs (a, b, weight) from first-stage values, ties broken uniformly at random."""
+    C = len(values)
+    top = np.flatnonzero(values >= values.max() - EPS)
+    if len(top) >= 2:
+        pairs = [(a, b) for i, a in enumerate(top) for b in top[i + 1:]]
+        return [(a, b, 1 / len(pairs)) for a, b in pairs]
+    a = top[0]
+    rest = np.delete(np.arange(C), a)
+    sec = rest[values[rest] >= values[rest].max() - EPS]
+    return [(a, b, 1 / len(sec)) for b in sec]
+
+
+def runoff(P, M, a, b, w, tiebreak=None):
+    """Pairwise majority between a and b; tie goes to the higher tiebreak value, else split."""
+    x = M[a, b]
+    if x == 0 and tiebreak is not None:
+        x = tiebreak[a] - tiebreak[b]
+    if x > 0:
+        P[a] += w
+    elif x < 0:
+        P[b] += w
+    else:
+        P[a] += w / 2
+        P[b] += w / 2
+
+
+_MJ_ORDER = {}
+
+
+def mj_order(n):
+    """Positions in a sorted grade list, in the order majority judgment reads them:
+    take the (lower) median, remove it, repeat."""
+    if n not in _MJ_ORDER:
+        idx, seq = list(range(n)), []
+        while idx:
+            seq.append(idx.pop((len(idx) - 1) // 2))
+        _MJ_ORDER[n] = np.array(seq)
+    return _MJ_ORDER[n]
 
 
 # ---------- tallies ----------
@@ -160,6 +209,80 @@ def t_star(B):
     return P
 
 
+def t_random_pair(B):
+    """Draw two distinct ballots; same first choice wins, else majority runoff of the two."""
+    n, C = B.shape
+    first = np.bincount(B.argmax(axis=1), minlength=C).astype(float)
+    M = margins(B)
+    tot = n * (n - 1)
+    P = first * (first - 1) / tot
+    for a in range(C):
+        for b in range(a + 1, C):
+            if first[a] and first[b]:
+                runoff(P, M, a, b, 2 * first[a] * first[b] / tot)
+    return P
+
+
+def t_top_two(B):
+    """Plurality on first choices, then majority runoff between the top two."""
+    C = B.shape[1]
+    first = np.bincount(B.argmax(axis=1), minlength=C).astype(float)
+    M, P = margins(B), np.zeros(C)
+    for a, b, w in top_two(first):
+        runoff(P, M, a, b, w)
+    return P
+
+
+def t_approval_runoff(B):
+    """Top two by approvals, then majority runoff by ranking; a tie goes to more approvals."""
+    C = B.shape[1]
+    app = (B >= C).sum(axis=0).astype(float)
+    M, P = margins(B), np.zeros(C)
+    for a, b, w in top_two(app):
+        runoff(P, M, a, b, w, tiebreak=app)
+    return P
+
+
+def t_mj(B):
+    """Majority judgment on 0-5 grades: compare median grades, removing medians to break ties."""
+    order = mj_order(B.shape[0])
+    seqs = [tuple(np.sort(B[:, c])[order]) for c in range(B.shape[1])]
+    best = max(seqs)
+    top = np.array([s == best for s in seqs], dtype=float)
+    return top / top.sum()
+
+
+def t_minimax(B):
+    """Winner has the smallest worst pairwise defeat (by margin)."""
+    M = margins(B)
+    worst = np.clip(M, 0, None).max(axis=0)   # largest margin by which anyone beats c
+    return uniform_max(-worst.astype(float))
+
+
+def t_baldwin(B):
+    """Repeatedly eliminate the lowest Borda score, recounted among remaining candidates."""
+    C = B.shape[1]
+    P = np.zeros(C)
+
+    def go(alive, w):
+        if len(alive) == 1:
+            P[alive[0]] += w
+            return
+        sub = B[:, alive]
+        pts = (sub[:, :, None] > sub[:, None, :]).sum(axis=2).sum(axis=0)
+        low = np.flatnonzero(pts == pts.min())
+        for i in low:
+            go([c for j, c in enumerate(alive) if j != i], w / len(low))
+
+    go(list(range(C)), 1.0)
+    return P
+
+
+def t_btr_borda(B):
+    M = margins(B)
+    return bottom_two_runoff(B.sum(axis=0), lambda a, b: M[a, b])
+
+
 def t_btr(B):
     M = margins(B)
     return bottom_two_runoff(B.sum(axis=0), lambda a, b: M[a, b])
@@ -171,10 +294,19 @@ def t_mars(B):
     return bottom_two_runoff(tot, lambda a, b: M[a, b] + (tot[a] - tot[b]) / MAXS)
 
 
+def mara(B, threshold):
+    M, app = margins(B), (B >= threshold).sum(axis=0).astype(float)
+    return bottom_two_runoff(app, lambda a, b: M[a, b] + (app[a] - app[b]))
+
+
 def t_mara(B):
     """MARA-3-5: ratings 3-5 count as approval."""
-    M, app = margins(B), (B >= 3).sum(axis=0).astype(float)
-    return bottom_two_runoff(app, lambda a, b: M[a, b] + (app[a] - app[b]))
+    return mara(B, 3)
+
+
+def t_mara_top(B):
+    """MARA-Top: only a 5 counts as approval."""
+    return mara(B, MAXS)
 
 
 @dataclass
@@ -191,14 +323,22 @@ class Method:
 
 METHODS = {
     "Random ballot": Method("fav", t_random_ballot),
+    "Random pair runoff": Method("rank", t_random_pair),
     "Plurality": Method("fav", t_sum),
+    "Top-two runoff": Method("rank", t_top_two),
     "IRV": Method("rank", t_irv),
     "Borda": Method("rank", t_sum),
+    "Baldwin": Method("rank", t_baldwin),
+    "BTR-Borda": Method("rank", t_btr_borda),
     "Copeland": Method("rank", t_copeland),
+    "Minimax": Method("rank", t_minimax),
     "Approval": Method("approval", t_sum),
+    "Approval runoff": Method("rankapp", t_approval_runoff),
     "Score": Method("score", t_sum),
+    "MJ": Method("score", t_mj),
     "STAR": Method("score", t_star),
     "BTR-score": Method("score", t_btr),
     "MARS": Method("score", t_mars),
     "MARA": Method("score", t_mara),
+    "MARA-Top": Method("score", t_mara_top),
 }
