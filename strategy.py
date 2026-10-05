@@ -1,7 +1,11 @@
 """Learned strategy: groups of voters with the same sincere ranking learn a shared ballot.
 
-Coordination: `group_size` caps how many voters move together. Each ranking group is split
-at random into subgroups of at most that size; 0 means no cap (whole ranking groups).
+Partial strategy: `strategic` marks the voters who take part (a random share of the electorate,
+drawn in run.py, the same voters for every method). The others always vote sincerely.
+
+Coordination: `group_size` caps how many voters move together. Each ranking group (strategic
+voters with the same sincere ranking) is split at random into subgroups of at most that size;
+0 means no cap (whole ranking groups).
 
 Loop (rounds):
   - A fresh "poll" is drawn each round: `samples` bootstrap resamples of the electorate
@@ -76,17 +80,17 @@ def mutate(b, ballot, rng):
     return b
 
 
-def dissonance(B, u):
-    """Per voter: utility-weighted share of preferences the ballot reverses.
+def sincerity(B, u):
+    """Per voter: 1 minus the utility-weighted share of preferences the ballot reverses.
 
     For every pair the ballot orders (a rated above b) while the voter likes b more,
-    add u[b] - u[a]; divide by the sum of |u[a] - u[b]| over all pairs.
-    0 = no reversed preference (every sincere ballot), 1 = every preference reversed.
+    add u[b] - u[a]; divide by the sum of |u[a] - u[b]| over all pairs; subtract from 1.
+    1 = no reversed preference (every sincere ballot), 0 = every preference reversed.
     """
     above = B[:, :, None] > B[:, None, :]                  # ballot says a > b
     loss = np.clip(u[:, None, :] - u[:, :, None], 0, None)  # u[b] - u[a] where positive
     total = np.abs(u[:, :, None] - u[:, None, :]).sum(axis=(1, 2)) / 2
-    return (above * loss).sum(axis=(1, 2)) / np.where(total > 0, total, 1)
+    return 1 - (above * loss).sum(axis=(1, 2)) / np.where(total > 0, total, 1)
 
 
 def strategy_types(B, u):
@@ -117,15 +121,19 @@ def group_value(P, Ug):
     return float(np.mean(P @ Ug))
 
 
-def learn(method, u, rng, rounds=20, samples=10, group_size=0):
-    """Return learned ballots, whether learning settled, and mean cognitive dissonance."""
+def learn(method, u, rng, rounds=20, samples=10, group_size=0, strategic=None):
+    """Return learned ballots, whether learning settled, and mean sincerity (all voters).
+    strategic: boolean mask of voters who take part (None = all)."""
     n, C = u.shape
     sincere = method.sincere(u)
     B = sincere.copy()
     keys = [tuple(r) for r in np.argsort(-u, axis=1, kind="stable")]
     groups = {}
     for v, k in enumerate(keys):
-        groups.setdefault(k, []).append(v)
+        if strategic is None or strategic[v]:
+            groups.setdefault(k, []).append(v)
+    if not groups:
+        return B, True, 1.0
     groups = [np.array(m) for m in groups.values()]
     if group_size > 0:   # split each ranking group at random into subgroups of at most group_size
         groups = [part for m in groups for part in np.array_split(rng.permutation(m), -(-len(m) // group_size))]
@@ -174,4 +182,4 @@ def learn(method, u, rng, rounds=20, samples=10, group_size=0):
                 P_cur = P_new
                 shared[g] = None if to_sincere else prop
                 changed_last = True
-    return B, not changed_last, float(dissonance(B, u).mean())
+    return B, not changed_last, float(sincerity(B, u).mean())

@@ -1,7 +1,7 @@
 """Static plots for analyze.py (matplotlib, PNG).
 
 Method identity is carried by direct labels, never by colour, since there are far more methods
-than distinguishable hues. In the arrow plot, the learned-ballot points are coloured by dissonance
+than distinguishable hues. In the arrow plot, the learned-ballot points are coloured by sincerity
 on a single-hue red ramp (light = honest, dark = much reversed preference). Heatmaps use blue.
 """
 import numpy as np
@@ -16,8 +16,8 @@ INK2 = "#52514e"
 MUTED = "#8b8a85"
 GRID = "#e6e5e1"
 POINT = "#2a78d6"   # learned-ballot points
-# Sequential red for dissonance; lightest step still visible on the surface
-REDS = LinearSegmentedColormap.from_list("dissonance", ["#f7c4bf", "#ef8f86", "#e34948", "#b8302f", "#7f1d1d"])
+# Sequential red, light to dark; used reversed for sincerity (dark = less honest)
+REDS = LinearSegmentedColormap.from_list("insincerity", ["#f7c4bf", "#ef8f86", "#e34948", "#b8302f", "#7f1d1d"])
 HEAT = LinearSegmentedColormap.from_list("heat", ["#f3f7fd", "#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"])
 
 plt.rcParams.update({
@@ -63,12 +63,13 @@ def _visible(r, hide):
 
 def arrows(r, path, hide):
     """Honest (open circle) -> learned ballots (filled) in the PE / WM plane, all methods together.
-    Filled points are coloured by the dissonance of the learned ballots."""
+    Filled points are coloured by the sincerity of the learned ballots (darker = less honest)."""
     idx = _visible(r, hide)
-    # cap the colour scale at the 90th percentile, so one extreme method does not wash out the rest
-    vals = np.array([r["dissonance"][j] * 100 for j in idx])
-    dmax = max(0.5, float(np.percentile(vals, 90)))
-    norm = Normalize(0, dmax, clip=True)
+    # cap the colour scale at the 10th percentile, so one extreme method does not wash out the rest
+    vals = np.array([r["sincerity"][j] * 100 for j in idx])
+    smin = min(99.5, float(np.percentile(vals, 10)))
+    norm = Normalize(smin, 100, clip=True)
+    cmap = REDS.reversed()
     fig, ax = plt.subplots(figsize=(9.2, 6.6))
     texts, anchors = [], []
     for j in idx:
@@ -77,16 +78,16 @@ def arrows(r, path, hide):
         ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
                     arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.1, shrinkA=4, shrinkB=5, mutation_scale=9))
         ax.scatter([x0], [y0], s=34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
-        ax.scatter([x1], [y1], s=64, color=REDS(norm(r["dissonance"][j] * 100)), edgecolors=MUTED,
+        ax.scatter([x1], [y1], s=64, color=cmap(norm(r["sincerity"][j] * 100)), edgecolors=MUTED,
                    linewidths=0.6, zorder=4)
         anchors.append((x1, y1))
         texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
     ax.set_xlabel("PE, proportional efficiency (%)")
     ax.set_ylabel("WM, winner's worst margin (% of voters)")
     ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}", loc="left")
-    cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=REDS), ax=ax, fraction=0.035, pad=0.02,
-                      extend="max" if vals.max() > dmax else "neither")
-    cb.set_label("dissonance of learned ballots (%)", color=INK2)
+    cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, fraction=0.035, pad=0.02,
+                      extend="min" if vals.min() < smin else "neither")
+    cb.set_label("sincerity of learned ballots (%)", color=INK2)
     cb.outline.set_visible(False)
     fig.tight_layout()
     _repel(ax, texts, anchors)
@@ -118,23 +119,22 @@ def shift(r, path, hide):
     plt.close(fig)
 
 
-def dissonance(r, path, hide):
-    """PE* and WM* against dissonance, side by side. No marginal intervals: they show how much
+def sincerity(r, path, hide):
+    """PE* and WM* against sincerity, side by side. No marginal intervals: they show how much
     single values vary between elections, not how surely methods differ (paired differences do)."""
     idx = _visible(r, hide)
     fig, axs = plt.subplots(1, 2, figsize=(11, 5.2), sharex=True)
     for ax, axis, name in zip(axs, ["PE*", "WM*"], ["PE* (learned ballots, %)", "WM* (learned ballots, % of voters)"]):
         texts, anchors = [], []
         for j in idx:
-            x, y = r["dissonance"][j] * 100, r[axis][j] * 100
+            x, y = r["sincerity"][j] * 100, r[axis][j] * 100
             anchors.append((x, y))
             ax.scatter([x], [y], s=60, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=3)
             texts.append(ax.text(x + 0.12, y, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=4))
-        ax.set_xlabel("cognitive dissonance of learned ballots (%)")
+        ax.set_xlabel("sincerity of learned ballots (%)")
         ax.set_ylabel(name)
-        ax.set_xlim(left=0)
         _repel(ax, texts, anchors)
-    axs[0].set_title(f"Quality under strategy against dissonance (lower right is worse)\n{r['label']}", loc="left")
+    axs[0].set_title(f"Quality under strategy against sincerity (upper right is best)\n{r['label']}", loc="left")
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)

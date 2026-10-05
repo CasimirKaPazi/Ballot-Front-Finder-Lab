@@ -10,8 +10,11 @@ Axes of the Pareto front:
     PE, WM     proportional efficiency and winner's worst margin, sincere ballots (see metrics.py)
     PE*, WM*   the same with learned ballots
 CE, CE* (Condorcet efficiency) are reported alongside.
-Also reported: VSE and RBE (sincere), cognitive dissonance of the learned ballots
-(see strategy.dissonance), share of elections where learning settled (cycles never do).
+Also reported: VSE and RBE (sincere), sincerity of the learned ballots (see strategy.sincerity),
+share of elections where learning settled (cycles never do).
+
+Partial strategy: --strategic p makes a random share p of the voters strategic (the same voters
+for every method); the rest always vote sincerely.
 
 Outputs (prefix set by --out):
     <out>-elections.csv   one row per (election, method, ballots), with the run's parameters
@@ -31,26 +34,29 @@ from metrics import election_row, summarize, pareto, worst_margins
 
 
 def one_election(args):
-    sc, seed, e, rounds, samples, group_size, names = args
+    sc, seed, e, rounds, samples, group_size, share, names = args
     rng = np.random.default_rng([seed, e])
     u = electorate(sc, rng)
     m_cand = worst_margins(u)                       # each candidate's worst head-to-head margin
+    # strategic voters: own random stream, the same voters for every method
+    strategic = np.random.default_rng([seed, e, zlib.crc32(b"strategic")]).random(len(u)) < share
     out = []
     for name in names:
         m = METHODS[name]
         out.append({"election": e, "method": name, "ballots": "sincere", **election_row(u, m.honest(u), m_cand),
-                    "dissonance": 0.0, "settled": 1, "compromise": 0.0, "pushover": 0.0, "burial": 0.0})
+                    "sincerity": 1.0, "settled": 1, "compromise": 0.0, "pushover": 0.0, "burial": 0.0})
         # Each method learns with its own random stream, keyed by name, so results stay
         # the same when methods are added or reordered.
         mrng = np.random.default_rng([seed, e, zlib.crc32(name.encode())])
-        B, settled, dis = learn(m, u, mrng, rounds, samples, group_size)
+        B, settled, sin = learn(m, u, mrng, rounds, samples, group_size, strategic)
         out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, m.tally(B), m_cand),
-                    "dissonance": dis, "settled": int(settled), **strategy_types(B, u)})
+                    "sincerity": sin, "settled": int(settled), **strategy_types(B, u)})
     return out
 
 
 # Run parameters written into every row of the elections CSV
-PARAMS = ["voters", "cands", "dims", "clusters", "spread", "width", "rounds", "samples", "group_size", "seed"]
+PARAMS = ["voters", "cands", "dims", "clusters", "spread", "width", "rounds", "samples", "group_size", "strategic",
+          "seed"]
 
 
 def simulate(p, elections, workers=None, names=None):
@@ -58,7 +64,7 @@ def simulate(p, elections, workers=None, names=None):
     Returns rows with p as columns."""
     names = names or list(METHODS)
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"])
-    jobs = [(sc, p["seed"], e, p["rounds"], p["samples"], p["group_size"], names) for e in range(elections)]
+    jobs = [(sc, p["seed"], e, p["rounds"], p["samples"], p["group_size"], p["strategic"], names) for e in range(elections)]
     with Pool(workers) as pool:
         rows = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
     meta = {k: p[k] for k in PARAMS}
@@ -78,6 +84,8 @@ def main():
     ap.add_argument("--samples", type=int, default=10, help="poll samples per round")
     ap.add_argument("--group-size", type=int, default=0,
                     help="max voters coordinating as one group (0 = whole ranking group, 1 = individual)")
+    ap.add_argument("--strategic", type=float, default=1.0,
+                    help="share of voters who vote strategically (random, the same for every method)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--methods", nargs="+", default=None, help="run only these methods (start from none)")
@@ -102,12 +110,12 @@ def main():
         summ[m] = {"PE": s["PE"], "WM": s["WM"], "PE_learned": l["PE"], "WM_learned": l["WM"],
                    "CE": s["CE"], "CE_learned": l["CE"],
                    "VSE": s["VSE"], "RBE": s["RBE"],
-                   "dissonance": float(np.mean([r["dissonance"] for r in lrn])),
+                   "sincerity": float(np.mean([r["sincerity"] for r in lrn])),
                    "settled": float(np.mean([r["settled"] for r in lrn]))}
     axes = ["PE", "WM", "PE_learned", "WM_learned"]
     front = set(pareto([[summ[m][x] for x in axes] for m in names]))
 
-    cols = ["PE", "WM", "PE_learned", "WM_learned", "CE", "CE_learned", "VSE", "RBE", "dissonance", "settled"]
+    cols = ["PE", "WM", "PE_learned", "WM_learned", "CE", "CE_learned", "VSE", "RBE", "sincerity", "settled"]
     with open(f"{a.out}-summary.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["method"] + cols + ["on_front"])
@@ -116,13 +124,13 @@ def main():
 
     print(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.clusters} clusters, "
           f"spread {a.spread}, width {a.width}; learning {a.rounds} rounds x {a.samples} poll samples, "
-          f"group size {a.group_size or 'unlimited'}; seed {a.seed}")
-    print(f"{'method':<26}{'PE':>7}{'WM':>7}{'PE*':>7}{'WM*':>7}{'CE':>7}{'CE*':>7}{'dissonance':>12}{'settled':>9}  front")
+          f"group size {a.group_size or 'unlimited'}, strategic share {a.strategic}; seed {a.seed}")
+    print(f"{'method':<26}{'PE':>7}{'WM':>7}{'PE*':>7}{'WM*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
     for m in sorted(names, key=lambda m: -summ[m]["PE"]):
         s = summ[m]
         print(f"{m:<26}{s['PE']*100:7.1f}{s['WM']*100:7.1f}{s['PE_learned']*100:7.1f}{s['WM_learned']*100:7.1f}"
               f"{s['CE']*100:7.1f}{s['CE_learned']*100:7.1f}"
-              f"{s['dissonance']*100:11.1f}%{s['settled']*100:8.0f}%"
+              f"{s['sincerity']*100:10.1f}%{s['settled']*100:8.0f}%"
               f"  {'*' if names.index(m) in front else ''}")
     print("PE*, WM*, CE*: with learned ballots; WM in % of voters; front on PE, WM, PE*, WM*")
 

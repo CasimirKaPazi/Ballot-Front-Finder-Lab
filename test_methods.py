@@ -84,6 +84,10 @@ print("SICT with R and G ranked equal first by 4 voters:", np.round(METHODS["SIC
 from methods import select
 assert select(["star", "SICT"]) == ["STAR", "SICT"]
 assert "Plurality" not in select(None, ["plurality"]) and len(select()) == len(METHODS)
+from methods import GROUPS
+assert all(m in METHODS for ms in GROUPS.values() for m in ms)
+assert select(["Condorcet", "STAR"])[-1] == "Benham" and "STAR" in select(["condorcet", "star"])
+assert "TRASH" not in select(None, ["references"]) and "IRV" in select(["plurality-based"])
 print("method selection ok")
 
 # Ranked pairs and Schulze on a cycle: R>G>B (4), G>B>R (3), B>R>G (2). Margins R-G 3, G-B 5, B-R 1.

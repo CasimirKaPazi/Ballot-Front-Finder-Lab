@@ -15,7 +15,7 @@ Axes (higher is better):
     PE, WM       proportional efficiency and winner's worst margin with sincere ballots (see metrics.py)
     PE*, WM*     the same with learned ballots
 CE, CE* (Condorcet efficiency) are reported alongside, not used for dominance.
-Dissonance (lower is better) is reported alongside, not used for the front.
+Sincerity of the learned ballots (higher is more honest) is reported alongside, not used for the front.
 
 Dominated by: for each method, the methods that are clearly better on at least one axis and
 clearly worse on none. Clearly: the paired 95% bootstrap interval of the difference excludes 0;
@@ -29,7 +29,7 @@ Outputs in --out (a directory):
     report.md                  tables per condition, comparisons, plots
     arrows-<c>.png             per condition: honest -> strategic in the PE/WM plane, all methods together
     shift-<c>.png              per condition: the same shifts as one row per method (PE and WM panels)
-    dissonance-<c>.png         per condition: PE* and WM* against dissonance
+    sincerity-<c>.png          per condition: PE* and WM* against sincerity
     axes-heatmap.png           all four axes, methods x conditions (if several conditions)
 """
 import argparse
@@ -43,7 +43,7 @@ import plots
 AXES = ["PE", "WM", "PE*", "WM*"]
 EXTRA = ["CE", "CE*"]           # reported, not used for dominance
 TYPES = ["compromise", "burial", "pushover"]
-PARAMS = ["voters", "cands", "dims", "clusters", "spread", "width", "rounds", "samples", "group_size"]
+PARAMS = ["voters", "cands", "dims", "clusters", "spread", "width", "rounds", "samples", "group_size", "strategic"]
 
 
 def load(paths):
@@ -51,8 +51,9 @@ def load(paths):
     for p in paths:
         with open(p, newline="") as f:
             rows.extend(csv.DictReader(f))
-    if not rows or "seed" not in rows[0]:
-        raise SystemExit("CSV has no run parameters; regenerate it with the current run.py or sweep.py")
+    missing = [k for k in ["seed", "strategic", "WM", "sincerity"] if not rows or k not in rows[0]]
+    if missing:
+        raise SystemExit(f"CSV lacks {', '.join(missing)}; regenerate it with the current run.py or sweep.py")
     return rows
 
 
@@ -71,9 +72,7 @@ def arrays(rows):
     ei = {e: i for i, e in enumerate(eids)}
     mi = {m: j for j, m in enumerate(methods)}
     E, M = len(eids), len(methods)
-    if "WM" not in rows[0]:
-        raise SystemExit("CSV has no WM column (winner's worst margin); regenerate it with the current run.py or sweep.py")
-    A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "wm_s", "wm_l", "dis"] + TYPES}
+    A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "wm_s", "wm_l", "sin"] + TYPES}
     den = np.zeros(E)
     has = np.zeros(E)
     for r in rows:
@@ -86,7 +85,7 @@ def arrays(rows):
             has[i] = float(r["has_cw"])
         else:
             A["num_l"][i, j], A["cw_l"][i, j], A["wm_l"][i, j] = num, pcw, float(r["WM"])
-            A["dis"][i, j] = float(r["dissonance"])
+            A["sin"][i, j] = float(r["sincerity"])
             for t in TYPES:
                 A[t][i, j] = float(r.get(t) or "nan")      # older CSVs have no strategy types
     return methods, A, den, has
@@ -103,7 +102,7 @@ def axis_values(W, A, den, has):
         "CE": (W @ A["cw_s"]) / h[:, None],
         "PE*": (W @ A["num_l"]) / d[:, None],
         "CE*": (W @ A["cw_l"]) / h[:, None],
-        "dissonance": (W @ A["dis"]) / W.sum(axis=1)[:, None],
+        "sincerity": (W @ A["sin"]) / W.sum(axis=1)[:, None],
         **{t: (W @ A[t]) / W.sum(axis=1)[:, None] for t in TYPES},
     }
 
@@ -132,7 +131,7 @@ def analyse_condition(rows, boot, rng):
     dominated_by = [[(methods[j], [AXES[k] for k in np.flatnonzero(better[i, j])]) for j in np.flatnonzero(dom[i])]
                     for i in range(len(methods))]
     res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs}
-    for a in AXES + EXTRA + ["dissonance"] + TYPES:
+    for a in AXES + EXTRA + ["sincerity"] + TYPES:
         res[a] = point[a][0]
         res[a + "_lo"], res[a + "_hi"] = np.percentile(bs[a], [2.5, 97.5], axis=0)
     return res
@@ -140,7 +139,7 @@ def analyse_condition(rows, boot, rng):
 
 def label(key, varying):
     p = dict(zip(PARAMS, key))
-    names = {"group_size": "group size", "cands": "candidates"}
+    names = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share"}
     return ", ".join(f"{names.get(k, k)} {p[k] if not (k == 'group_size' and p[k] == '0') else 'unlimited'}"
                      for k in varying) or "single condition"
 
@@ -186,7 +185,7 @@ def main():
     with open(os.path.join(a.out, "summary.csv"), "w", newline="") as f:
         w = csv.writer(f)
         cols = []
-        for x in AXES + EXTRA + ["dissonance"] + TYPES:
+        for x in AXES + EXTRA + ["sincerity"] + TYPES:
             cols += [x, x + "_lo", x + "_hi"]
         w.writerow(PARAMS + ["condition", "elections", "method"] + cols + ["dominated_by"])
         for key, r in results.items():
@@ -198,7 +197,7 @@ def main():
     for key, r in results.items():
         plots.arrows(r, os.path.join(a.out, f"arrows-{r['tag']}.png"), a.hide)
         plots.shift(r, os.path.join(a.out, f"shift-{r['tag']}.png"), a.hide)
-        plots.dissonance(r, os.path.join(a.out, f"dissonance-{r['tag']}.png"), a.hide)
+        plots.sincerity(r, os.path.join(a.out, f"sincerity-{r['tag']}.png"), a.hide)
     if len(results) > 1:
         plots.axes_heatmap(list(results.values()), AXES, os.path.join(a.out, "axes-heatmap.png"))
 
@@ -234,26 +233,27 @@ def main():
               f"{r['elections']} elections (seeds {', '.join(r['seeds'])}), {r['with_cw']} with a Condorcet winner. "
               f"{p['voters']} voters, {p['cands']} candidates, {p['clusters']} clusters, spread {p['spread']}, "
               f"width {p['width']}; learning {p['rounds']} rounds × {p['samples']} poll samples, "
-              f"group size {p['group_size'] if p['group_size'] != '0' else 'unlimited'}.", "",
-              "| Method | PE | WM | PE* | WM* | CE | CE* | Dissonance | Compromise | Burial | Push-over | Dominated by |",
+              f"group size {p['group_size'] if p['group_size'] != '0' else 'unlimited'}, "
+              f"strategic share {p['strategic']}.", "",
+              "| Method | PE | WM | PE* | WM* | CE | CE* | Sincerity | Compromise | Burial | Push-over | Dominated by |",
               "|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for j in np.argsort(-r["PE"], kind="stable"):
             L.append(f"| {r['methods'][j]} | "
-                     + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in AXES + EXTRA + ["dissonance"])
+                     + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in AXES + EXTRA + ["sincerity"])
                      + " | " + " | ".join(f"{r[t][j] * 100:.1f}%" for t in TYPES)
                      + f" | {dom_text(r['dominated_by'][j], limit=3)} |")
         L += ["", f"![strategy arrows](arrows-{r['tag']}.png)", "", f"![strategy shifts](shift-{r['tag']}.png)", "",
-              f"![dissonance](dissonance-{r['tag']}.png)", ""]
+              f"![sincerity](sincerity-{r['tag']}.png)", ""]
         if a.compare:
             L += ["Paired differences (first minus second), percentage points:", "",
-                  "| Pair | " + " | ".join(AXES + EXTRA + ["dissonance"]) + " |", "|---|" + "---|" * 7]
+                  "| Pair | " + " | ".join(AXES + EXTRA + ["sincerity"]) + " |", "|---|" + "---|" * 7]
             for pair in a.compare:
                 m1, m2 = pair.split(":")
                 if m1 not in r["methods"] or m2 not in r["methods"]:
                     continue
                 i, j = r["methods"].index(m1), r["methods"].index(m2)
                 cells = []
-                for x in AXES + EXTRA + ["dissonance"]:
+                for x in AXES + EXTRA + ["sincerity"]:
                     d = (r["boot"][x][:, i] - r["boot"][x][:, j]) * 100
                     pt = (r[x][i] - r[x][j]) * 100
                     lo, hi = np.percentile(d, [2.5, 97.5])

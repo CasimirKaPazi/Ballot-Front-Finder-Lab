@@ -695,15 +695,29 @@ METHODS = {
 }
 
 
+# Method groups for --methods / --exclude (tags: a method can be in several groups)
+GROUPS = {
+    "condorcet": ["Baldwin", "Copeland", "Minimax", "Ranked pairs", "Schulze", "SICT", "Condorcet-random-drop",
+                  "BTR-Borda", "BTR-IRV", "Benham"],
+    "plurality-based": ["Plurality", "Top-two runoff", "IRV", "BTR-IRV", "Benham"],
+    "rated": ["Score", "MJ", "STAR", "BTR-score", "MARS", "ARA", "ARA-Top", "Reciprocal score", "Score+"],
+    "approval-based": ["Approval", "Approval runoff", "Approval runoff if needed", "MDDA"],
+    "references": ["Random ballot", "Random pair runoff", "Anti-plurality", "TRASH"],
+}
+
+
 def select(include=None, exclude=None):
-    """Method names to run: `include` starts from none, `exclude` from all. Matching ignores case."""
-    lookup = {k.lower(): k for k in METHODS}
+    """Method names to run: `include` starts from none, `exclude` from all. Names are methods or
+    groups (see GROUPS); matching ignores case."""
+    lookup = {k.lower(): [k] for k in METHODS}
+    lookup.update({g: ms for g, ms in GROUPS.items()})
 
     def resolve(names):
         bad = [x for x in names if x.lower() not in lookup]
         if bad:
-            raise SystemExit(f"unknown method(s): {', '.join(bad)}. Available: {', '.join(METHODS)}")
-        return {lookup[x.lower()] for x in names}
+            raise SystemExit(f"unknown method(s) or group(s): {', '.join(bad)}. Methods: {', '.join(METHODS)}. "
+                             f"Groups: {', '.join(GROUPS)}")
+        return {m for x in names for m in lookup[x.lower()]}
 
     chosen = resolve(include) if include else set(METHODS)
     chosen -= resolve(exclude or [])
