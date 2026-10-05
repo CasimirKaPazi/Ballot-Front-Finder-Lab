@@ -48,11 +48,21 @@ check("TRASH", METHODS["TRASH"].honest(u), [2 / 3, 0, 1 / 3, 0])
 # MARA-Bottom: every non-zero rating is approval
 check("MARA-Bottom", METHODS["MARA-Bottom"].honest(u), [0, 1, 0, 0])
 
+# Methods added in the third batch, same 4-3-2 profile
+check("Ranked pairs", METHODS["Ranked pairs"].honest(u), [0, 1, 0, 0])
+check("Schulze", METHODS["Schulze"].honest(u), [0, 1, 0, 0])
+check("Approval runoff if needed (G approved by all 9)", METHODS["Approval runoff if needed"].honest(u), [0, 1, 0, 0])
+check("TRASH2 (B vs R/G/B: B always wins)", METHODS["TRASH2"].honest(u), [0, 0, 1, 0])
+check("Score+ (only K eliminated, G wins after renormalising)", METHODS["Score+"].honest(u), [0, 1, 0, 0])
+p = METHODS["Reciprocal score"].honest(u)
+print("Reciprocal score on 4-3-2:", np.round(p, 3)); assert abs(p.sum() - 1) < 1e-9
+
 # Exact three-way tie: each method shares probability equally among R, G, B
 t = profile([(3, [0.55, 0.17, 0.15, 0.13]), (3, [0.15, 0.55, 0.17, 0.13]), (3, [0.17, 0.15, 0.55, 0.13])])
 for m in ["Plurality", "IRV", "Copeland", "Score", "STAR", "BTR-score", "MARS", "MARA", "MARA-Top", "MJ",
           "Top-two runoff", "Approval runoff", "BTR-Borda", "Minimax", "Baldwin", "Borda",
-          "Anti-plurality", "SICT", "MDDA", "BTR-IRV", "Benham"]:
+          "Anti-plurality", "SICT", "MDDA", "BTR-IRV", "Benham",
+          "Ranked pairs", "Schulze", "Approval runoff if needed", "Reciprocal score", "Score+"]:
     check(f"{m} three-way tie", METHODS[m].honest(t), [1 / 3, 1 / 3, 1 / 3, 0])
 
 # Baseline lottery from the example: utilities 100, 50, 25, 25 -> 50%, 25%, 12.5%, 12.5%
@@ -80,3 +90,14 @@ from methods import select
 assert select(["star", "SICT"]) == ["STAR", "SICT"]
 assert "Plurality" not in select(None, ["plurality"]) and len(select()) == len(METHODS)
 print("method selection ok")
+
+# Ranked pairs and Schulze on a cycle: R>G>B (4), G>B>R (3), B>R>G (2). Margins R-G 3, G-B 5, B-R 1.
+# Ranked pairs locks G>B, then R>G, skips B>R: R wins. Schulze agrees here.
+cy = profile([(4, [0.5, 0.3, 0.15, 0.05]), (3, [0.05, 0.5, 0.3, 0.15]), (2, [0.3, 0.05, 0.5, 0.15])])
+check("Ranked pairs on a cycle", METHODS["Ranked pairs"].honest(cy), [1, 0, 0, 0])
+check("Schulze on a cycle", METHODS["Schulze"].honest(cy), [1, 0, 0, 0])
+
+# Score+ protects a shared compromise: two factions rate each other high; a strong outsider only
+# narrowly ahead in total is not a robust winner over the faction that shares support with it.
+sp = np.array([[5, 4, 0, 0]] * 4 + [[4, 5, 0, 0]] * 3 + [[0, 0, 5, 0]] * 2, dtype=float)
+print("Score+ chicken example:", np.round(METHODS["Score+"].tally(sp), 3))

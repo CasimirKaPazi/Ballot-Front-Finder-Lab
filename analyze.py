@@ -152,7 +152,7 @@ def main():
     ap.add_argument("--out", default="analysis")
     ap.add_argument("--boot", type=int, default=1000, help="bootstrap replicates")
     ap.add_argument("--compare", nargs="*", default=[], help='pairs "A:B" for paired differences')
-    ap.add_argument("--hide", nargs="*", default=["Random ballot", "Random pair runoff", "Anti-plurality", "TRASH"],
+    ap.add_argument("--hide", nargs="*", default=["Random ballot", "Random pair runoff", "Anti-plurality", "TRASH", "TRASH2"],
                     help="methods left out of the scatter plots (they stay in tables and heatmaps); "
                          "give --hide with no names to show all")
     ap.add_argument("--seed", type=int, default=0)

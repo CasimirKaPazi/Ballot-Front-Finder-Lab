@@ -469,6 +469,129 @@ def t_mdda(B):
     return uniform_max(np.where(keep, app, -1.0))
 
 
+def place_dist(values, k):
+    """Probability that each candidate ends up in place k (0 = first) when ranking by values,
+    high to low, with ties broken uniformly at random."""
+    order = np.unique(np.round(values, 9))[::-1]
+    pos, P = 0, np.zeros(len(values))
+    for x in order:
+        grp = np.flatnonzero(np.abs(values - x) < 1e-8)
+        if pos <= k < pos + len(grp):
+            P[grp] = 1 / len(grp)
+            return P
+        pos += len(grp)
+    return P
+
+
+def t_trash2(B):
+    """TRASH2: as TRASH, but with the runner-up of plurality and the runner-up of anti-plurality."""
+    C = B.shape[1]
+    first = np.bincount(B.argmax(axis=1), minlength=C).astype(float)
+    last = np.bincount(B.argmin(axis=1), minlength=C).astype(float)
+    pw, aw = place_dist(first, 1), place_dist(-last, 1)
+    M = margins(B)
+    P = np.zeros(C)
+    for a in np.flatnonzero(pw):
+        for b in np.flatnonzero(aw):
+            w = pw[a] * aw[b]
+            if a == b:
+                P[a] += w
+            else:
+                runoff(P, -M, a, b, w)
+    return P
+
+
+RP_MAX_ORDERS = 240
+
+
+def t_ranked_pairs(B):
+    """Ranked Pairs (margins): lock pairwise wins from the largest margin down, skipping any that
+    would close a cycle; the candidate with no locked defeat wins. Pairs with equal margins are
+    locked in every order and the results averaged (up to RP_MAX_ORDERS fixed random orders)."""
+    C = B.shape[1]
+    M = margins(B)
+    pairs = [(a, b) for a in range(C) for b in range(C) if M[a, b] > 0]
+    vals = sorted({M[a, b] for a, b in pairs}, reverse=True)
+    groups = [[p for p in pairs if M[p] == v] for v in vals]
+    n_orders = 1
+    for g in groups:
+        n_orders *= int(np.prod(range(1, len(g) + 1)))
+    if n_orders <= RP_MAX_ORDERS:
+        orders = [[p for part in parts for p in part] for parts in product(*[permutations(g) for g in groups])]
+    else:
+        r = np.random.default_rng(0)
+        orders = [[p for g in groups for p in (g[i] for i in r.permutation(len(g)))] for _ in range(RP_MAX_ORDERS)]
+    P = np.zeros(C)
+    for order in orders:
+        reach = np.eye(C, dtype=bool)                 # reach[x, y]: locked path from x to y
+        locked = np.zeros((C, C), dtype=bool)
+        for a, b in order:
+            if not reach[b, a]:
+                locked[a, b] = True
+                reach = reach | (reach[:, [a]] & reach[[b], :])
+        src = np.flatnonzero(~locked.any(axis=0))
+        P[src] += 1 / (len(src) * len(orders))
+    return P
+
+
+def t_schulze(B):
+    """Schulze (margins): strongest path strengths; winners beat or tie everyone by path strength."""
+    C = B.shape[1]
+    M = margins(B)
+    p = np.where(M > 0, M, 0).astype(float)
+    for k in range(C):
+        p = np.maximum(p, np.minimum(p[:, [k]], p[[k], :]))
+    np.fill_diagonal(p, 0)
+    win = np.array([all(p[a, b] >= p[b, a] for b in range(C) if b != a) for a in range(C)], dtype=float)
+    return win / win.sum()
+
+
+def t_approval_runoff_if_needed(B):
+    """Ranked approval ballot. The most approved candidate wins outright if more than half the
+    voters approve it; otherwise top two by approvals, majority runoff, a tie to more approvals."""
+    n, C = B.shape
+    app = (B >= C).sum(axis=0).astype(float)
+    if app.max() > n / 2:
+        return uniform_max(app)
+    return t_approval_runoff(B)
+
+
+def t_reciprocal_score(B):
+    """Reciprocal Score Voting (interpretation): a voter's faction is their top-rated candidate(s).
+    Each score s[v, c] is multiplied by min(1, R(c -> F_v) / R(F_v -> c)), where R(X -> Y) is the mean
+    normalised rating faction X gives Y (averaged over the members of a set). A candidate nobody
+    top-rates has no faction, so scores for it are left unchanged."""
+    C = B.shape[1]
+    top = B >= B.max(axis=1, keepdims=True)
+    has = top.any(axis=0)                            # candidates with a faction
+    R = np.zeros((C, C))                             # R[x, y]: mean rating faction x gives y, in [0, 1]
+    R[has] = (top[:, has].T.astype(float) @ B) / top[:, has].sum(axis=0)[:, None] / MAXS
+    k = top.sum(axis=1, keepdims=True)
+    give = top @ R / k                               # give[v, c]: support the voter's faction gives c
+    back = top @ R.T / k                             # back[v, c]: support c's faction gives back
+    mult = np.where(give > 0, np.minimum(1.0, back / np.where(give > 0, give, 1)), 1.0)
+    mult = np.where(top | ~has[None, :], 1.0, mult)
+    return uniform_max((B * mult).sum(axis=0))
+
+
+def t_score_plus(B):
+    """Score+ (simplified variant from the votingtheory.org thread): A defeats B robustly if A's total
+    minus the scores both share (per voter the lower of the two) still exceeds B's total.
+    Candidates with a robust defeat are eliminated; scores are renormalised per voter among the
+    rest (lowest to 0, highest to 5); the highest total wins."""
+    C = B.shape[1]
+    tot = B.sum(axis=0)
+    excess = np.clip(B[:, :, None] - B[:, None, :], 0, None).sum(axis=0)   # excess[a, b] = sum max(0, s_a - s_b)
+    defeated = (excess > tot[None, :] + EPS).any(axis=0)
+    keep = np.flatnonzero(~defeated)
+    S = B[:, keep]
+    mn, mx = S.min(axis=1, keepdims=True), S.max(axis=1, keepdims=True)
+    N = np.where(mx > mn, MAXS * (S - mn) / np.where(mx > mn, mx - mn, 1), 0.0)
+    P = np.zeros(C)
+    P[keep] = uniform_max(N.sum(axis=0))
+    return P
+
+
 @dataclass
 class Method:
     ballot: str
@@ -504,6 +627,12 @@ METHODS = {
     "MARA-Bottom": Method("score", t_mara_bottom),
     "Anti-plurality": Method("veto", t_sum),
     "TRASH": Method("rank", t_trash),
+    "TRASH2": Method("rank", t_trash2),
+    "Ranked pairs": Method("rank", t_ranked_pairs),
+    "Schulze": Method("rank", t_schulze),
+    "Approval runoff if needed": Method("rankapp", t_approval_runoff_if_needed),
+    "Reciprocal score": Method("score", t_reciprocal_score),
+    "Score+": Method("score", t_score_plus),
     "Condorcet-random-drop": Method("rank", t_condorcet_drop),
     "SICT": Method("weak", t_sict),
     "MDDA": Method("trunc", t_mdda),

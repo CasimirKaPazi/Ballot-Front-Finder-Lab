@@ -9,7 +9,7 @@ python sweep.py --group-size 1 10 0 --seeds 1 2          # grid of conditions ->
 python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> analysis/
 ```
 
-300 elections with all 27 methods take about 10 minutes on 2 cores; time scales linearly with cores. Use `--methods` or `--exclude` to run fewer.
+300 elections with all 33 methods take about 12 minutes on 2 cores; time scales linearly with cores. Use `--methods` or `--exclude` to run fewer.
 
 ## Files
 
@@ -132,6 +132,12 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | MARA-Bottom | 0–5 | as MARA, but only a 0 counts as rejection (ratings 1–5 are approvals) |
 | Anti-plurality | veto (one name against) | fewest vetoes wins; sincere: against the least liked |
 | TRASH | ranking | "This Random Acronym Sounds Honest": the plurality winner and the anti-plurality winner (fewest last places) meet in a runoff, and the one ranked lower by more voters wins; if both are the same candidate, it wins. A deliberately bad reference |
+| TRASH2 | ranking | as TRASH, but the runoff is between the plurality runner-up and the anti-plurality runner-up (second fewest last places); the one ranked lower by more voters wins. Also a deliberately bad reference |
+| Ranked pairs | ranking | lock pairwise wins from the largest margin down, skipping any that would close a cycle; the candidate with no locked defeat wins. Equal margins are locked in every order and averaged (at most 240 orders, otherwise 240 fixed random ones) |
+| Schulze | ranking | strongest path by margins; a candidate whose path to every rival is at least as strong as the rival's path back wins |
+| Approval runoff if needed | ranking + approval line | as Approval runoff, but a candidate approved by more than half the voters wins outright |
+| Reciprocal score | 0–5 | interpretation of [electowiki](https://electowiki.org/wiki/Reciprocal_Score_Voting): a voter's faction is their top-rated candidate(s). R(X→Y) is the mean rating supporters of X give Y, as a share of 5. A score for c is multiplied by min(1, R(c→F)/R(F→c)), F the voter's faction: support that c's supporters do not return is cut. Scores for the voter's own top and for candidates nobody top-rates stay unchanged; highest total wins |
+| Score+ | 0–5 | simplified variant from the [votingtheory.org thread](https://www.votingtheory.org/forum/topic/138/score-interval-score-with-additional-protection-against-the-chicken-dilemma): A defeats B robustly if A's total minus the scores both share (per voter the lower of the two) still exceeds B's total. Robustly defeated candidates are eliminated, each voter's scores among the rest are stretched again to 0–5, highest total wins |
 | Condorcet-random-drop | ranking | Condorcet winner if there is one; otherwise voters are dropped one at a time in random order until the rest have one. Averaged over 32 fixed random orders (the same on every call), so probabilities come in steps of 1/32 |
 | SICT | ranking, ties allowed | Symmetrical ICT: p(X,Y) if (X>Y) + (X=Y at bottom) > (Y>X) + (X=Y at top); X beats Y if p(X,Y) and not p(Y,X), or both and (X>Y) > (Y>X). One unbeaten candidate wins; none or all unbeaten: most first places; otherwise most first places among the unbeaten. Sincere ballots are strict; ties are learned |
 | MDDA | truncated ranking (ranked = approved) | disqualify every candidate that more than half the voters rank some other candidate above (unless all would be); most approved remaining wins. Sincere: rank everyone above the mean |
@@ -169,6 +175,6 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | `dissonance-<c>.png` | PE* and CE* against dissonance |
 | `axes-heatmap.png` | the four axes, methods × conditions (when there are several) |
 
-Methods are identified by labels, not colour. Random ballot, Random pair runoff, Anti-plurality and TRASH are left out of the scatter plots by default (`--hide`), since their distance compresses the scale; they stay in tables and heatmaps. `--hide` with no names shows all.
+Methods are identified by labels, not colour. Random ballot, Random pair runoff, Anti-plurality, TRASH and TRASH2 are left out of the scatter plots by default (`--hide`), since their distance compresses the scale; they stay in tables and heatmaps. `--hide` with no names shows all.
 
 Sample size: with 160 elections per condition the intervals of single values are about ±3 points and many paired differences are still ties. For conclusions, several hundred elections per condition and at least two seeds are advisable.
