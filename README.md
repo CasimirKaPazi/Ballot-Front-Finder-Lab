@@ -9,7 +9,7 @@ python sweep.py --group-size 1 10 0 --seeds 1 2          # grid of conditions ->
 python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> analysis/
 ```
 
-300 elections with all 33 methods take about 12 minutes on 2 cores; time scales linearly with cores. Use `--methods` or `--exclude` to run fewer.
+300 elections with all 33 methods take about 8 minutes on 2 cores (default condition; 200 voters and 6 candidates take about 5 times as long); time scales linearly with cores. Use `--methods` or `--exclude` to run fewer.
 
 ## Files
 
@@ -39,24 +39,57 @@ python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> analysis
   - truncated ranking: swap two candidates, or rank one more or one fewer
   - score: set one candidate to a different value 0–5
 
-  A group that deviates sometimes (15%) proposes going back to sincere.
+  Voters start sincere. A group that has not deviated yet changes the sincere ballot of its average member (mean utilities of the group); a deviating group changes its current shared ballot, and sometimes (15% of proposals) proposes going back to sincere.
 - **Acceptance:** a proposal is kept only if it raises the group's expected utility. A return to sincere is also kept when it is not worse: voters prefer honesty when indifferent. Without this, a deviation that once paid off stays forever once it stops mattering, and dissonance keeps growing with the number of rounds instead of reflecting what strategy actually pays.
-- **Rounds:** 20, groups in random order each round. In a test with 50 voters and 6 candidates, PE*, CE* and dissonance changed only within noise between 20 and 40 rounds; at 10 rounds they were still moving.
+- **Rounds:** 20, groups in random order each round. In a test with 50 voters and 6 candidates, PE*, CE* and dissonance changed only within noise between 20 and 40 rounds; at 10 rounds they were still moving. Stopping early once a round passes without any accepted change was tested and rejected (200 elections, default condition): it saves most of the run time, but quiet rounds are common long before learning has finished, since each group tries only one random change per round. Stopping after one quiet round changed 55 of 99 method × axis values clearly (dissonance lower for almost every method, CE* up to 9 points higher for Condorcet methods); after two quiet rounds still 50. For the same reason, `settled` (no change in the last round) is a weak sign of convergence.
+- **Feature sums:** every tally except Condorcet-random-drop depends on the ballots only through sums over voters of per-voter features (totals, first and last places, the pairwise matrix, grade counts, first choices among each subset of candidates, ...). Each method lists its features and decides from their sums. During learning the sums are kept per poll sample and updated only for the group that changes. All features are integers, so this gives exactly the same learned ballots as recounting (checked against the earlier code).
+- **Conditional top-two runoff** is not a separate method: a candidate with more than half the first choices also wins every runoff, since the runoff reuses the same rankings. (In a real two-round election voters vote again, with new information and different turnout; that is not modelled.)
 - **Random streams:** each method learns with its own random stream per election, keyed by the method's name, so results do not change when methods are added or reordered.
+
+## Electorates
+
+Each election draws a fresh electorate (`scenario.py`):
+
+- cluster centres: `--clusters` points, standard normal in `--dims` dimensions;
+- cluster sizes: random weights from a flat Dirichlet distribution, so some elections have one dominant cluster and others are balanced;
+- voters: each assigned to a cluster by these weights, placed normally around its centre with standard deviation `--spread`;
+- candidates: drawn from the same distribution as voters (cluster by the same weights, same spread);
+- utilities: `u = exp(-distance / width)`, absolute and not normalised: 1 at zero distance, towards 0 far away. A smaller `--width` makes voters care only about nearby candidates.
 
 ## Parameters
 
-Scenario flags as in step 1 (`--voters`, `--cands`, `--dims`, `--clusters`, `--spread`, `--width`, `--seed`), plus:
+`run.py` (one condition):
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--elections` | 200 | electorates |
+| `--voters` | 99 | voters per election (odd, so pairwise majorities rarely tie) |
+| `--cands` | 4 | candidates |
+| `--dims` | 2 | issue-space dimensions |
+| `--clusters` | 3 | voter clusters |
+| `--spread` | 0.5 | standard deviation of voters around their cluster centre (centres have 1) |
+| `--width` | 1.0 | distance scale of the utility fall-off |
+| `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |
 | `--rounds` | 20 | learning rounds |
 | `--samples` | 10 | poll resamples per round |
 | `--group-size` | 0 | most voters that coordinate as one group; 0 = whole ranking group, 1 = every voter alone |
 | `--workers` | all cores | parallel processes |
-| `--methods` | all | run only these methods (start from none); names as in the table below, case ignored |
+| `--methods` | all | run only these methods (start from none); names as in the Methods table, case ignored |
 | `--exclude` | none | run all methods except these |
+| `--out` | `results` | output prefix: `<out>-elections.csv` and `<out>-summary.csv` |
+
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--rounds`, `--samples`, `--group-size`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `<out>-elections.csv` (default `--out sweep`), one run after another.
+
+`analyze.py`:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| (positional) | | one or more elections CSVs |
+| `--out` | `analysis` | output directory |
+| `--boot` | 1000 | bootstrap replicates |
+| `--compare` | none | pairs `"A:B"` for paired differences |
+| `--hide` | Random ballot, Random pair runoff, Anti-plurality, TRASH, TRASH2 | methods left out of the scatter plots; `--hide` alone shows all |
+| `--seed` | 0 | bootstrap random seed |
 
 ## Coordination: what the strategic axes measure
 
@@ -85,6 +118,23 @@ Smaller groups mean more groups, and run time grows with their number: `--group-
 
 ## Axes and other outputs
 
+**Efficiency** against a baseline lottery q, as a ratio of sums over all elections:
+`E = Σ(U_method − U_base) / Σ(U_best − U_base)`, where U is a candidate's total utility, U_method the expected total utility of the method's winner and U_best the best candidate's. The baseline: each voter's personal lottery proportional to `u^τ`, averaged over voters.
+
+| Axis | τ | Baseline |
+|---|---|---|
+| VSE | 0 | random candidate |
+| PE | 1 | utility-proportional lottery (headline) |
+| RBE | ∞ | random ballot |
+
+Within one condition the three rank methods identically (same numerator, different zero point), so only PE is used as an axis. No utility normalisation: a voter who cares little (all candidates far away) counts little.
+
+**Condorcet efficiency (CE):** among elections with a Condorcet winner by sincere utilities, the probability the method elects it.
+
+PE and CE use sincere ballots; PE* and CE* (in the CSV: PE_learned, CE_learned) the learned ballots.
+
+**Output files of `run.py`:** `<out>-elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns, the utilities needed for the axes (U_method, U_best, U_tau0, U_tau1, U_tauinf), has_cw, p_cw (probability of electing the Condorcet winner), dissonance, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
+
 | Column | Meaning |
 |---|---|
 | PE | proportional efficiency, sincere ballots |
@@ -95,7 +145,7 @@ Smaller groups mean more groups, and run time grows with their number: `--group-
 | settled | share of elections where no group changed its ballot in the last round; cycles never settle |
 | compromise, burial, pushover | shares of voters whose learned ballot reverses a real preference, by kind (below) |
 
-The front (`on_front`) uses PE, CE, PE_learned and CE_learned.
+`on_front` in the summary is a quick check on point estimates (PE, CE, PE_learned, CE_learned, no uncertainty). The analysis uses the tie-aware "Dominated by" instead (see Analysis).
 
 **Strategy types** (`strategy.strategy_types`), among voters whose learned ballot reverses at least one real preference:
 - *compromise*: the favourite is not at the top, and the best-liked top candidate is liked above the voter's mean (a viable second choice raised);
@@ -105,6 +155,19 @@ The front (`on_front`) uses PE, CE, PE_learned and CE_learned.
 The three are exclusive. For score ballots, "burial" includes small reversals among lower-rated candidates, so a high burial share can go with low dissonance.
 
 **Cognitive dissonance** (`strategy.dissonance`), per voter: for every pair the ballot orders (a above b) while the voter likes b more, add `u[b] − u[a]`; divide by the sum of `|u[a] − u[b]|` over all pairs. 0 means the ballot never claims a preference the voter does not hold (true for every sincere ballot, since rounding and leaving candidates level never reverse an order). 1 means every preference is reversed. Example, utilities 0.5 / 0.3 / 0.15 / 0.05: voting for the second choice in plurality gives 0.13, voting for the last gives 0.53.
+
+## Ballots and sincere voting
+
+| Ballot | Form | Sincere ballot |
+|---|---|---|
+| one name | one candidate | the favourite |
+| ranking | full strict ranking | by utility |
+| approval | approve or not | every candidate above the voter's mean utility (at least the favourite) |
+| 0–5 | integer score per candidate | stretched to the voter's own utility range, rounded |
+| ranking + approval line | ranking, the top k approved | ranking by utility, line below the last candidate above the mean |
+| veto | one candidate against | the least liked |
+| ranking, ties allowed | levels, equal = tied | strict ranking by utility (ties only arise from learning) |
+| truncated ranking | the top k ranked, the rest unranked (tied last) | rank every candidate above the mean |
 
 ## Methods
 
@@ -157,7 +220,7 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | Output | Meaning |
 |---|---|
 | PE, CE, PE*, CE*, dissonance | point estimate and 95% interval of each value on its own |
-| dominated by | methods at least as good on all four axes and better on one (point estimates), each with the share of bootstrap replicates in which that holds; the report shows at most three, the CSV all |
+| dominated by | methods clearly better on at least one of the four axes and clearly worse on none, each with the axes on which it is better; the report shows at most three, the CSV all. Clearly: the paired 95% interval of the difference excludes 0, smaller differences count as ties. Without this, methods level on one axis (all Condorcet methods have CE = 100) would be kept apart by noise-sized differences in honest PE, and PE* and CE* would never get to decide between them |
 | paired differences (`--compare "A:B"`) | difference A − B per axis with a 95% interval; marked as a tie when the interval includes 0 |
 
 **How to interpret:**
