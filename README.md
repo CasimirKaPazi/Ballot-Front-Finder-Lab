@@ -18,7 +18,7 @@ python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> analysis
 | `scenario.py` | Electorate generator: spatial clusters, absolute utilities `exp(-distance / width)` |
 | `methods.py` | Ballot types, sincere ballots, exact tallies on ballot matrices (ties shared) |
 | `strategy.py` | Learning engine and cognitive dissonance |
-| `metrics.py` | Efficiencies for three baselines, Condorcet efficiency, Pareto front |
+| `metrics.py` | Efficiencies for three baselines, winner's worst margin, Condorcet efficiency, Pareto front |
 | `run.py` | Tallies every electorate with sincere and learned ballots, runs in parallel, writes CSV with the run's parameters as columns |
 | `sweep.py` | Runs a grid of conditions and seeds into one CSV |
 | `analyze.py` | Paired bootstrap, intervals, dominance pointers, paired comparisons, Markdown report |
@@ -98,7 +98,7 @@ How many voters move together decides which strategies pay, and the methods diff
 - **Compromise** (voting for a viable candidate instead of a hopeless favourite) pays even for a single voter. It is the main strategy in Top-two runoff and IRV, and it tends to carry the Condorcet winner into the final round.
 - **Burial** (ranking or rating a rival below a candidate one likes less, to create a cycle or to drop the rival in a runoff) only pays when many voters do it together. A single voter out of 99 is almost never pivotal for it. It is the main strategy against Condorcet methods, STAR and BTR-score, and it targets exactly the Condorcet winner.
 
-Diagnostic run, 60 elections, default scenario, CE with learned ballots:
+Diagnostic run (before WM was introduced), 60 elections, default scenario, CE with learned ballots:
 
 | Method | whole ranking groups | every voter alone | burial (groups / alone) |
 |---|---|---|---|
@@ -129,23 +129,30 @@ Smaller groups mean more groups, and run time grows with their number: `--group-
 
 Within one condition the three rank methods identically (same numerator, different zero point), so only PE is used as an axis. No utility normalisation: a voter who cares little (all candidates far away) counts little.
 
-**Condorcet efficiency (CE):** among elections with a Condorcet winner by sincere utilities, the probability the method elects it.
+**Winner's worst margin (WM)**, the second axis, in % of voters: the elected candidate's smallest head-to-head margin against any other candidate, by sincere preferences, averaged over elections (weighted by the winner probabilities). In short: how clearly the winner would survive the hardest two-way race.
 
-PE and CE use sincere ballots; PE* and CE* (in the CSV: PE_learned, CE_learned) the learned ballots.
+- Positive: the winner is the Condorcet winner, by that much. Negative: a majority prefers some specific rival, by that much.
+- It is a refined Condorcet measure. The motivation is legitimacy: after the election voters judge the result, and if someone other than the Condorcet winner won, they can argue that a majority would have preferred another candidate. WM measures how strong that argument is, instead of only whether it exists: losing a Condorcet winner by one vote costs little, electing a candidate whom a large majority prefers a rival to costs a lot.
+- Every election counts, cycles included, and the value does not depend on the number of voters.
+- With honest ballots Minimax maximises WM by construction (it elects the candidate with the best worst margin), just as all Condorcet methods reach 100 on CE. The strategic version WM* is where methods are tested.
 
-**Output files of `run.py`:** `<out>-elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns, the utilities needed for the axes (U_method, U_best, U_tau0, U_tau1, U_tauinf), has_cw, p_cw (probability of electing the Condorcet winner), dissonance, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
+**Condorcet efficiency (CE)**, reported alongside but no longer an axis: among elections with a Condorcet winner by sincere utilities, the probability the method elects it. It ignores elections without a Condorcet winner and does not distinguish narrow from clear ones.
+
+PE, WM and CE use sincere ballots; PE*, WM* and CE* (in the CSV: PE_learned, WM_learned, CE_learned) the learned ballots. In all cases the preferences that count are the sincere ones.
+
+**Output files of `run.py`:** `<out>-elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns, the utilities needed for the axes (U_method, U_best, U_tau0, U_tau1, U_tauinf), has_cw, p_cw (probability of electing the Condorcet winner), WM (winner's worst margin, share of voters), dissonance, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
 
 | Column | Meaning |
 |---|---|
 | PE | proportional efficiency, sincere ballots |
-| CE | Condorcet efficiency, sincere ballots |
-| PE_learned, CE_learned | the same with learned ballots |
+| WM | winner's worst margin, sincere ballots |
+| PE_learned, WM_learned | the same with learned ballots |
+| CE, CE_learned | Condorcet efficiency, sincere and learned ballots |
 | VSE, RBE | efficiency against random candidate and random ballot, sincere ballots |
 | dissonance | mean cognitive dissonance of the learned ballots (below) |
 | settled | share of elections where no group changed its ballot in the last round; cycles never settle |
-| compromise, burial, pushover | shares of voters whose learned ballot reverses a real preference, by kind (below) |
 
-`on_front` in the summary is a quick check on point estimates (PE, CE, PE_learned, CE_learned, no uncertainty). The analysis uses the tie-aware "Dominated by" instead (see Analysis).
+`on_front` in the summary is a quick check on point estimates (PE, WM, PE_learned, WM_learned, no uncertainty). The analysis uses the tie-aware "Dominated by" instead (see Analysis).
 
 **Strategy types** (`strategy.strategy_types`), among voters whose learned ballot reverses at least one real preference:
 - *compromise*: the favourite is not at the top, and the best-liked top candidate is liked above the voter's mean (a viable second choice raised);
@@ -219,8 +226,8 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 
 | Output | Meaning |
 |---|---|
-| PE, CE, PE*, CE*, dissonance | point estimate and 95% interval of each value on its own |
-| dominated by | methods clearly better on at least one of the four axes and clearly worse on none, each with the axes on which it is better; the report shows at most three, the CSV all. Clearly: the paired 95% interval of the difference excludes 0, smaller differences count as ties. Without this, methods level on one axis (all Condorcet methods have CE = 100) would be kept apart by noise-sized differences in honest PE, and PE* and CE* would never get to decide between them |
+| PE, WM, PE*, WM*, CE, CE*, dissonance | point estimate and 95% interval of each value on its own |
+| dominated by | methods clearly better on at least one of the four axes and clearly worse on none, each with the axes on which it is better; the report shows at most three, the CSV all. Clearly: the paired 95% interval of the difference excludes 0, smaller differences count as ties. Without this, methods level on one axis (e.g. Condorcet methods, which mostly elect the same candidate with honest ballots) would be kept apart by noise-sized differences, and PE* and WM* would never get to decide between them |
 | paired differences (`--compare "A:B"`) | difference A − B per axis with a 95% interval; marked as a tie when the interval includes 0 |
 
 **How to interpret:**
@@ -233,9 +240,9 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 
 | File | Shows |
 |---|---|
-| `arrows-<c>.png` | PE/CE plane, every method's shift from honest (open) to learned ballots (filled, labelled) in one picture; filled points coloured by dissonance (red ramp, capped at the 90th percentile of the plotted methods) |
-| `shift-<c>.png` | the same shifts as one row per method, PE and CE panels; easier to read per method |
-| `dissonance-<c>.png` | PE* and CE* against dissonance |
+| `arrows-<c>.png` | PE/WM plane, every method's shift from honest (open) to learned ballots (filled, labelled) in one picture; filled points coloured by dissonance (red ramp, capped at the 90th percentile of the plotted methods) |
+| `shift-<c>.png` | the same shifts as one row per method, PE and WM panels; easier to read per method |
+| `dissonance-<c>.png` | PE* and WM* against dissonance |
 | `axes-heatmap.png` | the four axes, methods × conditions (when there are several) |
 
 Methods are identified by labels, not colour. Random ballot, Random pair runoff, Anti-plurality, TRASH and TRASH2 are left out of the scatter plots by default (`--hide`), since their distance compresses the scale; they stay in tables and heatmaps. `--hide` with no names shows all.

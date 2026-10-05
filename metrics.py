@@ -11,12 +11,28 @@ Baselines, from each voter's personal lottery p_v(c) proportional to u_v(c)^tau,
 
 Condorcet efficiency (CE): among elections with a sincere Condorcet winner,
 the average probability that the method elects it.
+
+Winner's worst margin (WM), a refined Condorcet measure: the elected candidate's smallest
+head-to-head margin against any other candidate, by sincere preferences, as a share of voters.
+Positive: the winner is the Condorcet winner, by that much. Negative: a majority prefers some
+rival, by that much. Every election counts (cycles included), and it does not depend on the
+number of voters. The axis is the plain average over elections; Minimax maximises it by
+construction with honest ballots, as Condorcet methods do for CE.
 """
 import numpy as np
 
+def worst_margins(u):
+    """m[c]: candidate c's smallest pairwise margin against any other, as a share of voters."""
+    n, C = u.shape
+    gt = (u[:, :, None] > u[:, None, :]).sum(axis=0)
+    M = (gt - gt.T) / n
+    np.fill_diagonal(M, np.inf)
+    return M.min(axis=1)
 
-def election_row(u, P):
-    """Quantities for one election: u utilities, P method's winner probabilities."""
+
+def election_row(u, P, m):
+    """Quantities for one election: u utilities, P method's winner probabilities,
+    m worst margins from worst_margins (the same for all methods)."""
     U = u.sum(axis=0)
     n, C = u.shape
     q0 = np.full(C, 1.0 / C)
@@ -33,6 +49,7 @@ def election_row(u, P):
         "U_tauinf": float(qinf @ U),
         "has_cw": int(len(cw) == 1),
         "p_cw": float(P[cw[0]]) if len(cw) == 1 else float("nan"),
+        "WM": float(P @ m),
     }
 
 
@@ -49,6 +66,7 @@ def summarize(rows):
         "VSE": efficiency(rows, "U_tau0"),
         "RBE": efficiency(rows, "U_tauinf"),
         "CE": float(np.mean(cw)) if cw else float("nan"),
+        "WM": float(np.mean([r["WM"] for r in rows])),
         "elections_with_cw": len(cw),
     }
 

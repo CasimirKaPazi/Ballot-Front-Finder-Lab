@@ -62,7 +62,7 @@ def _visible(r, hide):
 
 
 def arrows(r, path, hide):
-    """Honest (open circle) -> learned ballots (filled) in the PE / CE plane, all methods together.
+    """Honest (open circle) -> learned ballots (filled) in the PE / WM plane, all methods together.
     Filled points are coloured by the dissonance of the learned ballots."""
     idx = _visible(r, hide)
     # cap the colour scale at the 90th percentile, so one extreme method does not wash out the rest
@@ -72,8 +72,8 @@ def arrows(r, path, hide):
     fig, ax = plt.subplots(figsize=(9.2, 6.6))
     texts, anchors = [], []
     for j in idx:
-        x0, y0 = r["PE"][j] * 100, r["CE"][j] * 100
-        x1, y1 = r["PE*"][j] * 100, r["CE*"][j] * 100
+        x0, y0 = r["PE"][j] * 100, r["WM"][j] * 100
+        x1, y1 = r["PE*"][j] * 100, r["WM*"][j] * 100
         ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
                     arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.1, shrinkA=4, shrinkB=5, mutation_scale=9))
         ax.scatter([x0], [y0], s=34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
@@ -82,7 +82,7 @@ def arrows(r, path, hide):
         anchors.append((x1, y1))
         texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
     ax.set_xlabel("PE, proportional efficiency (%)")
-    ax.set_ylabel("CE, Condorcet efficiency (%)")
+    ax.set_ylabel("WM, winner's worst margin (% of voters)")
     ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}", loc="left")
     cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=REDS), ax=ax, fraction=0.035, pad=0.02,
                       extend="max" if vals.max() > dmax else "neither")
@@ -95,12 +95,12 @@ def arrows(r, path, hide):
 
 
 def shift(r, path, hide):
-    """The same shifts as a dumbbell chart: one row per method, PE and CE panels. Rows sorted by PE."""
+    """The same shifts as a dumbbell chart: one row per method, PE and WM panels. Rows sorted by PE."""
     idx = sorted(_visible(r, hide), key=lambda j: r["PE"][j])
     names = [r["methods"][j] for j in idx]
     fig, axs = plt.subplots(1, 2, figsize=(10.5, 0.9 + 0.32 * len(idx)), sharey=True)
     for ax, (a0, a1, title) in zip(axs, [("PE", "PE*", "PE: proportional efficiency (%)"),
-                                         ("CE", "CE*", "CE: Condorcet efficiency (%)")]):
+                                         ("WM", "WM*", "WM: winner's worst margin (% of voters)")]):
         for y, j in enumerate(idx):
             x0, x1 = r[a0][j] * 100, r[a1][j] * 100
             if abs(x1 - x0) > 0.15:
@@ -119,11 +119,11 @@ def shift(r, path, hide):
 
 
 def dissonance(r, path, hide):
-    """PE* and CE* against dissonance, side by side. No marginal intervals: they show how much
+    """PE* and WM* against dissonance, side by side. No marginal intervals: they show how much
     single values vary between elections, not how surely methods differ (paired differences do)."""
     idx = _visible(r, hide)
     fig, axs = plt.subplots(1, 2, figsize=(11, 5.2), sharex=True)
-    for ax, axis, name in zip(axs, ["PE*", "CE*"], ["PE* (learned ballots, %)", "CE* (learned ballots, %)"]):
+    for ax, axis, name in zip(axs, ["PE*", "WM*"], ["PE* (learned ballots, %)", "WM* (learned ballots, % of voters)"]):
         texts, anchors = [], []
         for j in idx:
             x, y = r["dissonance"][j] * 100, r[axis][j] * 100

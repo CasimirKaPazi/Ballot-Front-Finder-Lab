@@ -67,7 +67,7 @@ for m in ["Plurality", "IRV", "Copeland", "Score", "STAR", "BTR-score", "MARS", 
 
 # Baseline lottery from the example: utilities 100, 50, 25, 25 -> 50%, 25%, 12.5%, 12.5%
 one = np.array([[100, 50, 25, 25]], dtype=float)
-r = election_row(one, np.array([1, 0, 0, 0.0]))
+r = election_row(one, np.array([1, 0, 0, 0.0]), np.zeros(4))
 check("tau=1 baseline utility", np.array([r["U_tau1"]]), [100 * .5 + 50 * .25 + 25 * .125 * 2])
 
 for m, fn in METHODS.items():
@@ -124,3 +124,11 @@ for name, m in METHODS.items():
         S2 = S + (m.features(B2[:3]) - F[:3]).sum(axis=0)
         assert np.allclose(m.decide_many(S2[None], B.shape[1])[0], m.tally(B2)), name
 print("incremental feature sums ok")
+
+# Winner's worst margin: a 70:29 Condorcet winner has +41 points, the loser -41;
+# in a 2:1 cycle every candidate's worst margin is -33 points
+from metrics import worst_margins
+clear = profile([(70, [0.9, 0.5, 0.1]), (29, [0.1, 0.5, 0.9])])
+check("worst margins, clear winner", worst_margins(clear), [41 / 99, -41 / 99, -41 / 99])
+cyc3 = profile([(33, [0.9, 0.5, 0.1]), (33, [0.1, 0.9, 0.5]), (33, [0.5, 0.1, 0.9])])
+check("worst margins, 2:1 cycle", worst_margins(cyc3), [-1 / 3, -1 / 3, -1 / 3])

@@ -7,15 +7,16 @@ Each electorate is tallied twice per method: with sincere ballots, and after the
 (voters with the same sincere ranking) have learned shared ballots (see strategy.py).
 
 Axes of the Pareto front:
-    PE, CE     proportional and Condorcet efficiency, sincere ballots
-    PE*, CE*   the same with learned ballots
+    PE, WM     proportional efficiency and winner's worst margin, sincere ballots (see metrics.py)
+    PE*, WM*   the same with learned ballots
+CE, CE* (Condorcet efficiency) are reported alongside.
 Also reported: VSE and RBE (sincere), cognitive dissonance of the learned ballots
 (see strategy.dissonance), share of elections where learning settled (cycles never do).
 
 Outputs (prefix set by --out):
     <out>-elections.csv   one row per (election, method, ballots), with the run's parameters
                           as columns, so several runs can be combined (see analyze.py)
-    <out>-summary.csv     one row per method, with on_front for the PE/CE/PE*/CE* front
+    <out>-summary.csv     one row per method, with on_front for the PE/WM/PE*/WM* front
 """
 import argparse
 import csv
@@ -26,23 +27,24 @@ import numpy as np
 from scenario import Scenario, electorate
 from methods import METHODS, select
 from strategy import learn, strategy_types
-from metrics import election_row, summarize, pareto
+from metrics import election_row, summarize, pareto, worst_margins
 
 
 def one_election(args):
     sc, seed, e, rounds, samples, group_size, names = args
     rng = np.random.default_rng([seed, e])
     u = electorate(sc, rng)
+    m_cand = worst_margins(u)                       # each candidate's worst head-to-head margin
     out = []
     for name in names:
         m = METHODS[name]
-        out.append({"election": e, "method": name, "ballots": "sincere", **election_row(u, m.honest(u)),
+        out.append({"election": e, "method": name, "ballots": "sincere", **election_row(u, m.honest(u), m_cand),
                     "dissonance": 0.0, "settled": 1, "compromise": 0.0, "pushover": 0.0, "burial": 0.0})
         # Each method learns with its own random stream, keyed by name, so results stay
         # the same when methods are added or reordered.
         mrng = np.random.default_rng([seed, e, zlib.crc32(name.encode())])
         B, settled, dis = learn(m, u, mrng, rounds, samples, group_size)
-        out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, m.tally(B)),
+        out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, m.tally(B), m_cand),
                     "dissonance": dis, "settled": int(settled), **strategy_types(B, u)})
     return out
 
@@ -97,14 +99,15 @@ def main():
         sinc = [r for r in results if r["method"] == m and r["ballots"] == "sincere"]
         lrn = [r for r in results if r["method"] == m and r["ballots"] == "learned"]
         s, l = summarize(sinc), summarize(lrn)
-        summ[m] = {"PE": s["PE"], "CE": s["CE"], "PE_learned": l["PE"], "CE_learned": l["CE"],
+        summ[m] = {"PE": s["PE"], "WM": s["WM"], "PE_learned": l["PE"], "WM_learned": l["WM"],
+                   "CE": s["CE"], "CE_learned": l["CE"],
                    "VSE": s["VSE"], "RBE": s["RBE"],
                    "dissonance": float(np.mean([r["dissonance"] for r in lrn])),
                    "settled": float(np.mean([r["settled"] for r in lrn]))}
-    axes = ["PE", "CE", "PE_learned", "CE_learned"]
+    axes = ["PE", "WM", "PE_learned", "WM_learned"]
     front = set(pareto([[summ[m][x] for x in axes] for m in names]))
 
-    cols = ["PE", "CE", "PE_learned", "CE_learned", "VSE", "RBE", "dissonance", "settled"]
+    cols = ["PE", "WM", "PE_learned", "WM_learned", "CE", "CE_learned", "VSE", "RBE", "dissonance", "settled"]
     with open(f"{a.out}-summary.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["method"] + cols + ["on_front"])
@@ -114,13 +117,14 @@ def main():
     print(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.clusters} clusters, "
           f"spread {a.spread}, width {a.width}; learning {a.rounds} rounds x {a.samples} poll samples, "
           f"group size {a.group_size or 'unlimited'}; seed {a.seed}")
-    print(f"{'method':<20}{'PE':>7}{'CE':>7}{'PE*':>7}{'CE*':>7}{'dissonance':>12}{'settled':>9}  front")
+    print(f"{'method':<26}{'PE':>7}{'WM':>7}{'PE*':>7}{'WM*':>7}{'CE':>7}{'CE*':>7}{'dissonance':>12}{'settled':>9}  front")
     for m in sorted(names, key=lambda m: -summ[m]["PE"]):
         s = summ[m]
-        print(f"{m:<20}{s['PE']*100:7.1f}{s['CE']*100:7.1f}{s['PE_learned']*100:7.1f}{s['CE_learned']*100:7.1f}"
+        print(f"{m:<26}{s['PE']*100:7.1f}{s['WM']*100:7.1f}{s['PE_learned']*100:7.1f}{s['WM_learned']*100:7.1f}"
+              f"{s['CE']*100:7.1f}{s['CE_learned']*100:7.1f}"
               f"{s['dissonance']*100:11.1f}%{s['settled']*100:8.0f}%"
               f"  {'*' if names.index(m) in front else ''}")
-    print("PE*, CE*: with learned ballots")
+    print("PE*, WM*, CE*: with learned ballots; WM in % of voters; front on PE, WM, PE*, WM*")
 
 
 if __name__ == "__main__":
