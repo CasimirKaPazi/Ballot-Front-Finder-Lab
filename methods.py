@@ -231,7 +231,6 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "last": (lambda B: _onehot(B.argmin(axis=1), B.shape[1]), lambda C: (C,)),
     "gt": (lambda B: (B[:, :, None] > B[:, None, :]).reshape(len(B), -1), lambda C: (C, C)),
     "app": (lambda B: B >= B.shape[1], lambda C: (C,)),                       # rankapp approvals
-    "ge1": (lambda B: B >= 1, lambda C: (C,)),
     "ge3": (lambda B: B >= 3, lambda C: (C,)),
     "ge5": (lambda B: B >= MAXS, lambda C: (C,)),
     "pos": (lambda B: B > 0, lambda C: (C,)),
@@ -377,7 +376,7 @@ def d_mars(s):
     return bottom_two_runoff(tot, lambda a, b: M[a, b] + (tot[a] - tot[b]) / MAXS)
 
 
-def mara(key):
+def ara(key):
     def d(s):
         M, app = margins_of(s), s[key]
         return bottom_two_runoff(app, lambda a, b: M[a, b] + (app[a] - app[b]))
@@ -385,14 +384,10 @@ def mara(key):
 
 
 def d_trash(s):
-    """TRASH (This Random Acronym Sounds Honest): the plurality winner and the anti-plurality winner
-    (fewest last places) meet in a runoff, and the one ranked lower by more voters wins.
-    If both are the same candidate, it wins. Ties at each stage are split uniformly."""
-    return _trash(s, uniform_max(s["first"]), uniform_max(-s["last"]))
-
-
-def d_trash2(s):
-    """TRASH2: as TRASH, but with the runner-up of plurality and the runner-up of anti-plurality."""
+    """TRASH (This Random Acronym Sounds Honest): the plurality runner-up and the anti-plurality
+    runner-up (second fewest last places) meet in a runoff, and the one ranked lower by more voters
+    wins. If both are the same candidate, it wins. Ties at each stage are split uniformly.
+    A deliberately bad reference."""
     return _trash(s, place_dist(s["first"], 1), place_dist(-s["last"], 1))
 
 
@@ -683,12 +678,10 @@ METHODS = {
     "STAR": M_("score", d_star, ("sum", "gt")),
     "BTR-score": M_("score", d_btr, ("sum", "gt")),
     "MARS": M_("score", d_mars, ("sum", "gt")),
-    "MARA": M_("score", mara("ge3"), ("ge3", "gt")),            # ratings 3-5 count as approval
-    "MARA-Top": M_("score", mara("ge5"), ("ge5", "gt")),        # only a 5 counts as approval
-    "MARA-Bottom": M_("score", mara("ge1"), ("ge1", "gt")),     # only a 0 counts as rejection
+    "ARA": M_("score", ara("ge3"), ("ge3", "gt")),              # ratings 3-5 count as approval
+    "ARA-Top": M_("score", ara("ge5"), ("ge5", "gt")),          # only a 5 counts as approval
     "Anti-plurality": M_("veto", d_sum, ("sum",)),
     "TRASH": M_("rank", d_trash, ("first", "last", "gt")),
-    "TRASH2": M_("rank", d_trash2, ("first", "last", "gt")),
     "Ranked pairs": M_("rank", d_ranked_pairs, ("gt",)),
     "Schulze": M_("rank", d_schulze, ("gt",)),
     "Approval runoff if needed": M_("rankapp", d_approval_runoff_if_needed, ("n", "app", "gt")),

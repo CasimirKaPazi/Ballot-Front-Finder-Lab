@@ -21,7 +21,7 @@ check("IRV (K out, G out, R wins)", METHODS["IRV"].honest(u), [1, 0, 0, 0])
 check("Copeland", METHODS["Copeland"].honest(u), [0, 1, 0, 0])
 check("BTR-score", METHODS["BTR-score"].honest(u), [0, 1, 0, 0])
 check("MARS", METHODS["MARS"].honest(u), [0, 1, 0, 0])
-check("MARA (3-5)", METHODS["MARA"].honest(u), [0, 1, 0, 0])
+check("ARA (3-5)", METHODS["ARA"].honest(u), [0, 1, 0, 0])
 check("Random ballot", METHODS["Random ballot"].honest(u), [4 / 9, 2 / 9, 3 / 9, 0])
 
 # New methods on the same 4-3-2 profile
@@ -32,7 +32,7 @@ check("BTR-Borda", METHODS["BTR-Borda"].honest(u), [0, 1, 0, 0])
 check("Minimax", METHODS["Minimax"].honest(u), [0, 1, 0, 0])
 check("Baldwin (K out, B out, G beats R)", METHODS["Baldwin"].honest(u), [0, 1, 0, 0])
 check("MJ (R and G median 3, R wins on removal)", METHODS["MJ"].honest(u), [1, 0, 0, 0])
-check("MARA-Top", METHODS["MARA-Top"].honest(u), [1, 0, 0, 0])
+check("ARA-Top", METHODS["ARA-Top"].honest(u), [1, 0, 0, 0])
 
 # Methods added later, same 4-3-2 profile (G is the Condorcet winner)
 check("Anti-plurality (everyone vetoes K: R, G, B tie)", METHODS["Anti-plurality"].honest(u), [1 / 3, 1 / 3, 1 / 3, 0])
@@ -42,24 +42,19 @@ check("MDDA (R and B dominated by G)", METHODS["MDDA"].honest(u), [0, 1, 0, 0])
 check("BTR-IRV (K out vs G, B out vs G, G beats R)", METHODS["BTR-IRV"].honest(u), [0, 1, 0, 0])
 check("Benham (Condorcet winner at once)", METHODS["Benham"].honest(u), [0, 1, 0, 0])
 
-# TRASH: plurality winner R, anti-plurality all veto K -> R, G, B tie for fewest lasts.
-# Runoffs R vs G (G preferred 5-4, so R wins), R vs B (R preferred 6-3, so B wins), R vs R (R).
-check("TRASH", METHODS["TRASH"].honest(u), [2 / 3, 0, 1 / 3, 0])
-# MARA-Bottom: every non-zero rating is approval
-check("MARA-Bottom", METHODS["MARA-Bottom"].honest(u), [0, 1, 0, 0])
 
 # Methods added in the third batch, same 4-3-2 profile
 check("Ranked pairs", METHODS["Ranked pairs"].honest(u), [0, 1, 0, 0])
 check("Schulze", METHODS["Schulze"].honest(u), [0, 1, 0, 0])
 check("Approval runoff if needed (G approved by all 9)", METHODS["Approval runoff if needed"].honest(u), [0, 1, 0, 0])
-check("TRASH2 (B vs R/G/B: B always wins)", METHODS["TRASH2"].honest(u), [0, 0, 1, 0])
+check("TRASH (runner-ups; B vs R/G/B: B always wins)", METHODS["TRASH"].honest(u), [0, 0, 1, 0])
 check("Score+ (only K eliminated, G wins after renormalising)", METHODS["Score+"].honest(u), [0, 1, 0, 0])
 p = METHODS["Reciprocal score"].honest(u)
 print("Reciprocal score on 4-3-2:", np.round(p, 3)); assert abs(p.sum() - 1) < 1e-9
 
 # Exact three-way tie: each method shares probability equally among R, G, B
 t = profile([(3, [0.55, 0.17, 0.15, 0.13]), (3, [0.15, 0.55, 0.17, 0.13]), (3, [0.17, 0.15, 0.55, 0.13])])
-for m in ["Plurality", "IRV", "Copeland", "Score", "STAR", "BTR-score", "MARS", "MARA", "MARA-Top", "MJ",
+for m in ["Plurality", "IRV", "Copeland", "Score", "STAR", "BTR-score", "MARS", "ARA", "ARA-Top", "MJ",
           "Top-two runoff", "Approval runoff", "BTR-Borda", "Minimax", "Baldwin", "Borda",
           "Anti-plurality", "SICT", "MDDA", "BTR-IRV", "Benham",
           "Ranked pairs", "Schulze", "Approval runoff if needed", "Reciprocal score", "Score+"]:

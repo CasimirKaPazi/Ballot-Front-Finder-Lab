@@ -9,7 +9,7 @@ python sweep.py --group-size 1 10 0 --seeds 1 2          # grid of conditions ->
 python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> analysis/
 ```
 
-300 elections with all 33 methods take about 8 minutes on 2 cores (default condition; 200 voters and 6 candidates take about 5 times as long); time scales linearly with cores. Use `--methods` or `--exclude` to run fewer.
+300 elections with all 31 methods take about 8 minutes on 2 cores (default condition; 200 voters and 6 candidates take about 5 times as long); time scales linearly with cores. Use `--methods` or `--exclude` to run fewer.
 
 ## Files
 
@@ -88,7 +88,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--out` | `analysis` | output directory |
 | `--boot` | 1000 | bootstrap replicates |
 | `--compare` | none | pairs `"A:B"` for paired differences |
-| `--hide` | Random ballot, Random pair runoff, Anti-plurality, TRASH, TRASH2 | methods left out of the scatter plots; `--hide` alone shows all |
+| `--hide` | Random ballot, Random pair runoff, Anti-plurality, TRASH | methods left out of the scatter plots; `--hide` alone shows all |
 | `--seed` | 0 | bootstrap random seed |
 
 ## Coordination: what the strategic axes measure
@@ -197,12 +197,10 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | STAR | 0–5 | top two by total, majority runoff; a runoff tie goes to the higher total |
 | BTR-score | 0–5 | order by total score, bottom-two pairwise runoffs climbing up |
 | MARS | 0–5 | as BTR-score; each match adds share preferring to score as share of maximum |
-| MARA | 0–5 | ratings 3–5 are approvals; order by approvals; each match adds voters preferring to approvals |
-| MARA-Top | 0–5 | as MARA, but only a 5 counts as approval |
-| MARA-Bottom | 0–5 | as MARA, but only a 0 counts as rejection (ratings 1–5 are approvals) |
+| ARA | 0–5 | ratings 3–5 are approvals; order by approvals; each match adds voters preferring to approvals (formerly MARA) |
+| ARA-Top | 0–5 | as ARA, but only a 5 counts as approval |
 | Anti-plurality | veto (one name against) | fewest vetoes wins; sincere: against the least liked |
-| TRASH | ranking | "This Random Acronym Sounds Honest": the plurality winner and the anti-plurality winner (fewest last places) meet in a runoff, and the one ranked lower by more voters wins; if both are the same candidate, it wins. A deliberately bad reference |
-| TRASH2 | ranking | as TRASH, but the runoff is between the plurality runner-up and the anti-plurality runner-up (second fewest last places); the one ranked lower by more voters wins. Also a deliberately bad reference |
+| TRASH | ranking | "This Random Acronym Sounds Honest": the plurality runner-up and the anti-plurality runner-up (second fewest last places) meet in a runoff, and the one ranked lower by more voters wins; if both are the same candidate, it wins. A deliberately bad reference |
 | Ranked pairs | ranking | lock pairwise wins from the largest margin down, skipping any that would close a cycle; the candidate with no locked defeat wins. Equal margins are locked in every order and averaged (at most 240 orders, otherwise 240 fixed random ones) |
 | Schulze | ranking | strongest path by margins; a candidate whose path to every rival is at least as strong as the rival's path back wins |
 | Approval runoff if needed | ranking + approval line | as Approval runoff, but a candidate approved by more than half the voters wins outright |
@@ -245,6 +243,6 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | `dissonance-<c>.png` | PE* and WM* against dissonance |
 | `axes-heatmap.png` | the four axes, methods × conditions (when there are several) |
 
-Methods are identified by labels, not colour. Random ballot, Random pair runoff, Anti-plurality, TRASH and TRASH2 are left out of the scatter plots by default (`--hide`), since their distance compresses the scale; they stay in tables and heatmaps. `--hide` with no names shows all.
+Methods are identified by labels, not colour. Random ballot, Random pair runoff, Anti-plurality and TRASH are left out of the scatter plots by default (`--hide`), since their distance compresses the scale; they stay in tables and heatmaps. `--hide` with no names shows all.
 
 Sample size: with 160 elections per condition the intervals of single values are about ±3 points and many paired differences are still ties. For conclusions, several hundred elections per condition and at least two seeds are advisable.
