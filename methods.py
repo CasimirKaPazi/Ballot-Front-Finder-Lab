@@ -423,16 +423,19 @@ def t_condorcet_drop(B):
     if cw is not None:
         P[cw] = 1.0
         return P
-    for order in _DROP[n]:
-        M = M0.copy()
-        for v in order:
-            M -= D[v]
-            cw = has_cw(M, alive)
-            if cw is not None:
-                P[cw] += 1
-                break
-        else:
-            P += 1 / C
+    # all orders at once, in growing chunks of dropped voters (a winner usually appears early)
+    order, todo, start, step = _DROP[n], np.arange(DROP_ORDERS), 0, 8
+    M = np.broadcast_to(M0, (DROP_ORDERS, C, C))           # margins so far, one row per order in todo
+    while len(todo) and start < n:
+        cum = M[:, None] - np.cumsum(D[order[todo, start:start + step]], axis=1)   # (orders, k, C, C)
+        win = (cum > 0).sum(axis=3) == C - 1               # win[o, k, c]: c is the Condorcet winner
+        found = win.any(axis=2)
+        hit = found.any(axis=1)
+        for o in np.flatnonzero(hit):
+            P[win[o, found[o].argmax()].argmax()] += 1
+        M = cum[:, -1][~hit]
+        todo, start, step = todo[~hit], start + step, step * 2
+    P += len(todo) / C
     return P / DROP_ORDERS
 
 
@@ -510,6 +513,9 @@ def t_ranked_pairs(B):
     locked in every order and the results averaged (up to RP_MAX_ORDERS fixed random orders)."""
     C = B.shape[1]
     M = margins(B)
+    cw = (M > 0).sum(axis=1) == C - 1                  # a Condorcet winner is never locked out
+    if cw.any():
+        return cw.astype(float)
     pairs = [(a, b) for a in range(C) for b in range(C) if M[a, b] > 0]
     vals = sorted({M[a, b] for a, b in pairs}, reverse=True)
     groups = [[p for p in pairs if M[p] == v] for v in vals]
