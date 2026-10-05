@@ -132,10 +132,19 @@ def learn(method, u, rng, rounds=20, samples=10, group_size=0):
     shared = [None] * len(groups)              # None = members vote sincerely
     ref = [SINCERE[method.ballot](u[m].mean(axis=0, keepdims=True))[0] for m in groups]
     Ug = [u[m].sum(axis=0) for m in groups]
+    # Methods with features (all but Condorcet-random-drop) keep the summed features per poll sample
+    # and update them only for the group that changes; the result is the same as recounting.
+    inc = method.full is None
+    F = method.features(B) if inc else None
     changed_last = True
     for _ in range(rounds):
         polls = rng.integers(0, n, (samples, n))
-        P_cur = poll_tallies(method.tally, B, polls)   # current ballots, tallied once per change
+        if inc:
+            W = np.stack([np.bincount(p, minlength=n) for p in polls]).astype(float)   # (samples, n)
+            S_cur = W @ F
+            P_cur = method.decide_many(S_cur, C)
+        else:
+            P_cur = poll_tallies(method.tally, B, polls)   # current ballots, tallied once per change
         changed_last = False
         for g in rng.permutation(len(groups)):
             mem = groups[g]
@@ -146,12 +155,23 @@ def learn(method, u, rng, rounds=20, samples=10, group_size=0):
                 base = shared[g] if shared[g] is not None else ref[g]
                 prop = mutate(base, method.ballot, rng)
                 prop_rows = np.broadcast_to(prop, (len(mem), C))
-            B2 = B.copy()
-            B2[mem] = prop_rows
-            P_new = poll_tallies(method.tally, B2, polls)
+            if inc:
+                F_mem = method.features(np.ascontiguousarray(prop_rows))
+                S_new = S_cur + W[:, mem] @ (F_mem - F[mem])
+                P_new = method.decide_many(S_new, C)
+            else:
+                B2 = B.copy()
+                B2[mem] = prop_rows
+                P_new = poll_tallies(method.tally, B2, polls)
             gain = group_value(P_new, Ug[g]) - group_value(P_cur, Ug[g])
             if gain > 1e-12 or (to_sincere and gain >= -1e-12):   # honesty wins ties
-                B, P_cur = B2, P_new
+                if inc:
+                    F[mem], S_cur = F_mem, S_new
+                    B = B.copy()
+                    B[mem] = prop_rows
+                else:
+                    B = B2
+                P_cur = P_new
                 shared[g] = None if to_sincere else prop
                 changed_last = True
     return B, not changed_last, float(dissonance(B, u).mean())

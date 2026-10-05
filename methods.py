@@ -168,30 +168,121 @@ def mj_order(n):
     return _MJ_ORDER[n]
 
 
-# ---------- tallies ----------
-def t_random_ballot(B):
-    return B.sum(axis=0) / B.shape[0]
+# ---------- per-voter features ----------
+# Every tally except Condorcet-random-drop depends on the ballots only through sums over voters
+# of per-voter features (score totals, first places, the pairwise matrix, ...). A method lists the
+# features it needs and decides from their sums. During learning (strategy.py) these sums are kept
+# per poll sample and updated only for the group whose ballots change, instead of recounting every
+# ballot on every sample. All features are integer valued, so the sums are exact.
+
+def _onehot(idx, k):
+    z = np.zeros((len(idx), k))
+    z[np.arange(len(idx)), idx] = 1
+    return z
 
 
-def t_sum(B):
-    return uniform_max(B.sum(axis=0))
+_MASKS = {}
 
 
-def t_copeland(B):
-    M = margins(B)
-    s = (M > 0).sum(axis=1) + 0.5 * ((M == 0).sum(axis=1) - 1)
-    return uniform_max(s.astype(float))
+def masks(C):
+    """All candidate subsets as boolean rows; row i is the subset with bit c set for candidate c."""
+    if C not in _MASKS:
+        _MASKS[C] = (np.arange(2 ** C)[:, None] >> np.arange(C)) & 1 == 1
+    return _MASKS[C]
 
 
-def t_irv(B):
-    C = B.shape[1]
+def _subset_id(top):
+    return (top * (1 << np.arange(top.shape[1]))).sum(axis=1).astype(int)
+
+
+def _firsts(B):
+    """For every subset A of candidates: one-hot of the voter's highest-rated candidate in A
+    (first index on ties). Used for elimination methods: first choices among the remaining."""
+    n, C = B.shape
+    m = masks(C)
+    Bm = np.where(m[None], B[:, None, :], -np.inf)             # (n, 2^C, C)
+    out = np.zeros((n, 2 ** C, C))
+    idx = Bm[:, 1:].argmax(axis=2)
+    out[np.arange(n)[:, None], np.arange(1, 2 ** C)[None, :], idx] = 1
+    return out.reshape(n, -1)
+
+
+def _keepnorm(B):
+    """For every subset K: the voter's scores among K stretched to 0..300 (= 60 x 0..5, integers),
+    0 outside K and for voters rating all of K equally."""
+    n, C = B.shape
+    m = masks(C)[None]                                          # (1, 2^C, C)
+    lo = np.where(m, B[:, None, :], np.inf).min(axis=2, keepdims=True)
+    hi = np.where(m, B[:, None, :], -np.inf).max(axis=2, keepdims=True)
+    d = hi - lo
+    ok = m & (d > 0)
+    out = np.where(ok, 60 * MAXS * (B[:, None, :] - np.where(ok, lo, 0)) / np.where(ok, d, 1), 0.0)
+    return out.reshape(n, -1)
+
+
+def _top(B):
+    return B >= B.max(axis=1, keepdims=True)
+
+
+FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
+    "n": (lambda B: np.ones((len(B), 1)), lambda C: ()),
+    "sum": (lambda B: B, lambda C: (C,)),
+    "first": (lambda B: _onehot(B.argmax(axis=1), B.shape[1]), lambda C: (C,)),
+    "last": (lambda B: _onehot(B.argmin(axis=1), B.shape[1]), lambda C: (C,)),
+    "gt": (lambda B: (B[:, :, None] > B[:, None, :]).reshape(len(B), -1), lambda C: (C, C)),
+    "app": (lambda B: B >= B.shape[1], lambda C: (C,)),                       # rankapp approvals
+    "ge1": (lambda B: B >= 1, lambda C: (C,)),
+    "ge3": (lambda B: B >= 3, lambda C: (C,)),
+    "ge5": (lambda B: B >= MAXS, lambda C: (C,)),
+    "pos": (lambda B: B > 0, lambda C: (C,)),
+    "top": (lambda B: B == B.max(axis=1, keepdims=True), lambda C: (C,)),
+    "eqtop": (lambda B: (lambda t: (t[:, :, None] & t[:, None, :]).reshape(len(B), -1))(
+        B == B.max(axis=1, keepdims=True)), lambda C: (C, C)),
+    "eqbot": (lambda B: (lambda t: (t[:, :, None] & t[:, None, :]).reshape(len(B), -1))(
+        B == B.min(axis=1, keepdims=True)), lambda C: (C, C)),
+    "grades": (lambda B: (B[:, :, None] == np.arange(MAXS + 1)).reshape(len(B), -1), lambda C: (C, MAXS + 1)),
+    "firsts": (_firsts, lambda C: (2 ** C, C)),
+    "fset": (lambda B: _onehot(_subset_id(_top(B)), 2 ** B.shape[1]), lambda C: (2 ** C,)),
+    "fsetB": (lambda B: (_onehot(_subset_id(_top(B)), 2 ** B.shape[1])[:, :, None] * B[:, None, :]).reshape(
+        len(B), -1), lambda C: (2 ** C, C)),
+    "excess": (lambda B: np.clip(B[:, :, None] - B[:, None, :], 0, None).reshape(len(B), -1), lambda C: (C, C)),
+    "keepnorm": (_keepnorm, lambda C: (2 ** C, C)),
+}
+
+
+def margins_of(s):
+    return s["gt"] - s["gt"].T
+
+
+def first_among(s, alive):
+    """First-choice counts among the alive candidates (in the order of alive)."""
+    return s["firsts"][int(sum(1 << c for c in alive))][alive]
+
+
+# ---------- decisions from summed features ----------
+def d_random_ballot(s):
+    return s["sum"] / s["n"]
+
+
+def d_sum(s):
+    return uniform_max(s["sum"])
+
+
+def d_copeland(s):
+    M = margins_of(s)
+    sc = (M > 0).sum(axis=1) + 0.5 * ((M == 0).sum(axis=1) - 1)
+    return uniform_max(sc.astype(float))
+
+
+def d_irv(s):
+    C = len(s["sum"]) if "sum" in s else s["firsts"].shape[1]
     P = np.zeros(C)
 
     def go(alive, w):
         if len(alive) == 1:
             P[alive[0]] += w
             return
-        first = np.bincount(B[:, alive].argmax(axis=1), minlength=len(alive))
+        first = first_among(s, alive)
         low = np.flatnonzero(first == first.min())
         for i in low:
             go([c for j, c in enumerate(alive) if j != i], w / len(low))
@@ -200,41 +291,18 @@ def t_irv(B):
     return P
 
 
-def t_star(B):
-    tot = B.sum(axis=0)
-    M = margins(B)
-    C = B.shape[1]
-    P = np.zeros(C)
-
-    def runoff(a, b, w):
-        x = M[a, b] if M[a, b] != 0 else tot[a] - tot[b]
-        if x > 0:
-            P[a] += w
-        elif x < 0:
-            P[b] += w
-        else:
-            P[a] += w / 2
-            P[b] += w / 2
-
-    top = np.flatnonzero(tot >= tot.max() - EPS)
-    if len(top) >= 2:
-        pairs = [(a, b) for i, a in enumerate(top) for b in top[i + 1:]]
-        for a, b in pairs:
-            runoff(a, b, 1 / len(pairs))
-        return P
-    a = top[0]
-    rest = np.delete(np.arange(C), a)
-    sec = rest[tot[rest] >= tot[rest].max() - EPS]
-    for b in sec:
-        runoff(a, b, 1 / len(sec))
+def d_star(s):
+    tot, M = s["sum"], margins_of(s)
+    P = np.zeros(len(tot))
+    for a, b, w in top_two(tot):
+        runoff(P, M, a, b, w, tiebreak=tot)
     return P
 
 
-def t_random_pair(B):
+def d_random_pair(s):
     """Draw two distinct ballots; same first choice wins, else majority runoff of the two."""
-    n, C = B.shape
-    first = np.bincount(B.argmax(axis=1), minlength=C).astype(float)
-    M = margins(B)
+    n, first, M = s["n"], s["first"], margins_of(s)
+    C = len(first)
     tot = n * (n - 1)
     P = first * (first - 1) / tot
     for a in range(C):
@@ -244,53 +312,51 @@ def t_random_pair(B):
     return P
 
 
-def t_top_two(B):
+def d_top_two(s):
     """Plurality on first choices, then majority runoff between the top two."""
-    C = B.shape[1]
-    first = np.bincount(B.argmax(axis=1), minlength=C).astype(float)
-    M, P = margins(B), np.zeros(C)
+    first, M = s["first"], margins_of(s)
+    P = np.zeros(len(first))
     for a, b, w in top_two(first):
         runoff(P, M, a, b, w)
     return P
 
 
-def t_approval_runoff(B):
+def d_approval_runoff(s):
     """Top two by approvals, then majority runoff by ranking; a tie goes to more approvals."""
-    C = B.shape[1]
-    app = (B >= C).sum(axis=0).astype(float)
-    M, P = margins(B), np.zeros(C)
+    app, M = s["app"], margins_of(s)
+    P = np.zeros(len(app))
     for a, b, w in top_two(app):
         runoff(P, M, a, b, w, tiebreak=app)
     return P
 
 
-def t_mj(B):
+def d_mj(s):
     """Majority judgment on 0-5 grades: compare median grades, removing medians to break ties."""
-    order = mj_order(B.shape[0])
-    seqs = [tuple(np.sort(B[:, c])[order]) for c in range(B.shape[1])]
+    h = np.rint(s["grades"]).astype(int)                  # h[c, g]: voters giving c grade g
+    order = mj_order(int(h[0].sum()))
+    seqs = [tuple(np.repeat(np.arange(MAXS + 1), h[c])[order]) for c in range(len(h))]
     best = max(seqs)
-    top = np.array([s == best for s in seqs], dtype=float)
+    top = np.array([q == best for q in seqs], dtype=float)
     return top / top.sum()
 
 
-def t_minimax(B):
+def d_minimax(s):
     """Winner has the smallest worst pairwise defeat (by margin)."""
-    M = margins(B)
-    worst = np.clip(M, 0, None).max(axis=0)   # largest margin by which anyone beats c
+    worst = np.clip(margins_of(s), 0, None).max(axis=0)   # largest margin by which anyone beats c
     return uniform_max(-worst.astype(float))
 
 
-def t_baldwin(B):
+def d_baldwin(s):
     """Repeatedly eliminate the lowest Borda score, recounted among remaining candidates."""
-    C = B.shape[1]
+    gt = s["gt"]
+    C = len(gt)
     P = np.zeros(C)
 
     def go(alive, w):
         if len(alive) == 1:
             P[alive[0]] += w
             return
-        sub = B[:, alive]
-        pts = (sub[:, :, None] > sub[:, None, :]).sum(axis=2).sum(axis=0)
+        pts = gt[np.ix_(alive, alive)].sum(axis=1)        # Borda among the remaining (strict rankings)
         low = np.flatnonzero(pts == pts.min())
         for i in low:
             go([c for j, c in enumerate(alive) if j != i], w / len(low))
@@ -299,52 +365,40 @@ def t_baldwin(B):
     return P
 
 
-def t_btr_borda(B):
-    M = margins(B)
-    return bottom_two_runoff(B.sum(axis=0), lambda a, b: M[a, b])
+def d_btr(s):
+    """Order by total (Borda points or score), bottom-two pairwise runoffs climbing up."""
+    M = margins_of(s)
+    return bottom_two_runoff(s["sum"], lambda a, b: M[a, b])
 
 
-def t_btr(B):
-    M = margins(B)
-    return bottom_two_runoff(B.sum(axis=0), lambda a, b: M[a, b])
-
-
-def t_mars(B):
-    M, tot = margins(B), B.sum(axis=0)
+def d_mars(s):
+    M, tot = margins_of(s), s["sum"]
     # share of voters preferring + score as share of maximum, both scaled by n_voters
     return bottom_two_runoff(tot, lambda a, b: M[a, b] + (tot[a] - tot[b]) / MAXS)
 
 
-def mara(B, threshold):
-    M, app = margins(B), (B >= threshold).sum(axis=0).astype(float)
-    return bottom_two_runoff(app, lambda a, b: M[a, b] + (app[a] - app[b]))
+def mara(key):
+    def d(s):
+        M, app = margins_of(s), s[key]
+        return bottom_two_runoff(app, lambda a, b: M[a, b] + (app[a] - app[b]))
+    return d
 
 
-def t_mara(B):
-    """MARA-3-5: ratings 3-5 count as approval."""
-    return mara(B, 3)
-
-
-def t_mara_top(B):
-    """MARA-Top: only a 5 counts as approval."""
-    return mara(B, MAXS)
-
-
-def t_mara_bottom(B):
-    """MARA-Bottom: only a 0 counts as rejection; ratings 1-5 are approvals."""
-    return mara(B, 1)
-
-
-def t_trash(B):
+def d_trash(s):
     """TRASH (This Random Acronym Sounds Honest): the plurality winner and the anti-plurality winner
     (fewest last places) meet in a runoff, and the one ranked lower by more voters wins.
     If both are the same candidate, it wins. Ties at each stage are split uniformly."""
-    C = B.shape[1]
-    first = np.bincount(B.argmax(axis=1), minlength=C).astype(float)
-    last = np.bincount(B.argmin(axis=1), minlength=C).astype(float)
-    pw, aw = uniform_max(first), uniform_max(-last)
-    M = margins(B)
-    P = np.zeros(C)
+    return _trash(s, uniform_max(s["first"]), uniform_max(-s["last"]))
+
+
+def d_trash2(s):
+    """TRASH2: as TRASH, but with the runner-up of plurality and the runner-up of anti-plurality."""
+    return _trash(s, place_dist(s["first"], 1), place_dist(-s["last"], 1))
+
+
+def _trash(s, pw, aw):
+    M = margins_of(s)
+    P = np.zeros(len(pw))
     for a in np.flatnonzero(pw):
         for b in np.flatnonzero(aw):
             w = pw[a] * aw[b]
@@ -363,17 +417,17 @@ def has_cw(M, alive):
     return None
 
 
-def t_btr_irv(B):
+def d_btr_irv(s):
     """Each round the two candidates with the fewest first choices meet pairwise; the loser is out."""
-    C = B.shape[1]
-    M = margins(B)
+    M = margins_of(s)
+    C = len(M)
     P = np.zeros(C)
 
     def go(alive, w):
         if len(alive) == 1:
             P[alive[0]] += w
             return
-        first = np.bincount(B[:, alive].argmax(axis=1), minlength=len(alive)).astype(float)
+        first = first_among(s, alive)
         for a, b, wp in top_two(-first):                  # the two lowest first-choice counts
             ca, cb = alive[a], alive[b]
             x = M[ca, cb]
@@ -384,10 +438,10 @@ def t_btr_irv(B):
     return P
 
 
-def t_benham(B):
+def d_benham(s):
     """IRV, but a Condorcet winner among the remaining candidates wins at once."""
-    C = B.shape[1]
-    M = margins(B)
+    M = margins_of(s)
+    C = len(M)
     P = np.zeros(C)
 
     def go(alive, w):
@@ -395,7 +449,7 @@ def t_benham(B):
         if cw is not None or len(alive) == 1:
             P[cw if cw is not None else alive[0]] += w
             return
-        first = np.bincount(B[:, alive].argmax(axis=1), minlength=len(alive))
+        first = first_among(s, alive)
         low = np.flatnonzero(first == first.min())
         for i in low:
             go([c for j, c in enumerate(alive) if j != i], w / len(low))
@@ -439,37 +493,30 @@ def t_condorcet_drop(B):
     return P / DROP_ORDERS
 
 
-def t_sict(B):
+def d_sict(s):
     """Symmetrical ICT on rankings with ties. p(X,Y): (X>Y) + (X=Y at bottom) > (Y>X) + (X=Y at top).
     X beats Y if p(X,Y) and not p(Y,X), or both and (X>Y) > (Y>X). One unbeaten candidate wins;
     if none or all are unbeaten, most first places wins; otherwise most first places among the unbeaten."""
-    gt = (B[:, :, None] > B[:, None, :]).sum(axis=0)
-    top = B == B.max(axis=1, keepdims=True)
-    bot = B == B.min(axis=1, keepdims=True)
-    eq_top = (top[:, :, None] & top[:, None, :]).sum(axis=0)
-    eq_bot = (bot[:, :, None] & bot[:, None, :]).sum(axis=0)
+    gt, eq_top, eq_bot = s["gt"], s["eqtop"], s["eqbot"]
     p = gt + eq_bot > gt.T + eq_top
     beats = (p & ~p.T) | (p & p.T & (gt > gt.T))
     np.fill_diagonal(beats, False)
     unbeaten = ~beats.any(axis=0)
-    first = top.sum(axis=0).astype(float)
+    first = s["top"]
     if unbeaten.sum() == 1:
         return unbeaten.astype(float)
-    if unbeaten.sum() in (0, B.shape[1]):
+    if unbeaten.sum() in (0, len(first)):
         return uniform_max(first)
     return uniform_max(np.where(unbeaten, first, -1.0))
 
 
-def t_mdda(B):
+def d_mdda(s):
     """Majority Defeat Disqualification Approval: ranked = approved. A candidate is disqualified if
     more than half the voters rank some other candidate strictly above it (unless that would
     disqualify everyone); the most approved remaining candidate wins."""
-    n = B.shape[0]
-    gt = (B[:, :, None] > B[:, None, :]).sum(axis=0)     # gt[a, b]: voters ranking a above b
-    dominated = (gt > n / 2).any(axis=0)
+    dominated = (s["gt"] > s["n"] / 2).any(axis=0)
     keep = ~dominated if not dominated.all() else np.ones_like(dominated)
-    app = (B > 0).sum(axis=0).astype(float)
-    return uniform_max(np.where(keep, app, -1.0))
+    return uniform_max(np.where(keep, s["pos"], -1.0))
 
 
 def place_dist(values, k):
@@ -486,33 +533,15 @@ def place_dist(values, k):
     return P
 
 
-def t_trash2(B):
-    """TRASH2: as TRASH, but with the runner-up of plurality and the runner-up of anti-plurality."""
-    C = B.shape[1]
-    first = np.bincount(B.argmax(axis=1), minlength=C).astype(float)
-    last = np.bincount(B.argmin(axis=1), minlength=C).astype(float)
-    pw, aw = place_dist(first, 1), place_dist(-last, 1)
-    M = margins(B)
-    P = np.zeros(C)
-    for a in np.flatnonzero(pw):
-        for b in np.flatnonzero(aw):
-            w = pw[a] * aw[b]
-            if a == b:
-                P[a] += w
-            else:
-                runoff(P, -M, a, b, w)
-    return P
-
-
 RP_MAX_ORDERS = 240
 
 
-def t_ranked_pairs(B):
+def d_ranked_pairs(s):
     """Ranked Pairs (margins): lock pairwise wins from the largest margin down, skipping any that
     would close a cycle; the candidate with no locked defeat wins. Pairs with equal margins are
     locked in every order and the results averaged (up to RP_MAX_ORDERS fixed random orders)."""
-    C = B.shape[1]
-    M = margins(B)
+    M = margins_of(s)
+    C = len(M)
     cw = (M > 0).sum(axis=1) == C - 1                  # a Condorcet winner is never locked out
     if cw.any():
         return cw.astype(float)
@@ -540,10 +569,10 @@ def t_ranked_pairs(B):
     return P
 
 
-def t_schulze(B):
+def d_schulze(s):
     """Schulze (margins): strongest path strengths; winners beat or tie everyone by path strength."""
-    C = B.shape[1]
-    M = margins(B)
+    M = margins_of(s)
+    C = len(M)
     p = np.where(M > 0, M, 0).astype(float)
     for k in range(C):
         p = np.maximum(p, np.minimum(p[:, [k]], p[[k], :]))
@@ -552,56 +581,81 @@ def t_schulze(B):
     return win / win.sum()
 
 
-def t_approval_runoff_if_needed(B):
+def d_approval_runoff_if_needed(s):
     """Ranked approval ballot. The most approved candidate wins outright if more than half the
     voters approve it; otherwise top two by approvals, majority runoff, a tie to more approvals."""
-    n, C = B.shape
-    app = (B >= C).sum(axis=0).astype(float)
-    if app.max() > n / 2:
-        return uniform_max(app)
-    return t_approval_runoff(B)
+    if s["app"].max() > s["n"] / 2:
+        return uniform_max(s["app"])
+    return d_approval_runoff(s)
 
 
-def t_reciprocal_score(B):
+def d_reciprocal_score(s):
     """Reciprocal Score Voting (interpretation): a voter's faction is their top-rated candidate(s).
     Each score s[v, c] is multiplied by min(1, R(c -> F_v) / R(F_v -> c)), where R(X -> Y) is the mean
     normalised rating faction X gives Y (averaged over the members of a set). A candidate nobody
-    top-rates has no faction, so scores for it are left unchanged."""
-    C = B.shape[1]
-    top = B >= B.max(axis=1, keepdims=True)
-    has = top.any(axis=0)                            # candidates with a faction
-    R = np.zeros((C, C))                             # R[x, y]: mean rating faction x gives y, in [0, 1]
-    R[has] = (top[:, has].T.astype(float) @ B) / top[:, has].sum(axis=0)[:, None] / MAXS
-    k = top.sum(axis=1, keepdims=True)
-    give = top @ R / k                               # give[v, c]: support the voter's faction gives c
-    back = top @ R.T / k                             # back[v, c]: support c's faction gives back
+    top-rates has no faction, so scores for it are left unchanged.
+    Voters with the same faction set F share the multipliers, so sums per F suffice."""
+    cnt, SB = s["fset"], s["fsetB"]                     # voters and their score sums, per faction set
+    C = SB.shape[1]
+    used = np.flatnonzero(cnt)
+    m = masks(C)[used]                                  # (sets, C) membership
+    members = m.T.astype(float) @ cnt[used]             # voters top-rating each candidate
+    has = members > 0
+    R = np.zeros((C, C))                                # R[x, y]: mean rating faction x gives y, in [0, 1]
+    R[has] = (m[:, has].T.astype(float) @ SB[used]) / members[has][:, None] / MAXS
+    k = m.sum(axis=1, keepdims=True)
+    give = m @ R / k                                    # give[F, c]: support faction F gives c
+    back = m @ R.T / k                                  # back[F, c]: support c's faction gives back
     mult = np.where(give > 0, np.minimum(1.0, back / np.where(give > 0, give, 1)), 1.0)
-    mult = np.where(top | ~has[None, :], 1.0, mult)
-    return uniform_max((B * mult).sum(axis=0))
+    mult = np.where(m | ~has[None, :], 1.0, mult)
+    return uniform_max((SB[used] * mult).sum(axis=0))
 
 
-def t_score_plus(B):
+def d_score_plus(s):
     """Score+ (simplified variant from the votingtheory.org thread): A defeats B robustly if A's total
     minus the scores both share (per voter the lower of the two) still exceeds B's total.
     Candidates with a robust defeat are eliminated; scores are renormalised per voter among the
     rest (lowest to 0, highest to 5); the highest total wins."""
-    C = B.shape[1]
-    tot = B.sum(axis=0)
-    excess = np.clip(B[:, :, None] - B[:, None, :], 0, None).sum(axis=0)   # excess[a, b] = sum max(0, s_a - s_b)
+    tot, excess = s["sum"], s["excess"]                 # excess[a, b] = sum max(0, s_a - s_b)
+    C = len(tot)
     defeated = (excess > tot[None, :] + EPS).any(axis=0)
     keep = np.flatnonzero(~defeated)
-    S = B[:, keep]
-    mn, mx = S.min(axis=1, keepdims=True), S.max(axis=1, keepdims=True)
-    N = np.where(mx > mn, MAXS * (S - mn) / np.where(mx > mn, mx - mn, 1), 0.0)
     P = np.zeros(C)
-    P[keep] = uniform_max(N.sum(axis=0))
+    P[keep] = uniform_max(s["keepnorm"][int(sum(1 << c for c in keep))][keep])
     return P
 
 
 @dataclass
 class Method:
     ballot: str
-    tally: Callable
+    decide: Callable = None          # decision from summed features (a dict name -> sum)
+    feats: tuple = ()                # features the decision needs
+    full: Callable = None            # tally on the full ballot matrix, for methods without features
+
+    def features(self, B):
+        """Per-voter features, concatenated: (n, d)."""
+        return np.concatenate([FEATURES[f][0](B).reshape(len(B), -1).astype(float) for f in self.feats], axis=1)
+
+    def unpack(self, S):
+        """Summed features (d,) -> dict name -> array of its proper shape."""
+        C = self._C
+        out, i = {}, 0
+        for f in self.feats:
+            shape = FEATURES[f][1](C)
+            k = int(np.prod(shape))
+            out[f] = S[i:i + k].reshape(shape) if shape else S[i]
+            i += k
+        return out
+
+    def decide_many(self, S, C):
+        """Winner probabilities for each row of summed features S (samples, d)."""
+        self._C = C
+        return np.array([self.decide(self.unpack(x)) for x in S])
+
+    def tally(self, B):
+        if self.full is not None:
+            return self.full(B)
+        return self.decide_many(self.features(B).sum(axis=0, keepdims=True), B.shape[1])[0]
 
     def sincere(self, u):
         return SINCERE[self.ballot](u)
@@ -610,40 +664,41 @@ class Method:
         return self.tally(self.sincere(u))
 
 
+M_ = Method
 METHODS = {
-    "Random ballot": Method("fav", t_random_ballot),
-    "Random pair runoff": Method("rank", t_random_pair),
-    "Plurality": Method("fav", t_sum),
-    "Top-two runoff": Method("rank", t_top_two),
-    "IRV": Method("rank", t_irv),
-    "Borda": Method("rank", t_sum),
-    "Baldwin": Method("rank", t_baldwin),
-    "BTR-Borda": Method("rank", t_btr_borda),
-    "Copeland": Method("rank", t_copeland),
-    "Minimax": Method("rank", t_minimax),
-    "Approval": Method("approval", t_sum),
-    "Approval runoff": Method("rankapp", t_approval_runoff),
-    "Score": Method("score", t_sum),
-    "MJ": Method("score", t_mj),
-    "STAR": Method("score", t_star),
-    "BTR-score": Method("score", t_btr),
-    "MARS": Method("score", t_mars),
-    "MARA": Method("score", t_mara),
-    "MARA-Top": Method("score", t_mara_top),
-    "MARA-Bottom": Method("score", t_mara_bottom),
-    "Anti-plurality": Method("veto", t_sum),
-    "TRASH": Method("rank", t_trash),
-    "TRASH2": Method("rank", t_trash2),
-    "Ranked pairs": Method("rank", t_ranked_pairs),
-    "Schulze": Method("rank", t_schulze),
-    "Approval runoff if needed": Method("rankapp", t_approval_runoff_if_needed),
-    "Reciprocal score": Method("score", t_reciprocal_score),
-    "Score+": Method("score", t_score_plus),
-    "Condorcet-random-drop": Method("rank", t_condorcet_drop),
-    "SICT": Method("weak", t_sict),
-    "MDDA": Method("trunc", t_mdda),
-    "BTR-IRV": Method("rank", t_btr_irv),
-    "Benham": Method("rank", t_benham),
+    "Random ballot": M_("fav", d_random_ballot, ("n", "sum")),
+    "Random pair runoff": M_("rank", d_random_pair, ("n", "first", "gt")),
+    "Plurality": M_("fav", d_sum, ("sum",)),
+    "Top-two runoff": M_("rank", d_top_two, ("first", "gt")),
+    "IRV": M_("rank", d_irv, ("firsts",)),
+    "Borda": M_("rank", d_sum, ("sum",)),
+    "Baldwin": M_("rank", d_baldwin, ("gt",)),
+    "BTR-Borda": M_("rank", d_btr, ("sum", "gt")),
+    "Copeland": M_("rank", d_copeland, ("gt",)),
+    "Minimax": M_("rank", d_minimax, ("gt",)),
+    "Approval": M_("approval", d_sum, ("sum",)),
+    "Approval runoff": M_("rankapp", d_approval_runoff, ("app", "gt")),
+    "Score": M_("score", d_sum, ("sum",)),
+    "MJ": M_("score", d_mj, ("grades",)),
+    "STAR": M_("score", d_star, ("sum", "gt")),
+    "BTR-score": M_("score", d_btr, ("sum", "gt")),
+    "MARS": M_("score", d_mars, ("sum", "gt")),
+    "MARA": M_("score", mara("ge3"), ("ge3", "gt")),            # ratings 3-5 count as approval
+    "MARA-Top": M_("score", mara("ge5"), ("ge5", "gt")),        # only a 5 counts as approval
+    "MARA-Bottom": M_("score", mara("ge1"), ("ge1", "gt")),     # only a 0 counts as rejection
+    "Anti-plurality": M_("veto", d_sum, ("sum",)),
+    "TRASH": M_("rank", d_trash, ("first", "last", "gt")),
+    "TRASH2": M_("rank", d_trash2, ("first", "last", "gt")),
+    "Ranked pairs": M_("rank", d_ranked_pairs, ("gt",)),
+    "Schulze": M_("rank", d_schulze, ("gt",)),
+    "Approval runoff if needed": M_("rankapp", d_approval_runoff_if_needed, ("n", "app", "gt")),
+    "Reciprocal score": M_("score", d_reciprocal_score, ("fset", "fsetB")),
+    "Score+": M_("score", d_score_plus, ("sum", "excess", "keepnorm")),
+    "Condorcet-random-drop": M_("rank", full=t_condorcet_drop),
+    "SICT": M_("weak", d_sict, ("gt", "top", "eqtop", "eqbot")),
+    "MDDA": M_("trunc", d_mdda, ("n", "gt", "pos")),
+    "BTR-IRV": M_("rank", d_btr_irv, ("firsts", "gt")),
+    "Benham": M_("rank", d_benham, ("firsts", "gt")),
 }
 
 

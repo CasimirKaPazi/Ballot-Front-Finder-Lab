@@ -101,3 +101,26 @@ check("Schulze on a cycle", METHODS["Schulze"].honest(cy), [1, 0, 0, 0])
 # narrowly ahead in total is not a robust winner over the faction that shares support with it.
 sp = np.array([[5, 4, 0, 0]] * 4 + [[4, 5, 0, 0]] * 3 + [[0, 0, 5, 0]] * 2, dtype=float)
 print("Score+ chicken example:", np.round(METHODS["Score+"].tally(sp), 3))
+
+# Conditional top-two runoff (no runoff when a candidate has more than half the first choices) is the
+# same method as Top-two runoff here: a majority of first choices also wins every runoff, because the
+# runoff reuses the same rankings. So it is not a separate method. Checked on random rankings:
+r = np.random.default_rng(3)
+for _ in range(500):
+    n, C = int(r.integers(3, 30)), int(r.integers(3, 7))
+    B = np.array([r.permutation(C) for _ in range(n)], dtype=float)
+    first = np.bincount(B.argmax(axis=1), minlength=C)
+    if first.max() > n / 2:
+        assert METHODS["Top-two runoff"].tally(B)[first.argmax()] == 1
+print("conditional top-two runoff = top-two runoff ok")
+
+# Feature sums give the same winners as the ballots they come from, also when built incrementally
+for name, m in METHODS.items():
+    if m.full is None:
+        B = m.sincere(u)
+        F = m.features(B)
+        S = F.sum(axis=0)
+        B2 = B.copy(); B2[:3] = B[-1]
+        S2 = S + (m.features(B2[:3]) - F[:3]).sum(axis=0)
+        assert np.allclose(m.decide_many(S2[None], B.shape[1])[0], m.tally(B2)), name
+print("incremental feature sums ok")
