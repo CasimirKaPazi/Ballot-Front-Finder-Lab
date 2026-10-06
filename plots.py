@@ -35,6 +35,9 @@ def _repel(ax, texts, anchors, iterations=300):
     fig = ax.figure
     fig.canvas.draw()
     inv = ax.transData.inverted()
+    y_lo, y_hi = ax.get_ylim()
+    pad = 0.015 * (y_hi - y_lo)
+    y_lo, y_hi = y_lo + pad, y_hi - pad
     for _ in range(iterations):
         moved = False
         boxes = [t.get_window_extent().expanded(1.05, 1.15) for t in texts]
@@ -46,7 +49,8 @@ def _repel(ax, texts, anchors, iterations=300):
                     for k, dy in ((a, -2.0), (b, 2.0)):
                         x, y = texts[k].get_position()
                         px, py = ax.transData.transform((x, y))
-                        texts[k].set_position(inv.transform((px, py + dy)))
+                        nx, ny = inv.transform((px, py + dy))
+                        texts[k].set_position((nx, min(max(ny, y_lo), y_hi)))   # stay inside the axes
                     moved = True
         if not moved:
             break
@@ -57,12 +61,31 @@ def _repel(ax, texts, anchors, iterations=300):
             ax.plot([x, tx], [y, ty], color="#c4c3be", lw=0.8, zorder=1)
 
 
+VSE_LABEL = "VSE (%; 0 = random ballot, 100 = best candidate)"
+WME_LABEL = "WME (%; 0 = random ballot, 100 = best worst margin)"
+UNREACHABLE = "#ecebe7"
+
+
+def _unreachable(ax, which):
+    """Grey out values above 100 on the x and/or y axis (efficiencies cannot exceed 100) and make
+    sure the boundary is in view."""
+    for w in which:
+        lo, hi = ax.get_xlim() if w == "x" else ax.get_ylim()
+        hi = max(hi, 100 + 0.04 * (hi - lo))
+        if w == "x":
+            ax.set_xlim(lo, hi)
+            ax.axvspan(100, hi, color=UNREACHABLE, zorder=0, lw=0)
+        else:
+            ax.set_ylim(lo, hi)
+            ax.axhspan(100, hi, color=UNREACHABLE, zorder=0, lw=0)
+
+
 def _visible(r, hide):
     return [j for j, m in enumerate(r["methods"]) if m not in hide]
 
 
 def arrows(r, path, hide):
-    """Honest (open circle) -> learned ballots (filled) in the PE / WM plane, all methods together.
+    """Honest (open circle) -> learned ballots (filled) in the VSE / WME plane, all methods together.
     Filled points are coloured by the sincerity of the learned ballots (darker = less honest)."""
     idx = _visible(r, hide)
     # cap the colour scale at the 10th percentile, so one extreme method does not wash out the rest
@@ -73,8 +96,8 @@ def arrows(r, path, hide):
     fig, ax = plt.subplots(figsize=(9.2, 6.6))
     texts, anchors = [], []
     for j in idx:
-        x0, y0 = r["PE"][j] * 100, r["WM"][j] * 100
-        x1, y1 = r["PE*"][j] * 100, r["WM*"][j] * 100
+        x0, y0 = r["VSE"][j] * 100, r["WME"][j] * 100
+        x1, y1 = r["VSE*"][j] * 100, r["WME*"][j] * 100
         ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
                     arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.1, shrinkA=4, shrinkB=5, mutation_scale=9))
         ax.scatter([x0], [y0], s=34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
@@ -82,8 +105,9 @@ def arrows(r, path, hide):
                    linewidths=0.6, zorder=4)
         anchors.append((x1, y1))
         texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
-    ax.set_xlabel("PE, proportional efficiency (%)")
-    ax.set_ylabel("WM, winner's worst margin (% of voters)")
+    ax.set_xlabel(VSE_LABEL)
+    ax.set_ylabel(WME_LABEL)
+    _unreachable(ax, "xy")
     ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}", loc="left")
     cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, fraction=0.035, pad=0.02,
                       extend="min" if vals.min() < smin else "neither")
@@ -96,12 +120,11 @@ def arrows(r, path, hide):
 
 
 def shift(r, path, hide):
-    """The same shifts as a dumbbell chart: one row per method, PE and WM panels. Rows sorted by PE."""
-    idx = sorted(_visible(r, hide), key=lambda j: r["PE"][j])
+    """The same shifts as a dumbbell chart: one row per method, VSE and WME panels. Rows sorted by VSE."""
+    idx = sorted(_visible(r, hide), key=lambda j: r["VSE"][j])
     names = [r["methods"][j] for j in idx]
     fig, axs = plt.subplots(1, 2, figsize=(10.5, 0.9 + 0.32 * len(idx)), sharey=True)
-    for ax, (a0, a1, title) in zip(axs, [("PE", "PE*", "PE: proportional efficiency (%)"),
-                                         ("WM", "WM*", "WM: winner's worst margin (% of voters)")]):
+    for ax, (a0, a1, title) in zip(axs, [("VSE", "VSE*", VSE_LABEL), ("WME", "WME*", WME_LABEL)]):
         for y, j in enumerate(idx):
             x0, x1 = r[a0][j] * 100, r[a1][j] * 100
             if abs(x1 - x0) > 0.15:
@@ -112,6 +135,7 @@ def shift(r, path, hide):
             ax.scatter([x1], [y], s=58, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=4)
         ax.set_xlabel(title)
         ax.grid(axis="y", visible=False)
+        _unreachable(ax, "x")
     axs[0].set_yticks(range(len(idx)), names)
     axs[0].set_title(f"What strategy does: honest (open) → learned ballots (filled)\n{r['label']}", loc="left")
     fig.tight_layout()
@@ -120,11 +144,11 @@ def shift(r, path, hide):
 
 
 def sincerity(r, path, hide):
-    """PE* and WM* against sincerity, side by side. No marginal intervals: they show how much
+    """VSE* and WME* against sincerity, side by side. No marginal intervals: they show how much
     single values vary between elections, not how surely methods differ (paired differences do)."""
     idx = _visible(r, hide)
     fig, axs = plt.subplots(1, 2, figsize=(11, 5.2), sharex=True)
-    for ax, axis, name in zip(axs, ["PE*", "WM*"], ["PE* (learned ballots, %)", "WM* (learned ballots, % of voters)"]):
+    for ax, axis, name in zip(axs, ["VSE*", "WME*"], ["VSE* (learned ballots, %)", "WME* (learned ballots, %)"]):
         texts, anchors = [], []
         for j in idx:
             x, y = r["sincerity"][j] * 100, r[axis][j] * 100
@@ -133,6 +157,7 @@ def sincerity(r, path, hide):
             texts.append(ax.text(x + 0.12, y, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=4))
         ax.set_xlabel("sincerity of learned ballots (%)")
         ax.set_ylabel(name)
+        _unreachable(ax, "y")
         _repel(ax, texts, anchors)
     axs[0].set_title(f"Quality under strategy against sincerity (upper right is best)\n{r['label']}", loc="left")
     fig.tight_layout()
@@ -141,9 +166,9 @@ def sincerity(r, path, hide):
 
 
 def _row_order(results):
-    """Methods sorted by honest PE, averaged over conditions."""
+    """Methods sorted by honest VSE, averaged over conditions."""
     methods = results[0]["methods"]
-    mean_pe = np.mean([[r["PE"][r["methods"].index(m)] for m in methods] for r in results], axis=0)
+    mean_pe = np.mean([[r["VSE"][r["methods"].index(m)] for m in methods] for r in results], axis=0)
     return [methods[j] for j in np.argsort(-mean_pe, kind="stable")]
 
 

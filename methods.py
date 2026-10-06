@@ -259,10 +259,6 @@ def first_among(s, alive):
 
 
 # ---------- decisions from summed features ----------
-def d_random_ballot(s):
-    return s["sum"] / s["n"]
-
-
 def d_sum(s):
     return uniform_max(s["sum"])
 
@@ -661,7 +657,6 @@ class Method:
 
 M_ = Method
 METHODS = {
-    "Random ballot": M_("fav", d_random_ballot, ("n", "sum")),
     "Random pair runoff": M_("rank", d_random_pair, ("n", "first", "gt")),
     "Plurality": M_("fav", d_sum, ("sum",)),
     "Top-two runoff": M_("rank", d_top_two, ("first", "gt")),
@@ -702,7 +697,7 @@ GROUPS = {
     "plurality-based": ["Plurality", "Top-two runoff", "IRV", "BTR-IRV", "Benham"],
     "rated": ["Score", "MJ", "STAR", "BTR-score", "MARS", "ARA", "ARA-Top", "Reciprocal score", "Score+"],
     "approval-based": ["Approval", "Approval runoff", "Approval runoff if needed", "MDDA"],
-    "references": ["Random ballot", "Random pair runoff", "Anti-plurality", "TRASH"],
+    "references": ["Random pair runoff", "Anti-plurality", "TRASH"],
 }
 
 

@@ -13,7 +13,7 @@ python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> output/a
 
 All outputs go into the folder `output/` (created when needed): an `--out` name without a directory is placed there, and `analyze.py` looks there for CSVs given without a directory. An `--out` with a directory (`--out runs/test`) is used as given.
 
-200 elections with all 31 methods at the default settings take about 11 minutes on 2 cores; time scales linearly with cores. More candidates, more voters and smaller groups take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
+200 elections with all 30 methods at the default settings take about 11 minutes on 2 cores; time scales linearly with cores. More candidates, more voters and smaller groups take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
 
 ## Files
 
@@ -102,7 +102,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--out` | `analysis` | output directory (`output/analysis`) |
 | `--boot` | 1000 | bootstrap replicates |
 | `--compare` | none | pairs `"A:B"` for paired differences |
-| `--hide` | Random ballot, Random pair runoff, Anti-plurality, TRASH | methods left out of the scatter plots; `--hide` alone shows all |
+| `--hide` | Random pair runoff, Anti-plurality, TRASH | methods left out of the scatter plots; `--hide` alone shows all |
 | `--seed` | 0 | bootstrap random seed |
 
 ## Robustness: one parameter at a time
@@ -117,9 +117,9 @@ python analyze.py model-elections.csv --out model-analysis
 
 Conditions are labelled by how they differ from the base (`c1: base`, `clusters 5`, ...).
 
-`analyze.py` adds a **rank stability** table when there are several conditions: for each axis, the rank correlation (Spearman) between the methods' values in a condition and in the base (the first condition). The methods hidden in the plots are left out. Its first row is a noise reference: the agreement expected from sampling noise alone between two runs of the base condition (the base's even and odd elections correlated, then scaled up to full size with the Spearman-Brown formula `2r / (1 + r)`). A condition near or above that row orders methods as the base does; a value clearly below it means the parameter changes which methods do well. With few elections everything is noise, and PE* in particular needs many elections (several hundred per condition): strategic differences between methods are small. Many methods lie close together on each axis, so rank correlation is a strict test; the heatmap shows where the changes come from.
+`analyze.py` adds a **rank stability** table when there are several conditions: for each axis, the rank correlation (Spearman) between the methods' values in a condition and in the base (the first condition). The methods hidden in the plots are left out. Its first row is a noise reference: the agreement expected from sampling noise alone between two runs of the base condition (the base's even and odd elections correlated, then scaled up to full size with the Spearman-Brown formula `2r / (1 + r)`). A condition near or above that row orders methods as the base does; a value clearly below it means the parameter changes which methods do well. With few elections everything is noise, and VSE* in particular needs many elections (several hundred per condition): strategic differences between methods are small. Many methods lie close together on each axis, so rank correlation is a strict test; the heatmap shows where the changes come from.
 
-An **electorates** table (and a line in each condition's section) describes the generated electorates themselves, independent of the methods: how often a Condorcet winner exists, how often it also has the highest total utility, how much PE electing it loses (ratio of sums, as PE), and how steep preferences are (u(favourite) ÷ u(least liked), median over voters, then median over elections). The third column explains most PE differences between Condorcet and rated methods; the last one is a concrete handle for choosing `--width`.
+An **electorates** table (and a line in each condition's section) describes the generated electorates themselves, independent of the methods: how often a Condorcet winner exists, how often it also has the highest total utility, how much VSE electing it loses (ratio of sums, as VSE), and how steep preferences are (u(favourite) ÷ u(least liked), median over voters, then median over elections). The third column explains most VSE differences between Condorcet and rated methods; the last one is a concrete handle for choosing `--width`.
 
 ## Coordination: what the strategic axes measure
 
@@ -144,41 +144,39 @@ Run time falls less than in proportion to p: halving the strategic voters remove
 
 ## Axes and other outputs
 
-**Efficiency** against a baseline lottery q, as a ratio of sums over all elections:
-`E = Σ(U_method − U_base) / Σ(U_best − U_base)`, where U is a candidate's total utility, U_method the expected total utility of the method's winner and U_best the best candidate's. The baseline: each voter's personal lottery proportional to `u^τ`, averaged over voters.
+Both axes are **efficiencies with the same two reference points**, as ratios of sums over all elections:
 
-| Axis | τ | Baseline |
-|---|---|---|
-| VSE | 0 | random candidate |
-| PE | 1 | utility-proportional lottery (headline) |
-| RBE | ∞ | random ballot |
+`E = Σ(X_method − X_rb) / Σ(X_best − X_rb)`
 
-Within one condition the three rank methods identically (same numerator, different zero point), so only PE is used as an axis. No utility normalisation: a voter who cares little (all candidates far away) counts little.
+- **0 = random ballot**: the winner is the favourite of a randomly drawn voter. It needs no assumption about which candidates stand, and every reasonable method should beat it.
+- **100 = the best candidate** of each election. Values above 100 cannot be reached; the plots grey that area out. Values below 0 are worse than random ballot.
+- The zero is a common level for all elections; it does not judge individual results. Compromise candidates are therefore still rewarded: in an election where the best candidate is nobody's favourite, electing it counts fully toward the numerator.
 
-**Winner's worst margin (WM)**, the second axis, in % of voters: the elected candidate's smallest head-to-head margin against any other candidate, by sincere preferences, averaged over elections (weighted by the winner probabilities). In short: how clearly the winner would survive the hardest two-way race.
+**VSE** (voter satisfaction efficiency), first axis: X = total utility of the winner, `U(c) = Σ_v u_v(c)`; best = the candidate with the highest total utility. The usual VSE puts the zero at a random candidate instead. With candidates drawn from the same distribution as voters the two differ only in scale, so the order of methods is the same. No utility normalisation: a voter who cares little (all candidates far away) counts little.
 
-- Positive: the winner is the Condorcet winner, by that much. Negative: a majority prefers some specific rival, by that much.
-- It is a refined Condorcet measure. The motivation is legitimacy: after the election voters judge the result, and if someone other than the Condorcet winner won, they can argue that a majority would have preferred another candidate. WM measures how strong that argument is, instead of only whether it exists: losing a Condorcet winner by one vote costs little, electing a candidate whom a large majority prefers a rival to costs a lot.
+**WME** (worst-margin efficiency), second axis, a refined Condorcet measure: X = the winner's worst margin, its smallest head-to-head margin against any other candidate, by sincere preferences, as a share of voters. Best = the candidate with the best worst margin.
+
+- The motivation is legitimacy: after the election voters judge the result, and if someone other than the Condorcet winner won, they can argue that a majority would have preferred another candidate. The worst margin measures how strong that argument is, instead of only whether it exists: losing a Condorcet winner by one vote costs little, electing a candidate whom a large majority prefers a rival to costs a lot.
 - Every election counts, cycles included, and the value does not depend on the number of voters.
-- With honest ballots Minimax maximises WM by construction (it elects the candidate with the best worst margin), just as all Condorcet methods reach 100 on CE. The strategic version WM* is where methods are tested.
+- With honest ballots Minimax reaches 100 by construction (it elects the candidate with the best worst margin), and all Condorcet methods reach it whenever there is a Condorcet winner, just as they reach 100 on CE. The strategic version WME* is where methods are tested.
 
-**Condorcet efficiency (CE)**, reported alongside but no longer an axis: among elections with a Condorcet winner by sincere utilities, the probability the method elects it. It ignores elections without a Condorcet winner and does not distinguish narrow from clear ones.
+**Condorcet efficiency (CE)**, reported alongside but not an axis: among elections with a Condorcet winner by sincere utilities, the probability the method elects it. It ignores elections without a Condorcet winner and does not distinguish narrow from clear ones.
 
-PE, WM and CE use sincere ballots; PE*, WM* and CE* (in the CSV: PE_learned, WM_learned, CE_learned) the learned ballots. In all cases the preferences that count are the sincere ones.
+VSE, WME and CE use sincere ballots; VSE*, WME* and CE* (in the CSV: VSE_learned, WME_learned, CE_learned) the learned ballots. In all cases the preferences that count are the sincere ones.
 
-**Output files of `run.py`:** `<out>-elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns, the utilities needed for the axes (U_method, U_best, U_tau0, U_tau1, U_tauinf), has_cw, p_cw (probability of electing the Condorcet winner), WM (winner's worst margin, share of voters), the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see Analysis), sincerity, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
+Earlier versions (before 2026-10-06) used PE, with a utility-proportional lottery as zero, and WM, the raw worst margin in % of voters; FINDINGS.md says which applies where.
+
+**Output files of `run.py`:** `<out>-elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns; the quantities for the axes: U_method, U_best, U_rb (random ballot), U_rand (random candidate, for the usual VSE), WM (the winner's worst margin, share of voters), WM_best, WM_rb; has_cw and p_cw (probability of electing the Condorcet winner); the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see Robustness); sincerity, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
 
 | Column | Meaning |
 |---|---|
-| PE | proportional efficiency, sincere ballots |
-| WM | winner's worst margin, sincere ballots |
-| PE_learned, WM_learned | the same with learned ballots |
+| VSE, WME | voter satisfaction and worst-margin efficiency, sincere ballots |
+| VSE_learned, WME_learned | the same with learned ballots |
 | CE, CE_learned | Condorcet efficiency, sincere and learned ballots |
-| VSE, RBE | efficiency against random candidate and random ballot, sincere ballots |
 | sincerity | mean sincerity of the learned ballots, over all voters (below) |
 | settled | share of elections where no group changed its ballot in the last round; cycles never settle |
 
-`on_front` in the summary is a quick check on point estimates (PE, WM, PE_learned, WM_learned, no uncertainty). The analysis uses the tie-aware "Dominated by" instead (see Analysis).
+`on_front` in the summary is a quick check on point estimates (VSE, WME, VSE_learned, WME_learned, no uncertainty). The analysis uses the tie-aware "Dominated by" instead (see Analysis).
 
 **Strategy types** (`strategy.strategy_types`), among voters whose learned ballot reverses at least one real preference:
 - *compromise*: the favourite is not at the top, and the best-liked top candidate is liked above the voter's mean (a viable second choice raised);
@@ -206,7 +204,6 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 
 | Method | Ballot | Rule |
 |---|---|---|
-| Random ballot | one name | a random voter's choice |
 | Random pair runoff | ranking | two random ballots; same first choice wins, else majority runoff between the two |
 | Plurality | one name | most first choices |
 | Top-two runoff | ranking | top two by first choices, then majority runoff |
@@ -246,7 +243,7 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | `plurality-based` | Plurality, Top-two runoff, IRV, BTR-IRV, Benham |
 | `rated` | Score, MJ, STAR, BTR-score, MARS, ARA, ARA-Top, Reciprocal score, Score+ |
 | `approval-based` | Approval, Approval runoff, Approval runoff if needed, MDDA |
-| `references` | Random ballot, Random pair runoff, Anti-plurality, TRASH |
+| `references` | Random pair runoff, Anti-plurality, TRASH |
 
 Borda is in no group. Example: `--methods condorcet STAR` or `--exclude references`.
 
@@ -262,8 +259,8 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 
 | Output | Meaning |
 |---|---|
-| PE, WM, PE*, WM*, CE, CE*, sincerity | point estimate and 95% interval of each value on its own |
-| dominated by | methods clearly better on at least one of the four axes and clearly worse on none, each with the axes on which it is better; the report shows at most three, the CSV all. Clearly: the paired 95% interval of the difference excludes 0, smaller differences count as ties. Without this, methods level on one axis (e.g. Condorcet methods, which mostly elect the same candidate with honest ballots) would be kept apart by noise-sized differences, and PE* and WM* would never get to decide between them |
+| VSE, WME, VSE*, WME*, CE, CE*, sincerity | point estimate and 95% interval of each value on its own |
+| dominated by | methods clearly better on at least one of the four axes and clearly worse on none, each with the axes on which it is better; the report shows at most three, the CSV all. Clearly: the paired 95% interval of the difference excludes 0, smaller differences count as ties. Without this, methods level on one axis (e.g. Condorcet methods, which mostly elect the same candidate with honest ballots) would be kept apart by noise-sized differences, and VSE* and WME* would never get to decide between them |
 | paired differences (`--compare "A:B"`) | difference A − B per axis with a 95% interval; marked as a tie when the interval includes 0 |
 
 **How to interpret:**
@@ -276,11 +273,11 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 
 | File | Shows |
 |---|---|
-| `arrows-<c>.png` | PE/WM plane, every method's shift from honest (open) to learned ballots (filled, labelled) in one picture; filled points coloured by sincerity (red ramp, darker = less honest, capped at the 10th percentile of the plotted methods) |
-| `shift-<c>.png` | the same shifts as one row per method, PE and WM panels; easier to read per method |
-| `sincerity-<c>.png` | PE* and WM* against sincerity |
+| `arrows-<c>.png` | VSE/WME plane (area above 100 greyed out), every method's shift from honest (open) to learned ballots (filled, labelled) in one picture; filled points coloured by sincerity (red ramp, darker = less honest, capped at the 10th percentile of the plotted methods) |
+| `shift-<c>.png` | the same shifts as one row per method, VSE and WME panels; easier to read per method |
+| `sincerity-<c>.png` | VSE* and WME* against sincerity |
 | `axes-heatmap.png` | the four axes, methods × conditions (when there are several) |
 
-Methods are identified by labels, not colour. Random ballot, Random pair runoff, Anti-plurality and TRASH are left out of the scatter plots by default (`--hide`), since their distance compresses the scale; they stay in tables and heatmaps. `--hide` with no names shows all.
+Methods are identified by labels, not colour. Random pair runoff, Anti-plurality and TRASH are left out of the scatter plots by default (`--hide`), since their distance compresses the scale; they stay in tables and heatmaps. `--hide` with no names shows all.
 
 Sample size: with 160 elections per condition the intervals of single values are about ±3 points and many paired differences are still ties. For conclusions, several hundred elections per condition and at least two seeds are advisable.

@@ -6,12 +6,11 @@ Usage:
 Each electorate is tallied twice per method: with sincere ballots, and after the groups
 (voters with the same sincere ranking) have learned shared ballots (see strategy.py).
 
-Axes of the Pareto front:
-    PE, WM     proportional efficiency and winner's worst margin, sincere ballots (see metrics.py)
-    PE*, WM*   the same with learned ballots
-CE, CE* (Condorcet efficiency) are reported alongside.
-Also reported: VSE and RBE (sincere), sincerity of the learned ballots (see strategy.sincerity),
-share of elections where learning settled (cycles never do).
+Axes of the Pareto front (0 = random ballot, 100 = best candidate; see metrics.py):
+    VSE, WME     voter satisfaction and worst-margin efficiency, sincere ballots
+    VSE*, WME*   the same with learned ballots
+CE, CE* (Condorcet efficiency) are reported alongside, as are the sincerity of the learned
+ballots (see strategy.sincerity) and the share of elections where learning settled.
 
 Partial strategy: --strategic p makes a random share p of the voters strategic (the same voters
 for every method); the rest always vote sincerely.
@@ -19,7 +18,7 @@ for every method); the rest always vote sincerely.
 Outputs (prefix set by --out; a name without a directory goes into output/):
     <out>-elections.csv   one row per (election, method, ballots), with the run's parameters
                           as columns, so several runs can be combined (see analyze.py)
-    <out>-summary.csv     one row per method, with on_front for the PE/WM/PE*/WM* front
+    <out>-summary.csv     one row per method, with on_front for the VSE/WME/VSE*/WME* front
 """
 import argparse
 import csv
@@ -141,15 +140,14 @@ def main():
         sinc = [r for r in results if r["method"] == m and r["ballots"] == "sincere"]
         lrn = [r for r in results if r["method"] == m and r["ballots"] == "learned"]
         s, l = summarize(sinc), summarize(lrn)
-        summ[m] = {"PE": s["PE"], "WM": s["WM"], "PE_learned": l["PE"], "WM_learned": l["WM"],
+        summ[m] = {"VSE": s["VSE"], "WME": s["WME"], "VSE_learned": l["VSE"], "WME_learned": l["WME"],
                    "CE": s["CE"], "CE_learned": l["CE"],
-                   "VSE": s["VSE"], "RBE": s["RBE"],
                    "sincerity": float(np.mean([r["sincerity"] for r in lrn])),
                    "settled": float(np.mean([r["settled"] for r in lrn]))}
-    axes = ["PE", "WM", "PE_learned", "WM_learned"]
+    axes = ["VSE", "WME", "VSE_learned", "WME_learned"]
     front = set(pareto([[summ[m][x] for x in axes] for m in names]))
 
-    cols = ["PE", "WM", "PE_learned", "WM_learned", "CE", "CE_learned", "VSE", "RBE", "sincerity", "settled"]
+    cols = ["VSE", "WME", "VSE_learned", "WME_learned", "CE", "CE_learned", "sincerity", "settled"]
     with open(f"{out}-summary.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["method"] + cols + ["on_front"])
@@ -160,14 +158,14 @@ def main():
           f"{' (Zipf)' if a.zipf else ''}, {a.clusters} clusters, "
           f"spread {a.spread}, width {a.width}; learning {a.rounds} rounds x {a.samples} poll samples, "
           f"group size {group_text(a.group_size)}, strategic share {a.strategic}; seed {a.seed}")
-    print(f"{'method':<26}{'PE':>7}{'WM':>7}{'PE*':>7}{'WM*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
-    for m in sorted(names, key=lambda m: -summ[m]["PE"]):
+    print(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
+    for m in sorted(names, key=lambda m: -summ[m]["VSE"]):
         s = summ[m]
-        print(f"{m:<26}{s['PE']*100:7.1f}{s['WM']*100:7.1f}{s['PE_learned']*100:7.1f}{s['WM_learned']*100:7.1f}"
+        print(f"{m:<26}{s['VSE']*100:7.1f}{s['WME']*100:7.1f}{s['VSE_learned']*100:7.1f}{s['WME_learned']*100:7.1f}"
               f"{s['CE']*100:7.1f}{s['CE_learned']*100:7.1f}"
               f"{s['sincerity']*100:10.1f}%{s['settled']*100:8.0f}%"
               f"  {'*' if names.index(m) in front else ''}")
-    print("PE*, WM*, CE*: with learned ballots; WM in % of voters; front on PE, WM, PE*, WM*")
+    print("0 = random ballot, 100 = best candidate; *: with learned ballots; front on VSE, WME, VSE*, WME*")
 
 
 if __name__ == "__main__":

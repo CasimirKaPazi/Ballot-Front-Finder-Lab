@@ -2,6 +2,8 @@
 
 What the simulations have shown so far. The model, parameters and definitions are in [README.md](README.md). Newest first; each section names the settings it used, since the model and defaults changed along the way (plain dimensions before Zipf, CE as an axis before WM). Numbers are point estimates; differences only count where the paired comparison or the noise reference says so.
 
+**Units.** Up to 2026-10-06 the axes were PE (zero = utility-proportional lottery) and WM (the winner's worst margin in % of voters); the sections below keep those units. Since then they are VSE and WME, both with 0 = random ballot and 100 = best candidate (README, Axes). Within one condition the change is a fixed rescaling of each axis (the sums over elections that set the zero and the 100 are the same for all methods), so method order, dominance and rank stability are unaffected; only the numbers differ.
+
 ## Current picture (6 candidates, Zipf, 2026-10-06)
 
 ```

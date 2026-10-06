@@ -1,7 +1,7 @@
 """Hand-built checks. Run: python test_methods.py"""
 import numpy as np
 from methods import METHODS
-from metrics import election_row
+from metrics import election_row, worst_margins
 
 
 def profile(groups):
@@ -22,7 +22,6 @@ check("Copeland", METHODS["Copeland"].honest(u), [0, 1, 0, 0])
 check("BTR-score", METHODS["BTR-score"].honest(u), [0, 1, 0, 0])
 check("MARS", METHODS["MARS"].honest(u), [0, 1, 0, 0])
 check("ARA (3-5)", METHODS["ARA"].honest(u), [0, 1, 0, 0])
-check("Random ballot", METHODS["Random ballot"].honest(u), [4 / 9, 2 / 9, 3 / 9, 0])
 
 # New methods on the same 4-3-2 profile
 check("Random pair runoff", METHODS["Random pair runoff"].honest(u), [36 / 72, 30 / 72, 6 / 72, 0])
@@ -60,10 +59,12 @@ for m in ["Plurality", "IRV", "Copeland", "Score", "STAR", "BTR-score", "MARS", 
           "Ranked pairs", "Schulze", "Approval runoff if needed", "Reciprocal score", "Score+"]:
     check(f"{m} three-way tie", METHODS[m].honest(t), [1 / 3, 1 / 3, 1 / 3, 0])
 
-# Baseline lottery from the example: utilities 100, 50, 25, 25 -> 50%, 25%, 12.5%, 12.5%
-one = np.array([[100, 50, 25, 25]], dtype=float)
-r = election_row(one, np.array([1, 0, 0, 0.0]), np.zeros(4))
-check("tau=1 baseline utility", np.array([r["U_tau1"]]), [100 * .5 + 50 * .25 + 25 * .125 * 2])
+# Reference points: on the 4-3-2 profile the random ballot elects R, B, G with 4/9, 3/9, 2/9.
+# Worst margins (share of 9): R -1/9 (loses to G 4:5), G +1/9 (beats R 5:4 and B 6:3), B -3/9, K -1.
+r = election_row(u, np.array([0, 1, 0, 0.0]), worst_margins(u))
+check("random-ballot utility", np.array([r["U_rb"]]), [(4 * u[:, 0].sum() + 2 * u[:, 1].sum() + 3 * u[:, 2].sum()) / 9])
+check("WM of G, best WM, random-ballot WM", np.array([r["WM"], r["WM_best"], r["WM_rb"]]),
+      [1 / 9, 1 / 9, (4 * -1 / 9 + 2 * 1 / 9 + 3 * -3 / 9) / 9])
 
 for m, fn in METHODS.items():
     p = fn.honest(u)

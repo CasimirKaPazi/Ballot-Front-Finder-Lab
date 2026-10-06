@@ -12,24 +12,25 @@ bootstrap replicate redraws whole elections (with replacement) and recomputes ev
 on that same draw. Confidence intervals are the 2.5% and 97.5% percentiles.
 
 Axes (higher is better):
-    PE, WM       proportional efficiency and winner's worst margin with sincere ballots (see metrics.py)
-    PE*, WM*     the same with learned ballots
+    VSE, WME     voter satisfaction and worst-margin efficiency with sincere ballots (see metrics.py);
+                 0 = random ballot, 100 = best candidate, as ratios of sums over elections
+    VSE*, WME*   the same with learned ballots
 CE, CE* (Condorcet efficiency) are reported alongside, not used for dominance.
 Sincerity of the learned ballots (higher is more honest) is reported alongside, not used for the front.
 
 Dominated by: for each method, the methods that are clearly better on at least one axis and
 clearly worse on none. Clearly: the paired 95% bootstrap interval of the difference excludes 0;
 smaller differences count as ties (otherwise methods equal on one axis, like all Condorcet methods
-on CE, would be separated by noise-sized honest-PE differences). Each is followed by the
+with honest ballots, would be separated by noise-sized differences). Each is followed by the
 axes on which it is clearly better. This is a pointer for interpretation, not a verdict: the
 values themselves are the result.
 
 Outputs in --out (a directory; a bare name goes into output/):
     summary.csv                one row per (condition, method): estimates, intervals, dominated_by
     report.md                  tables per condition, comparisons, plots
-    arrows-<c>.png             per condition: honest -> strategic in the PE/WM plane, all methods together
-    shift-<c>.png              per condition: the same shifts as one row per method (PE and WM panels)
-    sincerity-<c>.png          per condition: PE* and WM* against sincerity
+    arrows-<c>.png             per condition: honest -> strategic in the VSE/WME plane, all methods together
+    shift-<c>.png              per condition: the same shifts as one row per method (VSE and WME panels)
+    sincerity-<c>.png          per condition: VSE* and WME* against sincerity
     axes-heatmap.png           all four axes, methods x conditions (if several conditions)
 """
 import argparse
@@ -41,7 +42,7 @@ import numpy as np
 import plots
 from run import out_path, group_text, OUTPUT_DIR
 
-AXES = ["PE", "WM", "PE*", "WM*"]
+AXES = ["VSE", "WME", "VSE*", "WME*"]
 EXTRA = ["CE", "CE*"]           # reported, not used for dominance
 TYPES = ["compromise", "burial", "pushover"]
 PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size", "strategic"]
@@ -52,7 +53,7 @@ def load(paths):
     for p in paths:
         with open(p, newline="") as f:
             rows.extend(csv.DictReader(f))
-    missing = [k for k in ["seed", "strategic", "WM", "sincerity"] if not rows or k not in rows[0]]
+    missing = [k for k in ["seed", "strategic", "WM_best", "U_rb", "sincerity"] if not rows or k not in rows[0]]
     if missing:
         raise SystemExit(f"CSV lacks {', '.join(missing)}; regenerate it with the current run.py or sweep.py")
     return rows
@@ -74,37 +75,40 @@ def arrays(rows):
     mi = {m: j for j, m in enumerate(methods)}
     E, M = len(eids), len(methods)
     A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "wm_s", "wm_l", "sin"] + TYPES}
-    den = np.zeros(E)
+    den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
+    dwm = np.zeros(E)          # per election: WM_best - WM_rb (WME denominator)
     has = np.zeros(E)
     ele = {k: np.full(E, np.nan) for k in ["cw_is_util", "U_cw", "U_best", "fav_ratio"]}   # electorate properties
     for r in rows:
         i, j = ei[(r["seed"], r["election"])], mi[r["method"]]
-        num = float(r["U_method"]) - float(r["U_tau1"])
+        num = float(r["U_method"]) - float(r["U_rb"])
+        nwm = float(r["WM"]) - float(r["WM_rb"])
         pcw = float(r["p_cw"]) if r["has_cw"] == "1" else 0.0
         if r["ballots"] == "sincere":
-            A["num_s"][i, j], A["cw_s"][i, j], A["wm_s"][i, j] = num, pcw, float(r["WM"])
-            den[i] = float(r["U_best"]) - float(r["U_tau1"])
+            A["num_s"][i, j], A["cw_s"][i, j], A["wm_s"][i, j] = num, pcw, nwm
+            den[i] = float(r["U_best"]) - float(r["U_rb"])
+            dwm[i] = float(r["WM_best"]) - float(r["WM_rb"])
             has[i] = float(r["has_cw"])
             for k in ele:
                 ele[k][i] = float(r.get(k) or "nan")         # older CSVs lack the electorate columns
         else:
-            A["num_l"][i, j], A["cw_l"][i, j], A["wm_l"][i, j] = num, pcw, float(r["WM"])
+            A["num_l"][i, j], A["cw_l"][i, j], A["wm_l"][i, j] = num, pcw, nwm
             A["sin"][i, j] = float(r["sincerity"])
             for t in TYPES:
                 A[t][i, j] = float(r.get(t) or "nan")      # older CSVs have no strategy types
-    return methods, A, den, has, ele
+    return methods, A, (den, dwm), has, ele
 
 
-def axis_values(W, A, den, has):
+def axis_values(W, A, dens, has):
     """Axis values for weight rows W (B x E). Returns dict axis -> (B x M)."""
-    d = W @ den
+    d, dw = W @ dens[0], W @ dens[1]
     h = W @ has
     return {
-        "WM": (W @ A["wm_s"]) / W.sum(axis=1)[:, None],
-        "WM*": (W @ A["wm_l"]) / W.sum(axis=1)[:, None],
-        "PE": (W @ A["num_s"]) / d[:, None],
+        "VSE": (W @ A["num_s"]) / d[:, None],
+        "WME": (W @ A["wm_s"]) / dw[:, None],
+        "VSE*": (W @ A["num_l"]) / d[:, None],
+        "WME*": (W @ A["wm_l"]) / dw[:, None],
         "CE": (W @ A["cw_s"]) / h[:, None],
-        "PE*": (W @ A["num_l"]) / d[:, None],
         "CE*": (W @ A["cw_l"]) / h[:, None],
         "sincerity": (W @ A["sin"]) / W.sum(axis=1)[:, None],
         **{t: (W @ A[t]) / W.sum(axis=1)[:, None] for t in TYPES},
@@ -123,38 +127,38 @@ def dominance(P_b):
     return dom, better
 
 
-def electorate_summary(den, has, ele):
+def electorate_summary(dens, has, ele):
     """Electorate properties of a condition (point estimates), or None for CSVs without them."""
     if np.isnan(ele["fav_ratio"]).all():
         return None
     h = has == 1
     return {"cw": float(h.mean()),
             "cw_util": float(np.nanmean(ele["cw_is_util"][h])) if h.any() else float("nan"),
-            # PE lost by electing the Condorcet winner, as a ratio of sums like PE itself
-            "cw_loss": float((ele["U_best"][h] - ele["U_cw"][h]).sum() / den[h].sum()) if h.any() else float("nan"),
+            # VSE lost by electing the Condorcet winner, as a ratio of sums like VSE itself
+            "cw_loss": float((ele["U_best"][h] - ele["U_cw"][h]).sum() / dens[0][h].sum()) if h.any() else float("nan"),
             "fav": float(np.median(ele["fav_ratio"]))}
 
 
 def electorate_text(e):
     return (f"Electorates: Condorcet winner in {e['cw']:.1%}; it also has the highest total utility in "
-            f"{e['cw_util']:.1%} of those; electing it loses {e['cw_loss']:.1%} of PE; "
+            f"{e['cw_util']:.1%} of those; electing it loses {e['cw_loss']:.1%} of VSE; "
             f"favourite ÷ least liked {e['fav']:.1f} (median voter).")
 
 
 def analyse_condition(rows, boot, rng):
-    methods, A, den, has, ele = arrays(rows)
-    E = len(den)
+    methods, A, dens, has, ele = arrays(rows)
+    E = len(dens[0])
     W = rng.multinomial(E, np.full(E, 1 / E), size=boot).astype(float)
-    point = axis_values(np.ones((1, E)), A, den, has)
-    halves = axis_values(np.stack([np.arange(E) % 2 == 0, np.arange(E) % 2 == 1]).astype(float), A, den, has)
-    bs = axis_values(W, A, den, has)
+    point = axis_values(np.ones((1, E)), A, dens, has)
+    halves = axis_values(np.stack([np.arange(E) % 2 == 0, np.arange(E) % 2 == 1]).astype(float), A, dens, has)
+    bs = axis_values(W, A, dens, has)
     P_b = np.stack([bs[a] for a in AXES], axis=2)            # B x M x 4
     dom, better = dominance(P_b)
     # each dominating method with the axes on which it is clearly better, most axes first
     dominated_by = [[(methods[j], [AXES[k] for k in np.flatnonzero(better[i, j])]) for j in np.flatnonzero(dom[i])]
                     for i in range(len(methods))]
     res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs, "halves": halves,
-           "electorate": electorate_summary(den, has, ele)}
+           "electorate": electorate_summary(dens, has, ele)}
     for a in AXES + EXTRA + ["sincerity"] + TYPES:
         res[a] = point[a][0]
         res[a + "_lo"], res[a + "_hi"] = np.percentile(bs[a], [2.5, 97.5], axis=0)
@@ -207,7 +211,7 @@ def main():
     ap.add_argument("--out", default="analysis")
     ap.add_argument("--boot", type=int, default=1000, help="bootstrap replicates")
     ap.add_argument("--compare", nargs="*", default=[], help='pairs "A:B" for paired differences')
-    ap.add_argument("--hide", nargs="*", default=["Random ballot", "Random pair runoff", "Anti-plurality", "TRASH"],
+    ap.add_argument("--hide", nargs="*", default=["Random pair runoff", "Anti-plurality", "TRASH"],
                     help="methods left out of the scatter plots (they stay in tables and heatmaps); "
                          "give --hide with no names to show all")
     ap.add_argument("--seed", type=int, default=0)
@@ -255,7 +259,7 @@ def main():
           "over elections. Brackets are 95% intervals.", ""]
     L += ["How to read this:", "",
           "- The values are the result. **Dominated by** lists the methods that are clearly better on at least one "
-          "of the four axes (PE, WM, PE*, WM*) and clearly worse on none, with the axes on which they are better in "
+          "of the four axes (VSE, WME, VSE*, WME*) and clearly worse on none, with the axes on which they are better in "
           "brackets. Clearly means the paired 95% interval of the difference excludes 0; smaller differences count "
           "as ties. It is a pointer for interpretation, relative to the methods included, not a verdict.",
           "- The intervals in the tables are for each value on its own. They are wide because elections differ "
@@ -263,12 +267,12 @@ def main():
           "same elections: use the paired differences for those, not overlapping intervals.",
           "- Two methods whose paired difference interval includes 0 are tied at this sample size; their order "
           "in the table is not a finding.",
-          "- **WM** (winner's worst margin, in % of voters): the elected candidate's smallest head-to-head margin "
-          "against any rival, by sincere preferences. Positive: the winner is the Condorcet winner by that much; "
-          "negative: a majority prefers some rival by that much. A refined Condorcet measure; every election counts. "
-          "CE (Condorcet efficiency, elections with a Condorcet winner only, elected or not) is shown for comparison "
-          "and not used for dominance.",
-          "- The strategic axes (PE*, WM*) depend on the group size: see the README section on coordination.",
+          "- **VSE** and **WME** are efficiencies with 0 = random ballot and 100 = the best candidate of each "
+          "election (values above 100 cannot be reached). VSE measures total utility; WME the winner's worst "
+          "head-to-head margin by sincere preferences (a refined Condorcet measure; every election counts; Minimax "
+          "reaches 100 with honest ballots by construction). CE (Condorcet efficiency, elections with a Condorcet "
+          "winner only, elected or not) is shown for comparison and not used for dominance.",
+          "- The strategic axes (VSE*, WME*) depend on the group size: see the README section on coordination.",
           "- **Compromise, burial, push-over** are shares of voters whose learned ballot reverses a real preference, "
           "by kind (see strategy.strategy_types): compromise raises a liked second choice above the favourite, "
           "push-over raises a disliked candidate to the top, burial keeps the favourite on top and reverses a "
@@ -305,10 +309,10 @@ def main():
         L.append("")
         if all(r["electorate"] for r in results.values()):
             L += ["**Electorates** (properties of the generated electorates, independent of the methods): how often "
-                  "a Condorcet winner exists, how often it also has the highest total utility, how much PE electing "
-                  "it loses (ratio of sums, as PE), and how steep preferences are (favourite ÷ least liked, median "
-                  "voter). Differences between methods on PE mostly come from the third column.", "",
-                  "| Condition | Condorcet winner | … with highest total utility | PE lost electing it | "
+                  "a Condorcet winner exists, how often it also has the highest total utility, how much VSE electing "
+                  "it loses (ratio of sums, as VSE), and how steep preferences are (favourite ÷ least liked, median "
+                  "voter). Differences between methods on VSE mostly come from the third column.", "",
+                  "| Condition | Condorcet winner | … with highest total utility | VSE lost electing it | "
                   "favourite ÷ least liked |", "|---|---|---|---|---|"]
             for r in results.values():
                 e = r["electorate"]
@@ -325,9 +329,9 @@ def main():
               f"group size {group_text(p['group_size'])}, "
               f"strategic share {p['strategic']}." + (" " + electorate_text(r["electorate"]) if r["electorate"] else ""),
               "",
-              "| Method | PE | WM | PE* | WM* | CE | CE* | Sincerity | Compromise | Burial | Push-over | Dominated by |",
+              "| Method | VSE | WME | VSE* | WME* | CE | CE* | Sincerity | Compromise | Burial | Push-over | Dominated by |",
               "|---|---|---|---|---|---|---|---|---|---|---|---|"]
-        for j in np.argsort(-r["PE"], kind="stable"):
+        for j in np.argsort(-r["VSE"], kind="stable"):
             L.append(f"| {r['methods'][j]} | "
                      + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in AXES + EXTRA + ["sincerity"])
                      + " | " + " | ".join(f"{r[t][j] * 100:.1f}%" for t in TYPES)
