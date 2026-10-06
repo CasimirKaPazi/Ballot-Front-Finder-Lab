@@ -38,9 +38,10 @@ def _repel(ax, texts, anchors, iterations=300):
     y_lo, y_hi = ax.get_ylim()
     pad = 0.015 * (y_hi - y_lo)
     y_lo, y_hi = y_lo + pad, y_hi - pad
+    renderer = fig.canvas.get_renderer()       # text extents follow set_position without a redraw
     for _ in range(iterations):
         moved = False
-        boxes = [t.get_window_extent().expanded(1.05, 1.15) for t in texts]
+        boxes = [t.get_window_extent(renderer).expanded(1.05, 1.15) for t in texts]
         for i in range(len(texts)):
             for j in range(i + 1, len(texts)):
                 if boxes[i].overlaps(boxes[j]):
@@ -54,7 +55,6 @@ def _repel(ax, texts, anchors, iterations=300):
                     moved = True
         if not moved:
             break
-        fig.canvas.draw()
     for t, (x, y) in zip(texts, anchors):
         tx, ty = t.get_position()
         if abs(ax.transData.transform((tx, ty))[1] - ax.transData.transform((x, y))[1]) > 4:
@@ -161,6 +161,82 @@ def sincerity(r, path, hide):
         _repel(ax, texts, anchors)
     axs[0].set_title(f"Quality under strategy against sincerity (upper right is best)\n{r['label']}", loc="left")
     fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+CHAIN = LinearSegmentedColormap.from_list("chain", ["#bcd6f5", "#6aa3e6", "#2a78d6", "#1c5cab", "#0d366b"])
+
+
+def chain(results, param, values, path, hide, learning_only, groups):
+    """One parameter swept: for each method, a chain of arrows through the conditions in the order
+    of the parameter's values, in the VSE/WME plane with learned ballots. Point shade follows the
+    value (light = first, dark = last). If the parameter only affects learning (the electorates are
+    the same), every chain starts at the method's honest point (open circle); otherwise the honest
+    points form their own chain (open circles, dashed). One panel per method group (groups: name ->
+    methods; methods in no group go to "other"), all panels on the same scale."""
+    base = results[0]
+    names = [m for m in base["methods"] if m not in hide and all(m in r["methods"] for r in results)]
+    panels = [(g, [m for m in names if m in ms]) for g, ms in groups.items()]
+    grouped = {m for _, ms in panels for m in ms}
+    panels.append(("other", [m for m in names if m not in grouped]))
+    panels = [(g, ms) for g, ms in panels if ms]
+    k = len(results)
+    shades = [CHAIN(0.15 + 0.85 * i / max(1, k - 1)) for i in range(k)]
+    ncols = min(3, len(panels))
+    nrows = -(-len(panels) // ncols)
+    fig, axs = plt.subplots(nrows, ncols, figsize=(5.2 * ncols, 4.6 * nrows + 0.8), sharex=True, sharey=True,
+                            squeeze=False)
+
+    def series(m):
+        js = [r["methods"].index(m) for r in results]
+        return ([r["VSE*"][j] * 100 for r, j in zip(results, js)], [r["WME*"][j] * 100 for r, j in zip(results, js)],
+                [r["VSE"][j] * 100 for r, j in zip(results, js)], [r["WME"][j] * 100 for r, j in zip(results, js)])
+
+    labelled = []
+    for ax, (g, ms) in zip(axs.flat, panels):
+        texts, anchors = [], []
+        for m in ms:
+            lx, ly, hx, hy = series(m)
+            if learning_only:
+                pts = [(hx[0], hy[0])] + list(zip(lx, ly))
+                ax.scatter([hx[0]], [hy[0]], s=28, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.1, zorder=3)
+            else:
+                pts = list(zip(lx, ly))
+                ax.plot(hx, hy, ls="--", lw=0.8, color="#c4c3be", zorder=1)
+                for i in range(k):
+                    ax.scatter([hx[i]], [hy[i]], s=24, facecolors=SURFACE, edgecolors=shades[i], linewidths=1.1,
+                               zorder=3)
+            for (x0, y0), (x1, y1) in zip(pts[:-1], pts[1:]):
+                ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
+                            arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=0.9, shrinkA=3, shrinkB=4,
+                                            mutation_scale=7))
+            for i in range(k):
+                ax.scatter([lx[i]], [ly[i]], s=40, color=shades[i], edgecolors=SURFACE, linewidths=0.8, zorder=4)
+            anchors.append((lx[-1], ly[-1]))
+            texts.append(ax.text(lx[-1], ly[-1], " " + m, fontsize=7.5, color=INK2, va="center", zorder=5))
+        ax.set_title(g, loc="left", fontsize=10)
+        labelled.append((ax, texts, anchors))
+    for ax in axs.flat[len(panels):]:
+        ax.set_visible(False)
+    for ax in axs[:, 0]:
+        ax.set_ylabel(WME_LABEL.replace("WME", "WME*", 1), fontsize=8)
+    for ax in axs[-1, :]:
+        ax.set_xlabel(VSE_LABEL.replace("VSE", "VSE*", 1), fontsize=8)
+    _unreachable(axs.flat[0], "xy")                       # shared axes: limits apply to all panels
+    for ax in list(axs.flat)[1:len(panels)]:
+        lo, hi = ax.get_xlim()
+        ax.axvspan(100, hi, color=UNREACHABLE, zorder=0, lw=0)
+        lo, hi = ax.get_ylim()
+        ax.axhspan(100, hi, color=UNREACHABLE, zorder=0, lw=0)
+    handles = [plt.Line2D([], [], ls="", marker="o", ms=7, color=shades[i], label=str(v)) for i, v in enumerate(values)]
+    handles.append(plt.Line2D([], [], ls="", marker="o", ms=6, mfc=SURFACE, mec=MUTED, label="honest ballots"))
+    fig.legend(handles=handles, loc="upper right", ncol=len(handles), frameon=False, fontsize=8,
+               title=f"{param} (light → dark)", title_fontsize=8)
+    fig.suptitle(f"Sweep over {param}: learned ballots", x=0.01, ha="left", fontweight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    for ax, texts, anchors in labelled:
+        _repel(ax, texts, anchors)
     fig.savefig(path, dpi=150)
     plt.close(fig)
 

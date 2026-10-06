@@ -102,7 +102,8 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--out` | `analysis` | output directory (`output/analysis`) |
 | `--boot` | 1000 | bootstrap replicates |
 | `--compare` | none | pairs `"A:B"` for paired differences |
-| `--hide` | Random pair runoff, Anti-plurality, TRASH | methods left out of the scatter plots; `--hide` alone shows all |
+| `--hide` | Random pair runoff, Anti-plurality, TRASH | methods left out of the scatter and sweep plots; `--hide` alone shows all |
+| `--show` | all | only these methods or groups in the scatter and sweep plots (overrides `--hide`), e.g. `--show condorcet STAR` |
 | `--seed` | 0 | bootstrap random seed |
 
 ## Robustness: one parameter at a time
@@ -277,6 +278,9 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | `shift-<c>.png` | the same shifts as one row per method, VSE and WME panels; easier to read per method |
 | `sincerity-<c>.png` | VSE* and WME* against sincerity |
 | `axes-heatmap.png` | the four axes, methods × conditions (when there are several) |
+| `chain-<parameter>.png` | sweeps: for each parameter varied around the base (the first condition), each method's learned values as a chain of arrows through the parameter's values, light to dark; one panel per method group, all on the same scale. If the parameter only affects learning (strategic share, group size, rounds, poll samples), the electorates are the same and each chain starts at the method's honest point; otherwise the honest values form their own dashed chain |
+
+Sweep plots appear automatically for every parameter that has at least two conditions differing from the base only in that parameter: a one-at-a-time sweep (`sweep.py --one-at-a-time`) or a grid over a single parameter. They show point estimates only; with few elections the zigzags in a chain are mostly noise. One far-off method (often Plurality) sets the shared scale for all panels; `--hide` or `--show` zooms in.
 
 Methods are identified by labels, not colour. Random pair runoff, Anti-plurality and TRASH are left out of the scatter plots by default (`--hide`), since their distance compresses the scale; they stay in tables and heatmaps. `--hide` with no names shows all.
 

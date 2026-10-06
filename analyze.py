@@ -41,6 +41,7 @@ import numpy as np
 
 import plots
 from run import out_path, group_text, OUTPUT_DIR
+from methods import GROUPS
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
 EXTRA = ["CE", "CE*"]           # reported, not used for dominance
@@ -168,12 +169,36 @@ def analyse_condition(rows, boot, rng):
 def label(key, varying, first):
     """Name a condition by the parameters in which it differs from the first condition (the base)."""
     p, b = dict(zip(PARAMS, key)), dict(zip(PARAMS, first))
-    names = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share"}
+    names = PARAM_NAMES
     diff = [k for k in varying if p[k] != b[k]]
     if not varying:
         return "single condition"
     return ", ".join(f"{names.get(k, k)} {group_text(p[k]) if k == 'group_size' else p[k]}"
                      for k in diff) or "base"
+
+
+PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share"}
+LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic"}     # same electorates, only learning differs
+
+
+def param_order(k, v):
+    """Sort key for a parameter value; group size 0 (whole ranking groups) counts as the largest."""
+    x = float(v)
+    return float("inf") if k == "group_size" and x == 0 else x
+
+
+def sweep_chains(keys, varying):
+    """For each varying parameter: the base condition (the first) and every condition that differs
+    from it only in that parameter, ordered by the parameter's value. Only parameters with at
+    least two such conditions form a chain."""
+    base = dict(zip(PARAMS, keys[0]))
+    out = {}
+    for k in varying:
+        members = [key for key in keys
+                   if all(v == base[q] for q, v in zip(PARAMS, key) if q != k)]
+        if len(members) >= 2:
+            out[k] = sorted(members, key=lambda key: param_order(k, dict(zip(PARAMS, key))[k]))
+    return out
 
 
 def ranks(x):
@@ -214,6 +239,8 @@ def main():
     ap.add_argument("--hide", nargs="*", default=["Random pair runoff", "Anti-plurality", "TRASH"],
                     help="methods left out of the scatter plots (they stay in tables and heatmaps); "
                          "give --hide with no names to show all")
+    ap.add_argument("--show", nargs="+", default=None,
+                    help="only these methods or groups in the scatter and chain plots (overrides --hide)")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
     a.out = out_path(a.out)
@@ -222,6 +249,10 @@ def main():
     a.csv = [p if os.path.exists(p) or os.path.dirname(p) else os.path.join(OUTPUT_DIR, p) for p in a.csv]
     rng = np.random.default_rng(a.seed)
 
+    if a.show:
+        from methods import select, METHODS
+        keep = set(select(a.show))
+        a.hide = [m for m in METHODS if m not in keep]
     conds = conditions(load(a.csv))
     keys = list(conds)
     varying = [k for i, k in enumerate(PARAMS) if len({key[i] for key in keys}) > 1]
@@ -252,6 +283,12 @@ def main():
         plots.sincerity(r, os.path.join(a.out, f"sincerity-{r['tag']}.png"), a.hide)
     if len(results) > 1:
         plots.axes_heatmap(list(results.values()), AXES, os.path.join(a.out, "axes-heatmap.png"))
+    chains = sweep_chains(keys, varying)
+    for k, chain_keys in chains.items():
+        vals = [dict(zip(PARAMS, key))[k] for key in chain_keys]
+        shown_vals = [group_text(v) if k == "group_size" else v for v in vals]
+        plots.chain([results[key] for key in chain_keys], PARAM_NAMES.get(k, k), shown_vals,
+                    os.path.join(a.out, f"chain-{k}.png"), a.hide, k in LEARNING_ONLY, GROUPS)
 
     # report.md
     L = ["# Voting Pareto Lab — analysis", ""]
@@ -279,6 +316,11 @@ def main():
           "preference below it.", ""]
     if len(results) > 1:
         L += ["## Across conditions", "", "![axes](axes-heatmap.png)", ""]
+        if chains:
+            L += ["**Sweeps:** for each parameter varied around the base, the methods' learned values as a chain "
+                  "of arrows in the order of the parameter's values (light to dark). Parameters that only affect "
+                  "learning start each chain at the honest point; others show the honest values as a dashed chain.",
+                  ""] + [f"![sweep over {k}](chain-{k}.png)\n" for k in chains]
         # rank stability: does each condition order the methods like the base (first) condition?
         base = list(results.values())[0]
         shown = [m for m in base["methods"] if m not in a.hide]
