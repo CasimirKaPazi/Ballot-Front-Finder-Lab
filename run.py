@@ -1,7 +1,7 @@
 """Run honest and strategic elections for all methods on one scenario and write CSV.
 
 Usage:
-    python run.py --elections 200 --voters 99 --cands 4 --clusters 3 --spread 0.5 --width 1.0 --seed 1
+    python run.py --elections 200                      # defaults: see README, Parameters
 
 Each electorate is tallied twice per method: with sincere ballots, and after the groups
 (voters with the same sincere ranking) have learned shared ballots (see strategy.py).
@@ -16,13 +16,14 @@ share of elections where learning settled (cycles never do).
 Partial strategy: --strategic p makes a random share p of the voters strategic (the same voters
 for every method); the rest always vote sincerely.
 
-Outputs (prefix set by --out):
+Outputs (prefix set by --out; a name without a directory goes into output/):
     <out>-elections.csv   one row per (election, method, ballots), with the run's parameters
                           as columns, so several runs can be combined (see analyze.py)
     <out>-summary.csv     one row per method, with on_front for the PE/WM/PE*/WM* front
 """
 import argparse
 import csv
+import os
 import zlib
 from multiprocessing import Pool
 import numpy as np
@@ -49,10 +50,39 @@ def one_election(args):
         # Each method learns with its own random stream, keyed by name, so results stay
         # the same when methods are added or reordered.
         mrng = np.random.default_rng([seed, e, zlib.crc32(name.encode())])
-        B, settled, sin = learn(m, u, mrng, rounds, samples, group_size, strategic)
+        B, settled, sin = learn(m, u, mrng, rounds, samples, group_cap(group_size, len(u)), strategic)
         out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, m.tally(B), m_cand), **estats,
                     "sincerity": sin, "settled": int(settled), **strategy_types(B, u)})
     return out
+
+
+OUTPUT_DIR = "output"
+
+
+def out_path(name):
+    """Output prefix or directory: a bare name goes into OUTPUT_DIR (created if needed)."""
+    path = name if os.path.dirname(name) else os.path.join(OUTPUT_DIR, name)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    return path
+
+
+def group_size_arg(x):
+    """--group-size: 0 (whole ranking groups), a whole number of voters, or a share of the electorate
+    between 0 and 1 (e.g. 0.05 = 5% of the voters)."""
+    v = float(x)
+    if v < 0 or (v > 1 and v != int(v)):
+        raise argparse.ArgumentTypeError("group size: 0, a whole number of voters, or a share between 0 and 1")
+    return int(v) if v == int(v) else v
+
+
+def group_cap(g, n):
+    """Group size cap in voters: a share 0 < g < 1 of n voters (at least 1), else g itself."""
+    return max(1, round(g * n)) if 0 < g < 1 else int(g)
+
+
+def group_text(g):
+    g = float(g)
+    return "unlimited" if g == 0 else f"{g:.0%} of voters" if g < 1 else f"{int(g)}"
 
 
 # Run parameters written into every row of the elections CSV
@@ -76,18 +106,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--elections", type=int, default=200)
     ap.add_argument("--voters", type=int, default=99)
-    ap.add_argument("--cands", type=int, default=4)
-    ap.add_argument("--dims", type=int, default=2)
-    ap.add_argument("--zipf", type=int, default=0, choices=[0, 1],
+    ap.add_argument("--cands", type=int, default=6)
+    ap.add_argument("--dims", type=int, default=10)
+    ap.add_argument("--zipf", type=int, default=1, choices=[0, 1],
                     help="1: dimension i has scale 1/i (Zipf dimensions, see scenario.py)")
     ap.add_argument("--clusters", type=int, default=3)
     ap.add_argument("--spread", type=float, default=0.5)
-    ap.add_argument("--width", type=float, default=1.0)
+    ap.add_argument("--width", type=float, default=1.5)
     ap.add_argument("--rounds", type=int, default=20, help="learning rounds")
     ap.add_argument("--samples", type=int, default=10, help="poll samples per round")
-    ap.add_argument("--group-size", type=int, default=0,
-                    help="max voters coordinating as one group (0 = whole ranking group, 1 = individual)")
-    ap.add_argument("--strategic", type=float, default=1.0,
+    ap.add_argument("--group-size", type=group_size_arg, default=10,
+                    help="max voters coordinating as one group: a number of voters (1 = individual), a share of the electorate between 0 and 1 (0.05 = 5%%), or 0 = whole ranking group")
+    ap.add_argument("--strategic", type=float, default=0.5,
                     help="share of voters who vote strategically (random, the same for every method)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=None)
@@ -100,7 +130,8 @@ def main():
     names = select(a.methods, a.exclude)
     results = simulate(p, a.elections, a.workers, names)
 
-    with open(f"{a.out}-elections.csv", "w", newline="") as f:
+    out = out_path(a.out)
+    with open(f"{out}-elections.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(results[0]))
         w.writeheader()
         w.writerows(results)
@@ -119,15 +150,16 @@ def main():
     front = set(pareto([[summ[m][x] for x in axes] for m in names]))
 
     cols = ["PE", "WM", "PE_learned", "WM_learned", "CE", "CE_learned", "VSE", "RBE", "sincerity", "settled"]
-    with open(f"{a.out}-summary.csv", "w", newline="") as f:
+    with open(f"{out}-summary.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["method"] + cols + ["on_front"])
         for i, m in enumerate(names):
             w.writerow([m] + [f"{summ[m][c]:.4f}" for c in cols] + [int(i in front)])
 
-    print(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.clusters} clusters, "
+    print(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.dims} dimensions"
+          f"{' (Zipf)' if a.zipf else ''}, {a.clusters} clusters, "
           f"spread {a.spread}, width {a.width}; learning {a.rounds} rounds x {a.samples} poll samples, "
-          f"group size {a.group_size or 'unlimited'}, strategic share {a.strategic}; seed {a.seed}")
+          f"group size {group_text(a.group_size)}, strategic share {a.strategic}; seed {a.seed}")
     print(f"{'method':<26}{'PE':>7}{'WM':>7}{'PE*':>7}{'WM*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
     for m in sorted(names, key=lambda m: -summ[m]["PE"]):
         s = summ[m]

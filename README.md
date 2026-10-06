@@ -2,32 +2,37 @@
 
 Python 3 + NumPy; the analysis also needs matplotlib. Honest and learned-strategy elections, evaluated on a Pareto front.
 
+This file describes the software: the model, its parameters, the methods and the analysis. What the simulations have shown so far, with the commands that produced it, is in [FINDINGS.md](FINDINGS.md).
+
 ```
 python test_methods.py                                   # hand-built checks
-python run.py --elections 200                            # one condition, prints a table
-python sweep.py --group-size 1 10 0 --seeds 1 2          # grid of conditions -> sweep-elections.csv
-python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> analysis/
+python run.py                                            # one condition at the defaults, prints a table
+python sweep.py --group-size 10 1 0 --seeds 1 2          # grid of conditions -> sweep-elections.csv
+python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> output/analysis/
 ```
 
-300 elections with all 31 methods take about 8 minutes on 2 cores (default condition; 200 voters and 6 candidates take about 5 times as long); time scales linearly with cores. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
+All outputs go into the folder `output/` (created when needed): an `--out` name without a directory is placed there, and `analyze.py` looks there for CSVs given without a directory. An `--out` with a directory (`--out runs/test`) is used as given.
+
+200 elections with all 31 methods at the default settings take about 11 minutes on 2 cores; time scales linearly with cores. More candidates, more voters and smaller groups take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
 
 ## Files
 
 | File | Contents |
 |---|---|
-| `scenario.py` | Electorate generator: spatial clusters, absolute utilities `exp(-distance / width)` |
-| `methods.py` | Ballot types, sincere ballots, exact tallies on ballot matrices (ties shared) |
+| `scenario.py` | Electorate generator: spatial clusters, Zipf dimensions, absolute utilities `exp(-distance / width)` |
+| `methods.py` | Ballot types, sincere ballots, exact tallies on ballot matrices (ties shared), method groups |
 | `strategy.py` | Learning engine, sincerity and strategy types |
-| `metrics.py` | Efficiencies for three baselines, winner's worst margin, Condorcet efficiency, Pareto front |
+| `metrics.py` | Efficiencies for three baselines, winner's worst margin, Condorcet efficiency, electorate properties, Pareto front |
 | `run.py` | Tallies every electorate with sincere and learned ballots, runs in parallel, writes CSV with the run's parameters as columns |
-| `sweep.py` | Runs a grid of conditions and seeds into one CSV |
-| `analyze.py` | Paired bootstrap, intervals, dominance pointers, paired comparisons, Markdown report |
+| `sweep.py` | Runs a grid of conditions (or one parameter at a time) and seeds into one CSV |
+| `analyze.py` | Paired bootstrap, intervals, dominance pointers, paired comparisons, rank stability, Markdown report |
 | `plots.py` | The analysis plots |
 | `test_methods.py` | Hand-built checks |
+| `FINDINGS.md` | Results so far and their interpretation |
 
 ## Strategy engine
 
-- **Groups:** voters with the same sincere ranking, optionally split at random into subgroups of at most `--group-size` voters (see Coordination below). A group either votes sincerely (each member their own sincere ballot) or casts one shared ballot.
+- **Groups:** strategic voters with the same sincere ranking, split at random into subgroups of at most `--group-size` voters (see Coordination below). A group either votes sincerely (each member their own sincere ballot) or casts one shared ballot.
 - **Polls:** each round draws 10 bootstrap resamples of the electorate. A proposal is judged by the group's total expected utility averaged over these samples, so a group gains in proportion to how often it would be pivotal, not only when it is decisive in the exact electorate.
 - **Proposals:** one small change to the group's ballot:
   - one name: switch to another candidate
@@ -41,7 +46,7 @@ python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> analysis
 
   Voters start sincere. A group that has not deviated yet changes the sincere ballot of its average member (mean utilities of the group); a deviating group changes its current shared ballot, and sometimes (15% of proposals) proposes going back to sincere.
 - **Acceptance:** a proposal is kept only if it raises the group's expected utility. A return to sincere is also kept when it is not worse: voters prefer honesty when indifferent. Without this, a deviation that once paid off stays forever once it stops mattering, and sincerity keeps falling with the number of rounds instead of reflecting what strategy actually pays.
-- **Rounds:** 20, groups in random order each round. In a test with 50 voters and 6 candidates, PE*, CE* and sincerity changed only within noise between 20 and 40 rounds; at 10 rounds they were still moving. Stopping early once a round passes without any accepted change was tested and rejected (200 elections, default condition): it saves most of the run time, but quiet rounds are common long before learning has finished, since each group tries only one random change per round. Stopping after one quiet round changed 55 of 99 method × axis values clearly (sincerity higher for almost every method, CE* up to 9 points higher for Condorcet methods); after two quiet rounds still 50. For the same reason, `settled` (no change in the last round) is a weak sign of convergence.
+- **Rounds:** 20, groups in random order each round; no early stop. Each group tries only one random change per round, so a round without any accepted change does not mean learning has finished, and `settled` (no change in the last round) is a weak sign of convergence. The tests behind both choices are in FINDINGS.md.
 - **Feature sums:** every tally except Condorcet-random-drop depends on the ballots only through sums over voters of per-voter features (totals, first and last places, the pairwise matrix, grade counts, first choices among each subset of candidates, ...). Each method lists its features and decides from their sums. During learning the sums are kept per poll sample and updated only for the group that changes. All features are integers, so this gives exactly the same learned ballots as recounting (checked against the earlier code).
 - **Conditional top-two runoff** is not a separate method: a candidate with more than half the first choices also wins every runoff, since the runoff reuses the same rankings. (In a real two-round election voters vote again, with new information and different turnout; that is not modelled.)
 - **Random streams:** each method learns with its own random stream per election, keyed by the method's name, so results do not change when methods are added or reordered.
@@ -50,78 +55,71 @@ python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> analysis
 
 Each election draws a fresh electorate (`scenario.py`):
 
-- cluster centres: `--clusters` points, standard normal in `--dims` dimensions;
+- cluster centres: `--clusters` points, normal in `--dims` dimensions;
 - cluster sizes: random weights from a flat Dirichlet distribution, so some elections have one dominant cluster and others are balanced;
-- voters: each assigned to a cluster by these weights, placed normally around its centre with standard deviation `--spread`;
+- voters: each assigned to a cluster by these weights, placed normally around its centre with standard deviation `--spread` (per dimension, before the Zipf scaling);
 - candidates: drawn from the same distribution as voters (cluster by the same weights, same spread);
 - utilities: `u = exp(-distance / width)`, absolute and not normalised: 1 at zero distance, towards 0 far away. A smaller `--width` makes voters care only about nearby candidates.
 
-**Zipf dimensions** (`--zipf 1`), after Clay Smith's Mixture of Zipf Gaussians ([article](https://cdsmithus.medium.com/simulating-elections-with-spatial-voter-models-1ff50892390), [code](https://github.com/cdsmith/spatial-voting), `src/Model.hs`): dimension i (1, 2, 3, ...) has standard deviation 1/i — for cluster centres, voters and candidates alike — so one issue dominates and the others matter less and less, without being absent.
+**Zipf dimensions** (the default, `--zipf 1`), after Clay Smith's Mixture of Zipf Gaussians ([article](https://cdsmithus.medium.com/simulating-elections-with-spatial-voter-models-1ff50892390), [code](https://github.com/cdsmith/spatial-voting), `src/Model.hs`): dimension i (1, 2, 3, ...) has standard deviation 1/i — for cluster centres, voters and candidates alike — so one issue dominates and the others matter less and less, without being absent.
 
-- Scaling follows Smith's code: the standard deviation is 1/i, so the variance is 1/i². (The article's wording "proportional to 1/n" could also be read as variance 1/n; the code is unambiguous.) The total variance then converges (to π²/6), so beyond about 4 dimensions their number hardly matters: in the default scenario the electorate properties at 10 and 20 dimensions are the same within noise. With Zipf, use e.g. `--dims 10`.
+- Scaling follows Smith's code: the standard deviation is 1/i, so the variance is 1/i². (The article's wording "proportional to 1/n" could also be read as variance 1/n; the code is unambiguous.) The total variance then converges (to π²/6), so beyond about 4 dimensions their number hardly matters. The default of 10 dimensions is well past that.
 - Each cluster applies the 1/i scaling to its own slightly shuffled order of dimensions (each rank perturbed by normal noise with standard deviation 0.1 × dims, Smith's ratio of 10 for 100 dimensions), so camps differ in which issues they vary on most. Cluster centres keep the global order.
 - Taken over from Smith: the 1/i scaling and the per-cluster shuffle. Not taken over: his other settings (10 clusters with uniform random weights, cluster centres uniform in ±3/i, a random spread factor per cluster, utility = −distance); our Dirichlet weights, normal centres, one spread and `exp(-distance / width)` stay.
-- Distances are shorter than with equal dimensions, so preferences are flatter at the same width (favourite ÷ least liked about 2.8 at dims 10, width 1, against 3.9 for 2 plain dimensions). Width 0.75 with Zipf gives about the same steepness as width 1 without.
+- `--zipf 0` gives the earlier model: all dimensions with standard deviation 1 (then use few dimensions, e.g. 2). Distances are longer there, so the same width gives steeper preferences.
 
 ## Parameters
 
-`run.py` (one condition):
+`run.py` (one condition). The defaults are the base condition of the latest sweeps (see FINDINGS.md):
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--elections` | 200 | electorates |
 | `--voters` | 99 | voters per election (odd, so pairwise majorities rarely tie) |
-| `--cands` | 4 | candidates |
-| `--dims` | 2 | issue-space dimensions |
-| `--zipf` | 0 | 1: dimension i has scale 1/i (Zipf dimensions, above); use with more dimensions, e.g. 10 |
+| `--cands` | 6 | candidates |
+| `--dims` | 10 | issue-space dimensions |
+| `--zipf` | 1 | 1: dimension i has scale 1/i (Zipf dimensions, above); 0: all dimensions equal |
 | `--clusters` | 3 | voter clusters |
-| `--spread` | 0.5 | standard deviation of voters around their cluster centre (centres have 1) |
-| `--width` | 1.0 | distance scale of the utility fall-off |
+| `--spread` | 0.5 | standard deviation of voters around their cluster centre (centres have 1), before the Zipf scaling |
+| `--width` | 1.5 | distance scale of the utility fall-off |
 | `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |
 | `--rounds` | 20 | learning rounds |
 | `--samples` | 10 | poll resamples per round |
-| `--group-size` | 0 | most voters that coordinate as one group; 0 = whole ranking group, 1 = every voter alone |
-| `--strategic` | 1.0 | share of voters who vote strategically (see Partial strategy) |
+| `--group-size` | 10 | most voters that coordinate as one group: a number of voters (1 = every voter alone), a share of the electorate between 0 and 1 (0.05 = 5% of the voters, rounded, at least 1), or 0 = whole ranking group |
+| `--strategic` | 0.5 | share of voters who vote strategically (see Partial strategy) |
 | `--workers` | all cores | parallel processes |
 | `--methods` | all | run only these methods (start from none); method or group names (see Methods), case ignored |
 | `--exclude` | none | run all methods except these |
-| `--out` | `results` | output prefix: `<out>-elections.csv` and `<out>-summary.csv` |
+| `--out` | `results` | output prefix: `output/<out>-elections.csv` and `output/<out>-summary.csv` |
 
-`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--group-size`, `--strategic`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `<out>-elections.csv` (default `--out sweep`), one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid.
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--group-size`, `--strategic`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `output/<out>-elections.csv` (default `--out sweep`), one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid.
 
 `analyze.py`:
 
 | Flag | Default | Meaning |
 |---|---|---|
 | (positional) | | one or more elections CSVs |
-| `--out` | `analysis` | output directory |
+| `--out` | `analysis` | output directory (`output/analysis`) |
 | `--boot` | 1000 | bootstrap replicates |
 | `--compare` | none | pairs `"A:B"` for paired differences |
 | `--hide` | Random ballot, Random pair runoff, Anti-plurality, TRASH | methods left out of the scatter plots; `--hide` alone shows all |
 | `--seed` | 0 | bootstrap random seed |
 
-## How much does the voter model matter?
+## Robustness: one parameter at a time
 
-Rather than adding other voter models, the sweep below varies each parameter of the spatial model on its own around a base condition (99 voters, 4 candidates, 2 dimensions, 3 clusters, spread 0.5, width 1.0, group size 10, full strategy), keeping candidate placement as it is:
+To see how much a model assumption matters, vary each parameter on its own around a base condition and check whether the methods keep their order:
 
 ```
-python sweep.py --one-at-a-time --dims 2 1 3 4 --clusters 3 1 2 5 --spread 0.5 0.25 1.0 \
-    --width 1.0 0.5 2.0 --group-size 10 --seeds 1 2 --elections 200 --out model
+python sweep.py --one-at-a-time --clusters 3 5 --spread 0.5 0.75 --width 1.5 1.0 \
+    --group-size 10 1 0 --strategic 0.5 1 --seeds 1 2 --elections 400 --out model
 python analyze.py model-elections.csv --out model-analysis
 ```
 
-| Parameter | Base | Varied to | Question |
-|---|---|---|---|
-| dims | 2 | 1, 3, 4 | how many independent issues |
-| clusters | 3 | 1, 2, 5 | how many camps |
-| spread | 0.5 | 0.25, 1.0 | how tight the camps are (cluster centres have spread 1) |
-| width | 1.0 | 0.5, 2.0 | how fast voters stop caring about distant candidates |
+Conditions are labelled by how they differ from the base (`c1: base`, `clusters 5`, ...).
 
-That is 11 conditions with 400 elections each (two seeds), about two hours on 2 cores. Conditions are labelled by how they differ from the base (`c1: base`, `dims 1`, ...).
+`analyze.py` adds a **rank stability** table when there are several conditions: for each axis, the rank correlation (Spearman) between the methods' values in a condition and in the base (the first condition). The methods hidden in the plots are left out. Its first row is a noise reference: the agreement expected from sampling noise alone between two runs of the base condition (the base's even and odd elections correlated, then scaled up to full size with the Spearman-Brown formula `2r / (1 + r)`). A condition near or above that row orders methods as the base does; a value clearly below it means the parameter changes which methods do well. With few elections everything is noise, and PE* in particular needs many elections (several hundred per condition): strategic differences between methods are small. Many methods lie close together on each axis, so rank correlation is a strict test; the heatmap shows where the changes come from.
 
-`analyze.py` adds a **rank stability** table when there are several conditions: for each axis, the rank correlation (Spearman) between the methods' values in a condition and in the base (the first condition). The methods hidden in the plots are left out. Its first row is a noise reference: the agreement expected from sampling noise alone between two runs of the base condition (the base's even and odd elections correlated, then scaled up to full size with the Spearman-Brown formula `2r / (1 + r)`). A condition near or above that row orders methods as the base does; a value clearly below it means the parameter changes which methods do well. With few elections everything is noise, and PE* in particular needs many elections: strategic differences between methods are small. Many methods lie close together on each axis, so rank correlation is a strict test; the heatmap shows where the changes come from.
-
-An **electorates** table (and a line in each condition's section) describes the generated electorates themselves, independent of the methods: how often a Condorcet winner exists, how often it also has the highest total utility, how much PE electing it loses (ratio of sums, as PE), and how steep preferences are (u(favourite) ÷ u(least liked), median over voters, then median over elections). The third column explains most PE differences between Condorcet and rated methods; the last one is a concrete handle for choosing `--width` (in the default scenario, median ratio about 17 at width 0.5, 4 at width 1, 2.6 at width 1.5, 2 at width 2).
+An **electorates** table (and a line in each condition's section) describes the generated electorates themselves, independent of the methods: how often a Condorcet winner exists, how often it also has the highest total utility, how much PE electing it loses (ratio of sums, as PE), and how steep preferences are (u(favourite) ÷ u(least liked), median over voters, then median over elections). The third column explains most PE differences between Condorcet and rated methods; the last one is a concrete handle for choosing `--width`.
 
 ## Coordination: what the strategic axes measure
 
@@ -130,29 +128,19 @@ How many voters move together decides which strategies pay, and the methods diff
 - **Compromise** (voting for a viable candidate instead of a hopeless favourite) pays even for a single voter. It is the main strategy in Top-two runoff and IRV, and it tends to carry the Condorcet winner into the final round.
 - **Burial** (ranking or rating a rival below a candidate one likes less, to create a cycle or to drop the rival in a runoff) only pays when many voters do it together. A single voter out of 99 is almost never pivotal for it. It is the main strategy against Condorcet methods, STAR and BTR-score, and it targets exactly the Condorcet winner.
 
-Diagnostic run (before WM was introduced), 60 elections, default scenario, CE with learned ballots:
+With `--group-size 0` (whole ranking groups) the strategic axes measure resistance to **organised factional strategy**: every voter with the same ranking follows one recommendation, the case most favourable to burial. With `--group-size 1` they measure resistance to **individual strategy**, where burial almost never pays. The default of 10 lies in between; results under strategy should always be read together with the group size used.
 
-| Method | whole ranking groups | every voter alone | burial (groups / alone) |
-|---|---|---|---|
-| Top-two runoff | 94.9 | 94.1 | 0.1% / 0.3% |
-| IRV | 96.6 | 91.5 | 1.8% / 1.0% |
-| Copeland | 83.6 | 100.0 | 20.1% / 2.0% |
-| Minimax | 89.8 | 100.0 | 20.6% / 1.3% |
-| BTR-Borda | 91.5 | 100.0 | 23.2% / 1.2% |
-| BTR-score | 89.8 | 96.6 | 20.5% / 2.8% |
-| STAR | 89.8 | 98.3 | 18.6% / 3.1% |
-
-So with the default (`--group-size 0`, whole ranking groups) the strategic axes measure resistance to **organised factional strategy**: every voter with the same ranking follows one recommendation. That is the case most favourable to burial. With `--group-size 1` they measure resistance to **individual strategy**, where burial almost never pays. Reality lies in between, and results under strategy should always be read together with the group size used.
+Groups are formed from voters with the same full sincere ranking. With many candidates there are many possible rankings (720 for 6 candidates), so most ranking groups are small whatever the cap, and organised blocs become rare: with 6 candidates and 99 voters, the group size changes little. Coordination by favourite or by cluster would be a different model.
 
 A second, smaller asymmetry: learning is myopic. A burying group does not anticipate that the Condorcet winner's supporters may bury back, or that the cycle it creates can elect a candidate it likes even less (the chicken dilemma). This probably makes burial look somewhat more attractive than it would be to far-sighted voters.
 
-Smaller groups mean more groups, and run time grows with their number: `--group-size 1` takes roughly six times as long as the default.
+Smaller groups mean more groups, and run time grows with their number.
 
 ## Partial strategy
 
-`--strategic p` makes a random share p of the voters strategic; the others always vote sincerely. Each voter is strategic with probability p, drawn from its own random stream per election, so the same voters are strategic for every method. Groups (and their size cap) form only among the strategic voters. p = 1 (the default) gives exactly the results of full strategy; p = 0 gives the sincere results. Sincerity and the strategy types are averaged over all voters, including the sincere ones.
+`--strategic p` makes a random share p of the voters strategic; the others always vote sincerely. Each voter is strategic with probability p, drawn from its own random stream per election, so the same voters are strategic for every method. Groups (and their size cap) form only among the strategic voters. p = 1 gives full strategy; p = 0 gives the sincere results. The default 0.5 is an intermediate level, in the spirit of other simulations that report 0, 50 and 100% strategy. Sincerity and the strategy types are averaged over all voters, including the sincere ones.
 
-This follows the idea of intermediate strategy levels in other simulations without further assumptions about who becomes strategic. Run time falls less than in proportion: halving the strategic voters removes fewer than half of the groups, since many groups are small (30 elections, default condition: p = 0.5 took about 80% of the time of p = 1).
+Run time falls less than in proportion to p: halving the strategic voters removes fewer than half of the groups, since many groups are small.
 
 ## Axes and other outputs
 

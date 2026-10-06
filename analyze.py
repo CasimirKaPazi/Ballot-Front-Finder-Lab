@@ -1,7 +1,7 @@
 """Analyse one or more elections CSVs (from run.py or sweep.py): uncertainty, fronts, plots, report.
 
 Usage:
-    python analyze.py sweep-elections.csv --out analysis
+    python analyze.py sweep-elections.csv --out analysis      # files without a directory: looked up in output/
     python analyze.py a-elections.csv b-elections.csv --compare "BTR-score:STAR" "Minimax:Baldwin"
 
 Conditions: rows with identical parameters except the seed form one condition; seeds are
@@ -24,7 +24,7 @@ on CE, would be separated by noise-sized honest-PE differences). Each is followe
 axes on which it is clearly better. This is a pointer for interpretation, not a verdict: the
 values themselves are the result.
 
-Outputs in --out (a directory):
+Outputs in --out (a directory; a bare name goes into output/):
     summary.csv                one row per (condition, method): estimates, intervals, dominated_by
     report.md                  tables per condition, comparisons, plots
     arrows-<c>.png             per condition: honest -> strategic in the PE/WM plane, all methods together
@@ -39,6 +39,7 @@ from collections import OrderedDict
 import numpy as np
 
 import plots
+from run import out_path, group_text, OUTPUT_DIR
 
 AXES = ["PE", "WM", "PE*", "WM*"]
 EXTRA = ["CE", "CE*"]           # reported, not used for dominance
@@ -167,7 +168,7 @@ def label(key, varying, first):
     diff = [k for k in varying if p[k] != b[k]]
     if not varying:
         return "single condition"
-    return ", ".join(f"{names.get(k, k)} {p[k] if not (k == 'group_size' and p[k] == '0') else 'unlimited'}"
+    return ", ".join(f"{names.get(k, k)} {group_text(p[k]) if k == 'group_size' else p[k]}"
                      for k in diff) or "base"
 
 
@@ -211,7 +212,10 @@ def main():
                          "give --hide with no names to show all")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
+    a.out = out_path(a.out)
     os.makedirs(a.out, exist_ok=True)
+    # CSVs given without a directory are looked up in the output folder if not found here
+    a.csv = [p if os.path.exists(p) or os.path.dirname(p) else os.path.join(OUTPUT_DIR, p) for p in a.csv]
     rng = np.random.default_rng(a.seed)
 
     conds = conditions(load(a.csv))
@@ -318,7 +322,7 @@ def main():
               f"{p['voters']} voters, {p['cands']} candidates, {p['dims']} dimensions"
               f"{' (Zipf)' if p['zipf'] == '1' else ''}, {p['clusters']} clusters, spread {p['spread']}, "
               f"width {p['width']}; learning {p['rounds']} rounds × {p['samples']} poll samples, "
-              f"group size {p['group_size'] if p['group_size'] != '0' else 'unlimited'}, "
+              f"group size {group_text(p['group_size'])}, "
               f"strategic share {p['strategic']}." + (" " + electorate_text(r["electorate"]) if r["electorate"] else ""),
               "",
               "| Method | PE | WM | PE* | WM* | CE | CE* | Sincerity | Compromise | Burial | Push-over | Dominated by |",
