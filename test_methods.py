@@ -51,12 +51,33 @@ check("Score+ (only K eliminated, G wins after renormalising)", METHODS["Score+"
 p = METHODS["Reciprocal score"].honest(u)
 print("Reciprocal score on 4-3-2:", np.round(p, 3)); assert abs(p.sum() - 1) < 1e-9
 
+# Batch 4 on the 4-3-2 profile: G is the Condorcet winner; R has most first choices and the best Dowdall
+# score (6 against 5.5); in the supplementary vote the G voters' second choice R beats B 6:3. With three
+# grades (good/OK/bad) G has most approvals (MCA) and, in 3-2-1, the fewest 'bad' ratings, then beats R 5:4.
+for m, want in [("Black", [0, 1, 0, 0]), ("Ranked Robin", [0, 1, 0, 0]), ("Nanson", [0, 1, 0, 0]),
+                ("321", [0, 1, 0, 0]), ("ER-IRV", [1, 0, 0, 0]), ("Dowdall", [1, 0, 0, 0]),
+                ("Smith//Score", [0, 1, 0, 0]), ("Supplementary vote", [1, 0, 0, 0]), ("MCA", [0, 1, 0, 0]),
+                ("MMPO", [0, 1, 0, 0]), ("Minimax-wv", [0, 1, 0, 0])]:
+    check(m, METHODS[m].honest(u), want)
+
+# ER-IRV with an equal ranking: 3 voters rank A = B first, 2 voters C > B > A. First votes A 3, B 3, C 2;
+# C is out, its voters go to B: B wins 5:3.
+er = np.array([[2, 2, 0]] * 3 + [[0, 1, 2]] * 2, dtype=float)
+check("ER-IRV with equal top ranks", METHODS["ER-IRV"].tally(er), [0, 1, 0])
+
+# Ranked Robin on the cycle R>G>B>K (4), G>B>K>R (3), B>R>K>G (2): R, G, B each win 2 pairs; margins among
+# them R +3 -1 = 2, G -3 +5 = 2, B -5 +1 = -4, so R and G remain; against all candidates K adds R +3, G +5: G.
+cy4 = profile([(4, [0.5, 0.3, 0.15, 0.05]), (3, [0.05, 0.5, 0.3, 0.15]), (2, [0.3, 0.05, 0.5, 0.15])])
+check("Ranked Robin tiebreak on a cycle", METHODS["Ranked Robin"].honest(cy4), [0, 1, 0, 0])
+
 # Exact three-way tie: each method shares probability equally among R, G, B
 t = profile([(3, [0.55, 0.17, 0.15, 0.13]), (3, [0.15, 0.55, 0.17, 0.13]), (3, [0.17, 0.15, 0.55, 0.13])])
 for m in ["Plurality", "IRV", "Copeland", "Score", "STAR", "BTR-score", "MARS", "ARA", "ARA-Top", "MJ",
           "Top-two runoff", "Approval runoff", "BTR-Borda", "Minimax", "Baldwin", "Borda",
           "Anti-plurality", "SICT", "MDDA", "BTR-IRV", "Benham",
-          "Ranked pairs", "Schulze", "Approval runoff if needed", "Reciprocal score", "Score+"]:
+          "Ranked pairs", "Schulze", "Approval runoff if needed", "Reciprocal score", "Score+",
+          "Black", "Ranked Robin", "Nanson", "321", "ER-IRV", "Dowdall", "Smith//Score", "Supplementary vote",
+          "MCA", "MMPO", "Minimax-wv"]:
     check(f"{m} three-way tie", METHODS[m].honest(t), [1 / 3, 1 / 3, 1 / 3, 0])
 
 # Reference points: on the 4-3-2 profile the random ballot elects R, B, G with 4/9, 3/9, 2/9.
@@ -87,7 +108,7 @@ assert select(["star", "SICT"]) == ["STAR", "SICT"]
 assert "Plurality" not in select(None, ["plurality"]) and len(select()) == len(METHODS)
 from methods import GROUPS
 assert all(m in METHODS for ms in GROUPS.values() for m in ms)
-assert select(["Condorcet", "STAR"])[-1] == "Benham" and "STAR" in select(["condorcet", "star"])
+assert "Benham" in select(["Condorcet", "STAR"]) and "STAR" in select(["condorcet", "star"])
 assert "TRASH" not in select(None, ["references"]) and "IRV" in select(["plurality-based"])
 print("method selection ok")
 

@@ -10,6 +10,7 @@ A ballot matrix B has one row per voter and one column per candidate:
   "veto"     -1 for the one candidate voted against, 0 for all others
   "weak"     ranking with ties allowed: levels 0 ... C-1, higher is better, equal = tied
   "trunc"    truncated ranking: the k ranked candidates get k ... 1, unranked ones 0 (tied last)
+  "grade3"   three grades: 2 = good, 1 = OK, 0 = bad
 Every tally returns exact winner probabilities; ties are split uniformly among
 the tied candidates and counted exactly.
 
@@ -21,6 +22,7 @@ Sincere ballots from utilities u[v, c]:
   veto     - against the least liked candidate
   weak     - strict ranking by utility (ties are only used strategically)
   trunc    - rank every candidate above the voter's mean utility, leave the rest unranked
+  grade3   - 0..2, stretched to the voter's own utility range, rounded (as score, with 3 levels)
 """
 from dataclasses import dataclass
 from itertools import permutations, product
@@ -75,8 +77,15 @@ def trunc_ballots(u):
     return np.where(A > 0, R - (u.shape[1] - k) + 1, 0.0)   # top k get k ... 1
 
 
+def grade3_ballots(u):
+    mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
+    d = np.where(mx - mn > 1e-12, mx - mn, 1.0)
+    return np.rint(2 * (u - mn) / d)
+
+
 SINCERE = {"fav": fav_ballots, "rank": rank_ballots, "approval": approval_ballots, "score": score_ballots,
-           "rankapp": rankapp_ballots, "veto": veto_ballots, "weak": rank_ballots, "trunc": trunc_ballots}
+           "rankapp": rankapp_ballots, "veto": veto_ballots, "weak": rank_ballots, "trunc": trunc_ballots,
+           "grade3": grade3_ballots}
 
 
 # ---------- helpers ----------
@@ -207,6 +216,35 @@ def _firsts(B):
     return out.reshape(n, -1)
 
 
+def _firsts_eq(B):
+    """As _firsts, but every candidate tied at the top among A gets a whole vote (rankings with ties)."""
+    n, C = B.shape
+    m = masks(C)[None]
+    Bm = np.where(m, B[:, None, :], -np.inf)
+    return ((Bm == Bm.max(axis=2, keepdims=True)) & m).reshape(n, -1)
+
+
+def _lcm_upto(C):
+    out = 1
+    for k in range(2, C + 1):
+        out = out * k // np.gcd(out, k)
+    return out
+
+
+def _dowdall(B):
+    """Dowdall points on a strict ranking, 1, 1/2, 1/3, ..., times lcm(1..C) so they are integers."""
+    C = B.shape[1]
+    pos = (C - 1) - B                                   # 0 = first place
+    return _lcm_upto(C) // (pos.astype(int) + 1)
+
+
+def _firstsecond(B):
+    """One-hot of the (first, second) pair of a strict ranking, as a C x C matrix."""
+    n, C = B.shape
+    order = np.argsort(-B, axis=1, kind="stable")
+    return _onehot(order[:, 0] * C + order[:, 1], C * C)
+
+
 def _keepnorm(B):
     """For every subset K: the voter's scores among K stretched to 0..300 (= 60 x 0..5, integers),
     0 outside K and for voters rating all of K equally."""
@@ -246,6 +284,12 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
         len(B), -1), lambda C: (2 ** C, C)),
     "excess": (lambda B: np.clip(B[:, :, None] - B[:, None, :], 0, None).reshape(len(B), -1), lambda C: (C, C)),
     "keepnorm": (_keepnorm, lambda C: (2 ** C, C)),
+    "firsts_eq": (_firsts_eq, lambda C: (2 ** C, C)),
+    "dowdall": (_dowdall, lambda C: (C,)),
+    "firstsecond": (_firstsecond, lambda C: (C, C)),
+    "ge1": (lambda B: B >= 1, lambda C: (C,)),
+    "ge2": (lambda B: B >= 2, lambda C: (C,)),
+    "eq0": (lambda B: B == 0, lambda C: (C,)),
 }
 
 
@@ -253,9 +297,9 @@ def margins_of(s):
     return s["gt"] - s["gt"].T
 
 
-def first_among(s, alive):
+def first_among(s, alive, key="firsts"):
     """First-choice counts among the alive candidates (in the order of alive)."""
-    return s["firsts"][int(sum(1 << c for c in alive))][alive]
+    return s[key][int(sum(1 << c for c in alive))][alive]
 
 
 # ---------- decisions from summed features ----------
@@ -269,15 +313,15 @@ def d_copeland(s):
     return uniform_max(sc.astype(float))
 
 
-def d_irv(s):
-    C = len(s["sum"]) if "sum" in s else s["firsts"].shape[1]
+def d_irv(s, key="firsts"):
+    C = s[key].shape[1]
     P = np.zeros(C)
 
     def go(alive, w):
         if len(alive) == 1:
             P[alive[0]] += w
             return
-        first = first_among(s, alive)
+        first = first_among(s, alive, key)
         low = np.flatnonzero(first == first.min())
         for i in low:
             go([c for j, c in enumerate(alive) if j != i], w / len(low))
@@ -616,6 +660,145 @@ def d_score_plus(s):
     return P
 
 
+# ---------- batch 4 ----------
+def d_er_irv(s):
+    """IRV on rankings with ties: every candidate tied at the top of a ballot (among the remaining)
+    gets a whole vote, as in approval. Sincere ballots are strict; ties are learned."""
+    return d_irv(s, "firsts_eq")
+
+
+def d_black(s):
+    """Condorcet winner if there is one, otherwise the Borda winner."""
+    M = margins_of(s)
+    cw = (M > 0).sum(axis=1) == len(M) - 1
+    return cw.astype(float) if cw.any() else uniform_max(s["sum"])
+
+
+def d_ranked_robin(s):
+    """Ranked Robin (Equal Vote): most pairwise wins. Ties: greatest sum of margins against the other
+    tied candidates, then against all candidates; further ties (the 3rd and 4th tiebreakers) are split."""
+    M = margins_of(s)
+    C = len(M)
+    wins = (M > 0).sum(axis=1).astype(float)
+    tied = np.flatnonzero(wins >= wins.max() - EPS)
+    for score in (lambda t: M[np.ix_(t, t)].sum(axis=1), lambda t: M[t].sum(axis=1)):
+        if len(tied) > 1:
+            v = score(tied).astype(float)
+            tied = tied[v >= v.max() - EPS]
+    P = np.zeros(C)
+    P[tied] = 1 / len(tied)
+    return P
+
+
+def d_nanson(s):
+    """Nanson: repeatedly eliminate every candidate whose Borda score (among the remaining) is at or
+    below the average; if that would eliminate all, they tie."""
+    gt = s["gt"]
+    alive = list(range(len(gt)))
+    while len(alive) > 1:
+        pts = gt[np.ix_(alive, alive)].sum(axis=1).astype(float)
+        out = pts <= pts.mean() + EPS
+        if out.all():
+            break
+        alive = [c for c, o in zip(alive, out) if not o]
+    P = np.zeros(len(gt))
+    P[alive] = 1 / len(alive)
+    return P
+
+
+def d_dowdall(s):
+    """Dowdall (Nauru): positional, 1, 1/2, 1/3, ... points by rank."""
+    return uniform_max(s["dowdall"])
+
+
+def smith_set(M):
+    """Candidates in the Smith set: those that reach every candidate through 'not beaten by' steps."""
+    R = M >= 0
+    for k in range(len(M)):
+        R = R | (R[:, [k]] & R[[k], :])
+    return np.flatnonzero(R.all(axis=1))
+
+
+def d_smith_score(s):
+    """Smith//Score: the highest score total among the Smith set (pairwise from the ratings)."""
+    sm = smith_set(margins_of(s))
+    P = np.zeros(len(s["sum"]))
+    P[sm] = uniform_max(s["sum"][sm])
+    return P
+
+
+def d_supplementary(s):
+    """Supplementary vote: first and second preference count. The top two by first preferences go on;
+    a ballot whose first preference is out counts for its second preference if that is a finalist."""
+    first, FS = s["first"], s["firstsecond"]
+    C = len(first)
+    P = np.zeros(C)
+    for a, b, w in top_two(first):
+        others = [x for x in range(C) if x not in (a, b)]
+        va = first[a] + FS[others, a].sum()
+        vb = first[b] + FS[others, b].sum()
+        x = va - vb
+        if x > 0:
+            P[a] += w
+        elif x < 0:
+            P[b] += w
+        else:
+            P[a] += w / 2
+            P[b] += w / 2
+    return P
+
+
+def d_mca(s):
+    """MCA (majority choice approval), MCA-A variant, on three grades: find the first grade level
+    (good, then good or OK, then all) at which some candidate is rated that high by more than half
+    the voters. One such candidate wins; among several, the most approved (good or OK) wins."""
+    n, good, appr = s["n"], s["ge2"], s["ge1"]
+    for level in (good, appr, np.full(len(good), n)):
+        maj = level > n / 2
+        if maj.sum() == 1:
+            return maj.astype(float)
+        if maj.sum() > 1:
+            return uniform_max(np.where(maj, appr, -1.0))
+    return uniform_max(appr)
+
+
+def d_321(s):
+    """3-2-1 voting on three grades: 3 semifinalists with the most 'good' (the third only if it has
+    at least half as many as the first); of those, 2 finalists with the fewest 'bad'; the finalist
+    rated above the other on more ballots wins. Ties at each step: higher score (good 2, OK 1),
+    then split. (The rule against three semifinalists of one party does not apply here.)"""
+    n, good, bad, score, M = s["n"], s["ge2"], s["eq0"], s["sum"], margins_of(s)
+    C = len(good)
+    span = 2 * n + 1                                    # score < span, so good dominates
+    P = np.zeros(C)
+    orders = orders_by(good * span + score)
+    for order in orders:
+        semis = list(order[:3])
+        if len(semis) == 3 and good[semis[2]] < good[semis[0]] / 2:
+            semis = semis[:2]
+        v = np.full(C, -np.inf)
+        v[semis] = -bad[semis] * span + score[semis]
+        for a, b, w in top_two(v):
+            runoff(P, M, a, b, w / len(orders), tiebreak=score)
+    return P
+
+
+def d_mmpo(s):
+    """MMPO (minimax pairwise opposition): the winner's largest opposition, the most voters ranking
+    some rival above it (whether or not that rival wins the pair), is smallest."""
+    gt = s["gt"].astype(float)
+    np.fill_diagonal(gt, 0)
+    return uniform_max(-gt.max(axis=0))
+
+
+def d_minimax_wv(s):
+    """Minimax (winning votes): the winner's worst defeat, counted as the votes for the rival in that
+    defeat, is smallest."""
+    gt = s["gt"].astype(float)
+    defeat = np.where(gt > gt.T, gt, 0.0)               # defeat[y, x]: votes of y over x if y beats x
+    return uniform_max(-defeat.max(axis=0))
+
+
 @dataclass
 class Method:
     ballot: str
@@ -687,16 +870,29 @@ METHODS = {
     "MDDA": M_("trunc", d_mdda, ("n", "gt", "pos")),
     "BTR-IRV": M_("rank", d_btr_irv, ("firsts", "gt")),
     "Benham": M_("rank", d_benham, ("firsts", "gt")),
+    "Black": M_("rank", d_black, ("sum", "gt")),
+    "Ranked Robin": M_("weak", d_ranked_robin, ("gt",)),
+    "Nanson": M_("rank", d_nanson, ("gt",)),
+    "321": M_("grade3", d_321, ("n", "ge2", "eq0", "sum", "gt")),
+    "ER-IRV": M_("weak", d_er_irv, ("firsts_eq",)),
+    "Dowdall": M_("rank", d_dowdall, ("dowdall",)),
+    "Smith//Score": M_("score", d_smith_score, ("sum", "gt")),
+    "Supplementary vote": M_("rank", d_supplementary, ("first", "firstsecond")),
+    "MCA": M_("grade3", d_mca, ("n", "ge2", "ge1")),
+    "MMPO": M_("weak", d_mmpo, ("gt",)),
+    "Minimax-wv": M_("weak", d_minimax_wv, ("gt",)),
 }
 
 
 # Method groups for --methods / --exclude (tags: a method can be in several groups)
 GROUPS = {
-    "condorcet": ["Baldwin", "Copeland", "Minimax", "Ranked pairs", "Schulze", "SICT", "Condorcet-random-drop",
-                  "BTR-Borda", "BTR-IRV", "Benham"],
-    "plurality-based": ["Plurality", "Top-two runoff", "IRV", "BTR-IRV", "Benham"],
-    "rated": ["Score", "MJ", "STAR", "BTR-score", "MARS", "ARA", "ARA-Top", "Reciprocal score", "Score+"],
+    "condorcet": ["Baldwin", "Nanson", "Copeland", "Ranked Robin", "Black", "Minimax", "Minimax-wv", "Ranked pairs",
+                  "Schulze", "SICT", "Condorcet-random-drop", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
+    "plurality-based": ["Plurality", "Top-two runoff", "Supplementary vote", "IRV", "ER-IRV", "BTR-IRV", "Benham"],
+    "rated": ["Score", "MJ", "MCA", "Reciprocal score"],
+    "hybrid": ["STAR", "BTR-score", "MARS", "ARA", "ARA-Top", "Score+", "Smith//Score", "321"],
     "approval-based": ["Approval", "Approval runoff", "Approval runoff if needed", "MDDA"],
+    "positional": ["Borda", "Dowdall"],
     "references": ["Random pair runoff", "Anti-plurality", "TRASH"],
 }
 

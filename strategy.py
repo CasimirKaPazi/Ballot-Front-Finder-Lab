@@ -77,6 +77,9 @@ def mutate(b, ballot, rng):
     elif ballot == "score":
         c = rng.integers(C)
         b[c] = (b[c] + 1 + rng.integers(MAXS)) % (MAXS + 1)
+    elif ballot == "grade3":
+        c = rng.integers(C)
+        b[c] = (b[c] + 1 + rng.integers(2)) % 3
     return b
 
 

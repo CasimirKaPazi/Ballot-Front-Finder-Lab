@@ -13,7 +13,7 @@ python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> output/a
 
 All outputs go into the folder `output/` (created when needed): an `--out` name without a directory is placed there, and `analyze.py` looks there for CSVs given without a directory. An `--out` with a directory (`--out runs/test`) is used as given.
 
-200 elections with all 30 methods at the default settings take about 11 minutes on 2 cores; time scales linearly with cores. More candidates, more voters and smaller groups take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
+200 elections with all 41 methods at the default settings take about 14 minutes on 2 cores; time scales linearly with cores. More candidates, more voters and smaller groups take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
 
 ## Files
 
@@ -43,6 +43,7 @@ All outputs go into the folder `output/` (created when needed): an `--out` name 
   - ranking with ties: move one candidate to any other level (equal levels are ties)
   - truncated ranking: swap two candidates, or rank one more or one fewer
   - score: set one candidate to a different value 0–5
+  - three grades: set one candidate to a different grade
 
   Voters start sincere. A group that has not deviated yet changes the sincere ballot of its average member (mean utilities of the group); a deviating group changes its current shared ballot, and sometimes (15% of proposals) proposes going back to sincere.
 - **Acceptance:** a proposal is kept only if it raises the group's expected utility. A return to sincere is also kept when it is not worse: voters prefer honesty when indifferent. Without this, a deviation that once paid off stays forever once it stops mattering, and sincerity keeps falling with the number of rounds instead of reflecting what strategy actually pays.
@@ -200,6 +201,7 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | veto | one candidate against | the least liked |
 | ranking, ties allowed | levels, equal = tied | strict ranking by utility (ties only arise from learning) |
 | truncated ranking | the top k ranked, the rest unranked (tied last) | rank every candidate above the mean |
+| three grades | good / OK / bad per candidate | stretched to the voter's own utility range, rounded to 0–2 (as the 0–5 score ballot, with three levels) |
 
 ## Methods
 
@@ -235,18 +237,31 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | MDDA | truncated ranking (ranked = approved) | disqualify every candidate that more than half the voters rank some other candidate above (unless all would be); most approved remaining wins. Sincere: rank everyone above the mean |
 | BTR-IRV | ranking | each round the two with the fewest first choices meet pairwise; the loser is eliminated |
 | Benham | ranking | IRV, but a Condorcet winner among the remaining candidates wins at once |
+| Black | ranking | Condorcet winner if there is one, otherwise the Borda winner |
+| Ranked Robin | ranking, ties allowed | Equal Vote's Condorcet method: most pairwise wins; ties go to the greatest sum of margins against the other tied candidates, then against all candidates; remaining ties (its 3rd and 4th tiebreakers) are split. Sincere ballots are strict; ties are learned |
+| Nanson | ranking | repeatedly eliminate every candidate whose Borda score among the remaining is at or below the average (Baldwin eliminates only the lowest) |
+| Minimax-wv | ranking, ties allowed | Minimax by winning votes: the worst defeat is measured by the votes for the winner of that pair. On strict rankings identical to Minimax (margins); differs only once equal rankings are learned |
+| MMPO | ranking, ties allowed | minimax pairwise opposition: the smallest largest number of voters ranking some rival above the candidate, whether or not that rival wins the pair. Not a Condorcet method; on strict rankings identical to Minimax |
+| Smith//Score | 0–5 | highest score total among the Smith set (pairwise from the ratings, equal ratings no preference). With a Condorcet winner by the ballots the same as BTR-score; they differ only in cycles |
+| ER-IRV | ranking, ties allowed | IRV where every candidate tied at the top of a ballot (among the remaining) gets a whole vote, as in approval. Sincere ballots are strict, so it equals IRV with honest ballots; ties are learned |
+| Supplementary vote | ranking (first two used) | top two by first preferences; a ballot whose first preference is out counts for its second preference if that is a finalist, otherwise it is exhausted |
+| Dowdall | ranking | positional, 1, 1/2, 1/3, … points by rank (Nauru) |
+| MCA | three grades | majority choice approval, MCA-A variant: the first grade level (good, then good or OK, then all) at which some candidate is rated that high by more than half the voters decides; one such candidate wins, among several the most approved (good or OK) |
+| 321 | three grades | 3-2-1 voting: 3 semifinalists with the most "good" (the third only with at least half as many as the first), of them 2 finalists with the fewest "bad", then the finalist rated above the other on more ballots. Ties: higher score (good 2, OK 1), then split. The party rule for semifinalists does not apply |
 
 **Groups** for `--methods` and `--exclude` (a method can be in several):
 
 | Group | Methods |
 |---|---|
-| `condorcet` | Baldwin, Copeland, Minimax, Ranked pairs, Schulze, SICT, Condorcet-random-drop, BTR-Borda, BTR-IRV, Benham |
-| `plurality-based` | Plurality, Top-two runoff, IRV, BTR-IRV, Benham |
-| `rated` | Score, MJ, STAR, BTR-score, MARS, ARA, ARA-Top, Reciprocal score, Score+ |
+| `condorcet` | Baldwin, Nanson, Copeland, Ranked Robin, Black, Minimax, Minimax-wv, Ranked pairs, Schulze, SICT, Condorcet-random-drop, BTR-Borda, BTR-IRV, Benham, Smith//Score |
+| `plurality-based` | Plurality, Top-two runoff, Supplementary vote, IRV, ER-IRV, BTR-IRV, Benham |
+| `rated` | Score, MJ, MCA, Reciprocal score |
+| `hybrid` | STAR, BTR-score, MARS, ARA, ARA-Top, Score+, Smith//Score, 321 (ratings combined with pairwise comparisons or eliminations) |
 | `approval-based` | Approval, Approval runoff, Approval runoff if needed, MDDA |
+| `positional` | Borda, Dowdall |
 | `references` | Random pair runoff, Anti-plurality, TRASH |
 
-Borda is in no group. Example: `--methods condorcet STAR` or `--exclude references`.
+Example: `--methods condorcet STAR` or `--exclude references`.
 
 Pairwise preferences always come from the ballot itself, so equal ratings count as no preference. All ties are broken uniformly among the tied candidates and counted exactly.
 
