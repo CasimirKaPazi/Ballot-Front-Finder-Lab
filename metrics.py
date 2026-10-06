@@ -30,6 +30,22 @@ def worst_margins(u):
     return M.min(axis=1)
 
 
+def electorate_stats(u):
+    """Properties of the electorate itself (the same for all methods):
+    cw_is_util  1 if the sincere Condorcet winner also has the highest total utility, 0 if not,
+                empty if there is no Condorcet winner
+    U_cw        total utility of the Condorcet winner (empty if none)
+    fav_ratio   median over voters of u(favourite) / u(least liked): how steep preferences are"""
+    n, C = u.shape
+    gt = (u[:, :, None] > u[:, None, :]).sum(axis=0)
+    cw = np.flatnonzero((gt > gt.T).sum(axis=1) == C - 1)
+    U = u.sum(axis=0)
+    has = len(cw) == 1
+    return {"cw_is_util": int(cw[0] == U.argmax()) if has else "",
+            "U_cw": float(U[cw[0]]) if has else "",
+            "fav_ratio": float(np.median(u.max(axis=1) / u.min(axis=1)))}
+
+
 def election_row(u, P, m):
     """Quantities for one election: u utilities, P method's winner probabilities,
     m worst margins from worst_margins (the same for all methods)."""

@@ -30,7 +30,7 @@ import numpy as np
 from scenario import Scenario, electorate
 from methods import METHODS, select
 from strategy import learn, strategy_types
-from metrics import election_row, summarize, pareto, worst_margins
+from metrics import election_row, summarize, pareto, worst_margins, electorate_stats
 
 
 def one_election(args):
@@ -38,32 +38,33 @@ def one_election(args):
     rng = np.random.default_rng([seed, e])
     u = electorate(sc, rng)
     m_cand = worst_margins(u)                       # each candidate's worst head-to-head margin
+    estats = electorate_stats(u)                    # properties of the electorate, for the report
     # strategic voters: own random stream, the same voters for every method
     strategic = np.random.default_rng([seed, e, zlib.crc32(b"strategic")]).random(len(u)) < share
     out = []
     for name in names:
         m = METHODS[name]
-        out.append({"election": e, "method": name, "ballots": "sincere", **election_row(u, m.honest(u), m_cand),
+        out.append({"election": e, "method": name, "ballots": "sincere", **election_row(u, m.honest(u), m_cand), **estats,
                     "sincerity": 1.0, "settled": 1, "compromise": 0.0, "pushover": 0.0, "burial": 0.0})
         # Each method learns with its own random stream, keyed by name, so results stay
         # the same when methods are added or reordered.
         mrng = np.random.default_rng([seed, e, zlib.crc32(name.encode())])
         B, settled, sin = learn(m, u, mrng, rounds, samples, group_size, strategic)
-        out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, m.tally(B), m_cand),
+        out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, m.tally(B), m_cand), **estats,
                     "sincerity": sin, "settled": int(settled), **strategy_types(B, u)})
     return out
 
 
 # Run parameters written into every row of the elections CSV
-PARAMS = ["voters", "cands", "dims", "clusters", "spread", "width", "rounds", "samples", "group_size", "strategic",
-          "seed"]
+PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size",
+          "strategic", "seed"]
 
 
 def simulate(p, elections, workers=None, names=None):
     """Run one condition. p: dict with the keys in PARAMS; names: methods (default all).
     Returns rows with p as columns."""
     names = names or list(METHODS)
-    sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"])
+    sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"])
     jobs = [(sc, p["seed"], e, p["rounds"], p["samples"], p["group_size"], p["strategic"], names) for e in range(elections)]
     with Pool(workers) as pool:
         rows = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
@@ -77,6 +78,8 @@ def main():
     ap.add_argument("--voters", type=int, default=99)
     ap.add_argument("--cands", type=int, default=4)
     ap.add_argument("--dims", type=int, default=2)
+    ap.add_argument("--zipf", type=int, default=0, choices=[0, 1],
+                    help="1: dimension i has scale 1/i (Zipf dimensions, see scenario.py)")
     ap.add_argument("--clusters", type=int, default=3)
     ap.add_argument("--spread", type=float, default=0.5)
     ap.add_argument("--width", type=float, default=1.0)

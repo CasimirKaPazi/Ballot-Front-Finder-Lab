@@ -43,7 +43,7 @@ import plots
 AXES = ["PE", "WM", "PE*", "WM*"]
 EXTRA = ["CE", "CE*"]           # reported, not used for dominance
 TYPES = ["compromise", "burial", "pushover"]
-PARAMS = ["voters", "cands", "dims", "clusters", "spread", "width", "rounds", "samples", "group_size", "strategic"]
+PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size", "strategic"]
 
 
 def load(paths):
@@ -61,7 +61,7 @@ def conditions(rows):
     """Group rows by parameters (seed excluded). Returns {key: rows} in first-seen order."""
     out = OrderedDict()
     for r in rows:
-        out.setdefault(tuple(r[k] for k in PARAMS), []).append(r)
+        out.setdefault(tuple(r.get(k, "0") for k in PARAMS), []).append(r)   # older CSVs: zipf 0
     return out
 
 
@@ -75,6 +75,7 @@ def arrays(rows):
     A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "wm_s", "wm_l", "sin"] + TYPES}
     den = np.zeros(E)
     has = np.zeros(E)
+    ele = {k: np.full(E, np.nan) for k in ["cw_is_util", "U_cw", "U_best", "fav_ratio"]}   # electorate properties
     for r in rows:
         i, j = ei[(r["seed"], r["election"])], mi[r["method"]]
         num = float(r["U_method"]) - float(r["U_tau1"])
@@ -83,12 +84,14 @@ def arrays(rows):
             A["num_s"][i, j], A["cw_s"][i, j], A["wm_s"][i, j] = num, pcw, float(r["WM"])
             den[i] = float(r["U_best"]) - float(r["U_tau1"])
             has[i] = float(r["has_cw"])
+            for k in ele:
+                ele[k][i] = float(r.get(k) or "nan")         # older CSVs lack the electorate columns
         else:
             A["num_l"][i, j], A["cw_l"][i, j], A["wm_l"][i, j] = num, pcw, float(r["WM"])
             A["sin"][i, j] = float(r["sincerity"])
             for t in TYPES:
                 A[t][i, j] = float(r.get(t) or "nan")      # older CSVs have no strategy types
-    return methods, A, den, has
+    return methods, A, den, has, ele
 
 
 def axis_values(W, A, den, has):
@@ -119,29 +122,70 @@ def dominance(P_b):
     return dom, better
 
 
+def electorate_summary(den, has, ele):
+    """Electorate properties of a condition (point estimates), or None for CSVs without them."""
+    if np.isnan(ele["fav_ratio"]).all():
+        return None
+    h = has == 1
+    return {"cw": float(h.mean()),
+            "cw_util": float(np.nanmean(ele["cw_is_util"][h])) if h.any() else float("nan"),
+            # PE lost by electing the Condorcet winner, as a ratio of sums like PE itself
+            "cw_loss": float((ele["U_best"][h] - ele["U_cw"][h]).sum() / den[h].sum()) if h.any() else float("nan"),
+            "fav": float(np.median(ele["fav_ratio"]))}
+
+
+def electorate_text(e):
+    return (f"Electorates: Condorcet winner in {e['cw']:.1%}; it also has the highest total utility in "
+            f"{e['cw_util']:.1%} of those; electing it loses {e['cw_loss']:.1%} of PE; "
+            f"favourite ÷ least liked {e['fav']:.1f} (median voter).")
+
+
 def analyse_condition(rows, boot, rng):
-    methods, A, den, has = arrays(rows)
+    methods, A, den, has, ele = arrays(rows)
     E = len(den)
     W = rng.multinomial(E, np.full(E, 1 / E), size=boot).astype(float)
     point = axis_values(np.ones((1, E)), A, den, has)
+    halves = axis_values(np.stack([np.arange(E) % 2 == 0, np.arange(E) % 2 == 1]).astype(float), A, den, has)
     bs = axis_values(W, A, den, has)
     P_b = np.stack([bs[a] for a in AXES], axis=2)            # B x M x 4
     dom, better = dominance(P_b)
     # each dominating method with the axes on which it is clearly better, most axes first
     dominated_by = [[(methods[j], [AXES[k] for k in np.flatnonzero(better[i, j])]) for j in np.flatnonzero(dom[i])]
                     for i in range(len(methods))]
-    res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs}
+    res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs, "halves": halves,
+           "electorate": electorate_summary(den, has, ele)}
     for a in AXES + EXTRA + ["sincerity"] + TYPES:
         res[a] = point[a][0]
         res[a + "_lo"], res[a + "_hi"] = np.percentile(bs[a], [2.5, 97.5], axis=0)
     return res
 
 
-def label(key, varying):
-    p = dict(zip(PARAMS, key))
+def label(key, varying, first):
+    """Name a condition by the parameters in which it differs from the first condition (the base)."""
+    p, b = dict(zip(PARAMS, key)), dict(zip(PARAMS, first))
     names = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share"}
+    diff = [k for k in varying if p[k] != b[k]]
+    if not varying:
+        return "single condition"
     return ", ".join(f"{names.get(k, k)} {p[k] if not (k == 'group_size' and p[k] == '0') else 'unlimited'}"
-                     for k in varying) or "single condition"
+                     for k in diff) or "base"
+
+
+def ranks(x):
+    """Ranks 1..n, ties get their average rank."""
+    order = np.argsort(x, kind="stable")
+    r = np.empty(len(x))
+    r[order] = np.arange(1, len(x) + 1)
+    for v in np.unique(x):
+        tie = x == v
+        r[tie] = r[tie].mean()
+    return r
+
+
+def spearman(x, y):
+    """Rank correlation of two value vectors (1 = same order, 0 = unrelated, -1 = reversed)."""
+    rx, ry = ranks(np.round(x, 9)), ranks(np.round(y, 9))
+    return float(np.corrcoef(rx, ry)[0, 1])
 
 
 def dom_text(items, sep=", ", limit=None):
@@ -176,7 +220,7 @@ def main():
     results = OrderedDict()
     for c, key in enumerate(keys, 1):
         r = analyse_condition(conds[key], a.boot, rng)
-        r["label"] = label(key, varying)
+        r["label"] = label(key, varying, keys[0])
         r["seeds"] = sorted({row["seed"] for row in conds[key]}, key=int)
         r["tag"] = f"c{c}"
         results[key] = r
@@ -227,14 +271,56 @@ def main():
           "preference below it.", ""]
     if len(results) > 1:
         L += ["## Across conditions", "", "![axes](axes-heatmap.png)", ""]
+        # rank stability: does each condition order the methods like the base (first) condition?
+        base = list(results.values())[0]
+        shown = [m for m in base["methods"] if m not in a.hide]
+        cols = AXES + ["sincerity"]
+        L += ["**Rank stability:** rank correlation (Spearman) of the methods' values with those in the base "
+              f"condition ({base['tag']}), per axis; 1 = same order, 0 = unrelated. Methods hidden in the plots "
+              "are left out, since their extreme values would inflate the correlation. The first row is a noise "
+              "reference: the agreement expected from sampling noise alone between two runs of the base condition "
+              "(its even and odd elections correlated, then scaled up to full size with the Spearman-Brown "
+              "formula). A condition near or above that row orders the methods as the base does; only values "
+              "clearly below it show a real change.", "",
+              "| Condition | " + " | ".join(cols) + " |", "|---|" + "---|" * len(cols)]
+        ib = [base["methods"].index(m) for m in shown]
+
+        def full_size(rh):     # Spearman-Brown: agreement expected between two full-size samples
+            return 2 * rh / (1 + rh) if rh > -1 else rh
+        L.append(f"| noise reference: {base['tag']} vs itself | "
+                 + " | ".join(f"{full_size(spearman(base['halves'][x][0][ib], base['halves'][x][1][ib])):.2f}"
+                              for x in cols) + " |")
+        for r in list(results.values())[1:]:
+            common = [m for m in shown if m in r["methods"]]
+            if len(common) < 3:
+                continue
+            ib = [base["methods"].index(m) for m in common]
+            ic = [r["methods"].index(m) for m in common]
+            L.append(f"| {r['tag']}: {r['label']} | "
+                     + " | ".join(f"{spearman(base[x][ib], r[x][ic]):.2f}" for x in cols) + " |")
+        L.append("")
+        if all(r["electorate"] for r in results.values()):
+            L += ["**Electorates** (properties of the generated electorates, independent of the methods): how often "
+                  "a Condorcet winner exists, how often it also has the highest total utility, how much PE electing "
+                  "it loses (ratio of sums, as PE), and how steep preferences are (favourite ÷ least liked, median "
+                  "voter). Differences between methods on PE mostly come from the third column.", "",
+                  "| Condition | Condorcet winner | … with highest total utility | PE lost electing it | "
+                  "favourite ÷ least liked |", "|---|---|---|---|---|"]
+            for r in results.values():
+                e = r["electorate"]
+                L.append(f"| {r['tag']}: {r['label']} | {e['cw']:.1%} | {e['cw_util']:.1%} | {e['cw_loss']:.1%} "
+                         f"| {e['fav']:.1f} |")
+            L.append("")
     for key, r in results.items():
         p = dict(zip(PARAMS, key))
         L += [f"## {r['tag']}: {r['label']}", "",
               f"{r['elections']} elections (seeds {', '.join(r['seeds'])}), {r['with_cw']} with a Condorcet winner. "
-              f"{p['voters']} voters, {p['cands']} candidates, {p['clusters']} clusters, spread {p['spread']}, "
+              f"{p['voters']} voters, {p['cands']} candidates, {p['dims']} dimensions"
+              f"{' (Zipf)' if p['zipf'] == '1' else ''}, {p['clusters']} clusters, spread {p['spread']}, "
               f"width {p['width']}; learning {p['rounds']} rounds × {p['samples']} poll samples, "
               f"group size {p['group_size'] if p['group_size'] != '0' else 'unlimited'}, "
-              f"strategic share {p['strategic']}.", "",
+              f"strategic share {p['strategic']}." + (" " + electorate_text(r["electorate"]) if r["electorate"] else ""),
+              "",
               "| Method | PE | WM | PE* | WM* | CE | CE* | Sincerity | Compromise | Burial | Push-over | Dominated by |",
               "|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for j in np.argsort(-r["PE"], kind="stable"):

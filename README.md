@@ -56,6 +56,13 @@ Each election draws a fresh electorate (`scenario.py`):
 - candidates: drawn from the same distribution as voters (cluster by the same weights, same spread);
 - utilities: `u = exp(-distance / width)`, absolute and not normalised: 1 at zero distance, towards 0 far away. A smaller `--width` makes voters care only about nearby candidates.
 
+**Zipf dimensions** (`--zipf 1`), after Clay Smith's Mixture of Zipf Gaussians ([article](https://cdsmithus.medium.com/simulating-elections-with-spatial-voter-models-1ff50892390), [code](https://github.com/cdsmith/spatial-voting), `src/Model.hs`): dimension i (1, 2, 3, ...) has standard deviation 1/i — for cluster centres, voters and candidates alike — so one issue dominates and the others matter less and less, without being absent.
+
+- Scaling follows Smith's code: the standard deviation is 1/i, so the variance is 1/i². (The article's wording "proportional to 1/n" could also be read as variance 1/n; the code is unambiguous.) The total variance then converges (to π²/6), so beyond about 4 dimensions their number hardly matters: in the default scenario the electorate properties at 10 and 20 dimensions are the same within noise. With Zipf, use e.g. `--dims 10`.
+- Each cluster applies the 1/i scaling to its own slightly shuffled order of dimensions (each rank perturbed by normal noise with standard deviation 0.1 × dims, Smith's ratio of 10 for 100 dimensions), so camps differ in which issues they vary on most. Cluster centres keep the global order.
+- Taken over from Smith: the 1/i scaling and the per-cluster shuffle. Not taken over: his other settings (10 clusters with uniform random weights, cluster centres uniform in ±3/i, a random spread factor per cluster, utility = −distance); our Dirichlet weights, normal centres, one spread and `exp(-distance / width)` stay.
+- Distances are shorter than with equal dimensions, so preferences are flatter at the same width (favourite ÷ least liked about 2.8 at dims 10, width 1, against 3.9 for 2 plain dimensions). Width 0.75 with Zipf gives about the same steepness as width 1 without.
+
 ## Parameters
 
 `run.py` (one condition):
@@ -66,6 +73,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--voters` | 99 | voters per election (odd, so pairwise majorities rarely tie) |
 | `--cands` | 4 | candidates |
 | `--dims` | 2 | issue-space dimensions |
+| `--zipf` | 0 | 1: dimension i has scale 1/i (Zipf dimensions, above); use with more dimensions, e.g. 10 |
 | `--clusters` | 3 | voter clusters |
 | `--spread` | 0.5 | standard deviation of voters around their cluster centre (centres have 1) |
 | `--width` | 1.0 | distance scale of the utility fall-off |
@@ -79,7 +87,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--exclude` | none | run all methods except these |
 | `--out` | `results` | output prefix: `<out>-elections.csv` and `<out>-summary.csv` |
 
-`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--rounds`, `--samples`, `--group-size`, `--strategic`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `<out>-elections.csv` (default `--out sweep`), one run after another.
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--group-size`, `--strategic`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `<out>-elections.csv` (default `--out sweep`), one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid.
 
 `analyze.py`:
 
@@ -91,6 +99,29 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--compare` | none | pairs `"A:B"` for paired differences |
 | `--hide` | Random ballot, Random pair runoff, Anti-plurality, TRASH | methods left out of the scatter plots; `--hide` alone shows all |
 | `--seed` | 0 | bootstrap random seed |
+
+## How much does the voter model matter?
+
+Rather than adding other voter models, the sweep below varies each parameter of the spatial model on its own around a base condition (99 voters, 4 candidates, 2 dimensions, 3 clusters, spread 0.5, width 1.0, group size 10, full strategy), keeping candidate placement as it is:
+
+```
+python sweep.py --one-at-a-time --dims 2 1 3 4 --clusters 3 1 2 5 --spread 0.5 0.25 1.0 \
+    --width 1.0 0.5 2.0 --group-size 10 --seeds 1 2 --elections 200 --out model
+python analyze.py model-elections.csv --out model-analysis
+```
+
+| Parameter | Base | Varied to | Question |
+|---|---|---|---|
+| dims | 2 | 1, 3, 4 | how many independent issues |
+| clusters | 3 | 1, 2, 5 | how many camps |
+| spread | 0.5 | 0.25, 1.0 | how tight the camps are (cluster centres have spread 1) |
+| width | 1.0 | 0.5, 2.0 | how fast voters stop caring about distant candidates |
+
+That is 11 conditions with 400 elections each (two seeds), about two hours on 2 cores. Conditions are labelled by how they differ from the base (`c1: base`, `dims 1`, ...).
+
+`analyze.py` adds a **rank stability** table when there are several conditions: for each axis, the rank correlation (Spearman) between the methods' values in a condition and in the base (the first condition). The methods hidden in the plots are left out. Its first row is a noise reference: the agreement expected from sampling noise alone between two runs of the base condition (the base's even and odd elections correlated, then scaled up to full size with the Spearman-Brown formula `2r / (1 + r)`). A condition near or above that row orders methods as the base does; a value clearly below it means the parameter changes which methods do well. With few elections everything is noise, and PE* in particular needs many elections: strategic differences between methods are small. Many methods lie close together on each axis, so rank correlation is a strict test; the heatmap shows where the changes come from.
+
+An **electorates** table (and a line in each condition's section) describes the generated electorates themselves, independent of the methods: how often a Condorcet winner exists, how often it also has the highest total utility, how much PE electing it loses (ratio of sums, as PE), and how steep preferences are (u(favourite) ÷ u(least liked), median over voters, then median over elections). The third column explains most PE differences between Condorcet and rated methods; the last one is a concrete handle for choosing `--width` (in the default scenario, median ratio about 17 at width 0.5, 4 at width 1, 2.6 at width 1.5, 2 at width 2).
 
 ## Coordination: what the strategic axes measure
 
@@ -147,7 +178,7 @@ Within one condition the three rank methods identically (same numerator, differe
 
 PE, WM and CE use sincere ballots; PE*, WM* and CE* (in the CSV: PE_learned, WM_learned, CE_learned) the learned ballots. In all cases the preferences that count are the sincere ones.
 
-**Output files of `run.py`:** `<out>-elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns, the utilities needed for the axes (U_method, U_best, U_tau0, U_tau1, U_tauinf), has_cw, p_cw (probability of electing the Condorcet winner), WM (winner's worst margin, share of voters), sincerity, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
+**Output files of `run.py`:** `<out>-elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns, the utilities needed for the axes (U_method, U_best, U_tau0, U_tau1, U_tauinf), has_cw, p_cw (probability of electing the Condorcet winner), WM (winner's worst margin, share of voters), the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see Analysis), sincerity, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
 
 | Column | Meaning |
 |---|---|
