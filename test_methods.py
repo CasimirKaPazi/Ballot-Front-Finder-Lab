@@ -162,3 +162,26 @@ clear = profile([(70, [0.9, 0.5, 0.1]), (29, [0.1, 0.5, 0.9])])
 check("worst margins, clear winner", worst_margins(clear), [41 / 99, -41 / 99, -41 / 99])
 cyc3 = profile([(33, [0.9, 0.5, 0.1]), (33, [0.1, 0.9, 0.5]), (33, [0.5, 0.1, 0.9])])
 check("worst margins, 2:1 cycle", worst_margins(cyc3), [-1 / 3, -1 / 3, -1 / 3])
+
+# Score range (set_max_score): sincere scores stretch to 0..max; ARA approves above the middle;
+# feature sums stay exact; learning runs. Restored to the default afterwards.
+import methods as _m
+from strategy import mutate
+for S in (10, 100):
+    _m.set_max_score(S)
+    B = METHODS["Score"].sincere(u)
+    assert B.min() == 0 and B.max() == S and np.all(B == np.rint(B)), S
+    up = _m.FEATURES["upper"][0](np.array([[S / 2, S / 2 + 1, S]]))
+    assert up.tolist() == [[False, True, True]], S
+    for name, m in METHODS.items():
+        if m.ballot == "score":
+            Bs = m.sincere(u); F = m.features(Bs); B2 = Bs.copy(); B2[:3] = Bs[-1]
+            S2 = F.sum(axis=0) + (m.features(B2[:3]) - F[:3]).sum(axis=0)
+            assert np.allclose(m.decide_many(S2[None], Bs.shape[1])[0], m.tally(B2)), (name, S)
+            assert abs(m.tally(Bs).sum() - 1) < 1e-9, (name, S)
+    r = np.random.default_rng(5)
+    vals = {mutate(np.full(4, S // 2 + 1.0), "score", r)[0] for _ in range(4000)}
+    assert vals <= set(range(S + 1)) and {0, S} <= vals, S
+_m.set_max_score(5)
+check("Score+ chicken example, default range again", METHODS["Score+"].tally(sp), [1, 0, 0, 0])
+print("score range 0..10 and 0..100 ok")

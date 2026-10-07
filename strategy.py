@@ -21,7 +21,8 @@ Voters start sincere. A group that has never deviated proposes changes to the si
 ballot of its average member.
 """
 import numpy as np
-from methods import SINCERE, MAXS
+import methods
+from methods import SINCERE
 
 BACK_TO_SINCERE = 0.15  # share of proposals that return a deviating group to sincere
 
@@ -75,8 +76,17 @@ def mutate(b, ballot, rng):
         for pos, c in enumerate(order[:k]):
             b[c] = k - pos
     elif ballot == "score":
+        # Any other level, uniformly. For ranges above 0..5, half of the proposals instead use the
+        # six levels of the 0..5 scale stretched to the range (0, 20, 40, ... 100 for 0..100), so
+        # the chance of trying an extreme or a coarse step does not shrink with the range and
+        # learning is not slowed artificially. 0..5 and below: unchanged.
+        S = methods.MAXS
         c = rng.integers(C)
-        b[c] = (b[c] + 1 + rng.integers(MAXS)) % (MAXS + 1)
+        if S > 5 and rng.random() < 0.5:
+            levels = [x for x in np.rint(np.arange(6) * S / 5) if x != b[c]]
+            b[c] = levels[rng.integers(len(levels))]
+        else:
+            b[c] = (b[c] + 1 + rng.integers(S)) % (S + 1)
     elif ballot == "grade3":
         c = rng.integers(C)
         b[c] = (b[c] + 1 + rng.integers(2)) % 3

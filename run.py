@@ -28,13 +28,14 @@ from multiprocessing import Pool
 import numpy as np
 
 from scenario import Scenario, electorate
-from methods import METHODS, select
+from methods import METHODS, select, set_max_score
 from strategy import learn, strategy_types
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats
 
 
 def one_election(args):
-    sc, seed, e, rounds, samples, group_size, share, names = args
+    sc, seed, e, rounds, samples, group_size, share, max_score, names = args
+    set_max_score(max_score)                        # per process: workers do not share module state
     rng = np.random.default_rng([seed, e])
     u = electorate(sc, rng)
     m_cand = worst_margins(u)                       # each candidate's worst head-to-head margin
@@ -89,7 +90,7 @@ def group_text(g):
 
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size",
-          "strategic", "seed"]
+          "strategic", "max_score", "seed"]
 
 
 def simulate(p, elections, workers=None, names=None):
@@ -97,7 +98,7 @@ def simulate(p, elections, workers=None, names=None):
     Returns rows with p as columns."""
     names = names or list(METHODS)
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"])
-    jobs = [(sc, p["seed"], e, p["rounds"], p["samples"], p["group_size"], p["strategic"], names) for e in range(elections)]
+    jobs = [(sc, p["seed"], e, p["rounds"], p["samples"], p["group_size"], p["strategic"], p["max_score"], names) for e in range(elections)]
     with Pool(workers) as pool:
         rows = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
     meta = {k: p[k] for k in PARAMS}
@@ -121,6 +122,8 @@ def main():
                     help="max voters coordinating as one group: a number of voters (1 = individual), a share of the electorate between 0 and 1 (0.05 = 5%%), or 0 = whole ranking group")
     ap.add_argument("--strategic", type=float, default=0.5,
                     help="share of voters who vote strategically (random, the same for every method)")
+    ap.add_argument("--max-score", type=int, default=5,
+                    help="score ballots range over 0..max (Score, STAR, MJ, ARA, ...; MCA and 321 keep 3 grades)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--methods", nargs="+", default=None, help="run only these methods (start from none)")
@@ -160,7 +163,7 @@ def main():
     print(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.dims} dimensions"
           f"{' (Zipf)' if a.zipf else ''}, {a.clusters} clusters, "
           f"spread {a.spread}, width {a.width}; learning {a.rounds} rounds x {a.samples} poll samples, "
-          f"group size {group_text(a.group_size)}, strategic share {a.strategic}; seed {a.seed}")
+          f"group size {group_text(a.group_size)}, strategic share {a.strategic}, scores 0..{a.max_score}; seed {a.seed}")
     print(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
     for m in sorted(names, key=lambda m: -summ[m]["VSE"]):
         s = summ[m]

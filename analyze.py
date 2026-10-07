@@ -46,7 +46,9 @@ from methods import GROUPS
 AXES = ["VSE", "WME", "VSE*", "WME*"]
 EXTRA = ["CE", "CE*"]           # reported, not used for dominance
 TYPES = ["compromise", "burial", "pushover"]
-PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size", "strategic"]
+PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size", "strategic",
+          "max_score"]
+OLD_DEFAULTS = {"zipf": "0", "max_score": "5"}      # parameters missing from older CSVs
 
 
 def load(paths):
@@ -64,7 +66,7 @@ def conditions(rows):
     """Group rows by parameters (seed excluded). Returns {key: rows} in first-seen order."""
     out = OrderedDict()
     for r in rows:
-        out.setdefault(tuple(r.get(k, "0") for k in PARAMS), []).append(r)   # older CSVs: zipf 0
+        out.setdefault(tuple(r.get(k, OLD_DEFAULTS.get(k, "0")) for k in PARAMS), []).append(r)
     return out
 
 
@@ -213,8 +215,9 @@ def label(key, varying, first):
                      for k in diff) or "base"
 
 
-PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share"}
+PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score"}
 LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic"}     # same electorates, only learning differs
+SAME_ELECTORATES = LEARNING_ONLY | {"max_score"}                     # same electorates (honest ballots may differ)
 
 
 def param_order(k, v):
@@ -324,7 +327,8 @@ def main():
         vals = [dict(zip(PARAMS, key))[k] for key in chain_keys]
         shown_vals = [group_text(v) if k == "group_size" else v for v in vals]
         plots.chain([results[key] for key in chain_keys], PARAM_NAMES.get(k, k), shown_vals,
-                    os.path.join(a.out, f"chain-{k}.png"), a.hide, k in LEARNING_ONLY, GROUPS)
+                    os.path.join(a.out, f"chain-{k}.png"), a.hide, k in LEARNING_ONLY, GROUPS,
+                    k in SAME_ELECTORATES)
 
     # report.md
     L = ["# Voting Pareto Lab — analysis", ""]
@@ -405,7 +409,7 @@ def main():
               f"{' (Zipf)' if p['zipf'] == '1' else ''}, {p['clusters']} clusters, spread {p['spread']}, "
               f"width {p['width']}; learning {p['rounds']} rounds × {p['samples']} poll samples, "
               f"group size {group_text(p['group_size'])}, "
-              f"strategic share {p['strategic']}." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")
+              f"strategic share {p['strategic']}, scores 0..{p['max_score']}." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")
               + frontier_text(r["frontier"]),
               "",
               "| Method | VSE | WME | VSE* | WME* | CE | CE* | Sincerity | Compromise | Burial | Push-over | Dominated by |",

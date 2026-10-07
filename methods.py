@@ -4,7 +4,7 @@ A ballot matrix B has one row per voter and one column per candidate:
   "fav"      one-hot: 1 for the named candidate
   "rank"     rank points: best C-1 ... worst 0
   "approval" 0/1
-  "score"    0..5
+  "score"    0..MAXS (default 0..5; set_max_score changes the range)
   "rankapp"  ranking with an approval line: rank points (C-1 ... 0), plus C for approved
              candidates, who are always the top k of the ranking
   "veto"     -1 for the one candidate voted against, 0 for all others
@@ -17,7 +17,7 @@ the tied candidates and counted exactly.
 Sincere ballots from utilities u[v, c]:
   rank     - order by utility
   approval - every candidate above the voter's mean utility
-  score    - 0..5, stretched to the voter's own utility range, rounded
+  score    - 0..MAXS, stretched to the voter's own utility range, rounded
   rankapp  - ranking by utility, approval line below the last candidate above the mean
   veto     - against the least liked candidate
   weak     - strict ranking by utility (ties are only used strategically)
@@ -30,7 +30,25 @@ from typing import Callable
 import numpy as np
 
 EPS = 1e-9
-MAXS = 5
+MAXS = 5          # top of the score range; change it with set_max_score, not directly
+
+
+def set_max_score(m):
+    """Set the score range 0..m for every method on "score" ballots (Score, STAR, MJ, ARA, ...).
+    grade3 methods (MCA, 321) keep their three grades. Call it in every process before tallying."""
+    global MAXS
+    if int(m) < 1:
+        raise ValueError("max score must be at least 1")
+    MAXS = int(m)
+
+
+def _keepnorm_scale():
+    """Integer scale for _keepnorm: a common multiple of every possible range 1..MAXS, so the
+    stretched scores stay integers and sums are exact; for large ranges (where that multiple
+    would be huge) plain 0..1 floats, compared with the EPS tolerance."""
+    from math import lcm
+    L = lcm(*range(1, MAXS + 1))
+    return float(L * MAXS) if L <= 10 ** 6 else 1.0
 
 
 # ---------- sincere ballots ----------
@@ -182,7 +200,8 @@ def mj_order(n):
 # of per-voter features (score totals, first places, the pairwise matrix, ...). A method lists the
 # features it needs and decides from their sums. During learning (strategy.py) these sums are kept
 # per poll sample and updated only for the group whose ballots change, instead of recounting every
-# ballot on every sample. All features are integer valued, so the sums are exact.
+# ballot on every sample. All features are integer valued, so the sums are exact (except keepnorm
+# for score ranges above 0..16, see _keepnorm_scale, where ties are found within EPS).
 
 def _onehot(idx, k):
     z = np.zeros((len(idx), k))
@@ -246,15 +265,15 @@ def _firstsecond(B):
 
 
 def _keepnorm(B):
-    """For every subset K: the voter's scores among K stretched to 0..300 (= 60 x 0..5, integers),
-    0 outside K and for voters rating all of K equally."""
+    """For every subset K: the voter's scores among K stretched to 0..L·MAXS (integers; for 0..5 that is
+    0..300 = 60 x 0..5), 0 outside K and for voters rating all of K equally. See _keepnorm_scale."""
     n, C = B.shape
     m = masks(C)[None]                                          # (1, 2^C, C)
     lo = np.where(m, B[:, None, :], np.inf).min(axis=2, keepdims=True)
     hi = np.where(m, B[:, None, :], -np.inf).max(axis=2, keepdims=True)
     d = hi - lo
     ok = m & (d > 0)
-    out = np.where(ok, 60 * MAXS * (B[:, None, :] - np.where(ok, lo, 0)) / np.where(ok, d, 1), 0.0)
+    out = np.where(ok, _keepnorm_scale() * (B[:, None, :] - np.where(ok, lo, 0)) / np.where(ok, d, 1), 0.0)
     return out.reshape(n, -1)
 
 
@@ -269,8 +288,8 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "last": (lambda B: _onehot(B.argmin(axis=1), B.shape[1]), lambda C: (C,)),
     "gt": (lambda B: (B[:, :, None] > B[:, None, :]).reshape(len(B), -1), lambda C: (C, C)),
     "app": (lambda B: B >= B.shape[1], lambda C: (C,)),                       # rankapp approvals
-    "ge3": (lambda B: B >= 3, lambda C: (C,)),
-    "ge5": (lambda B: B >= MAXS, lambda C: (C,)),
+    "upper": (lambda B: B > MAXS / 2, lambda C: (C,)),                         # above the middle (0..5: 3-5)
+    "maxs": (lambda B: B >= MAXS, lambda C: (C,)),                            # top score only
     "pos": (lambda B: B > 0, lambda C: (C,)),
     "top": (lambda B: B == B.max(axis=1, keepdims=True), lambda C: (C,)),
     "eqtop": (lambda B: (lambda t: (t[:, :, None] & t[:, None, :]).reshape(len(B), -1))(
@@ -370,7 +389,7 @@ def d_approval_runoff(s):
 
 
 def d_mj(s):
-    """Majority judgment on 0-5 grades: compare median grades, removing medians to break ties."""
+    """Majority judgment on 0..MAXS grades: compare median grades, removing medians to break ties."""
     h = np.rint(s["grades"]).astype(int)                  # h[c, g]: voters giving c grade g
     order = mj_order(int(h[0].sum()))
     seqs = [tuple(np.repeat(np.arange(MAXS + 1), h[c])[order]) for c in range(len(h))]
@@ -650,7 +669,7 @@ def d_score_plus(s):
     """Score+ (simplified variant from the votingtheory.org thread): A defeats B robustly if A's total
     minus the scores both share (per voter the lower of the two) still exceeds B's total.
     Candidates with a robust defeat are eliminated; scores are renormalised per voter among the
-    rest (lowest to 0, highest to 5); the highest total wins."""
+    rest (lowest to 0, highest to the top score); the highest total wins."""
     tot, excess = s["sum"], s["excess"]                 # excess[a, b] = sum max(0, s_a - s_b)
     C = len(tot)
     defeated = (excess > tot[None, :] + EPS).any(axis=0)
@@ -871,8 +890,8 @@ METHODS = {
     "STAR": M_("score", d_star, ("sum", "gt")),
     "BTR-score": M_("score", d_btr, ("sum", "gt")),
     "MARS": M_("score", d_mars, ("sum", "gt")),
-    "ARA": M_("score", ara("ge3"), ("ge3", "gt")),              # ratings 3-5 count as approval
-    "ARA-Top": M_("score", ara("ge5"), ("ge5", "gt")),          # only a 5 counts as approval
+    "ARA": M_("score", ara("upper"), ("upper", "gt")),          # ratings above the middle (0..5: 3-5) count as approval
+    "ARA-Top": M_("score", ara("maxs"), ("maxs", "gt")),        # only the top score counts as approval
     "Anti-plurality": M_("veto", d_sum, ("sum",)),
     "TRASH": M_("rank", d_trash, ("first", "last", "gt")),
     "Ranked pairs": M_("rank", d_ranked_pairs, ("gt",)),

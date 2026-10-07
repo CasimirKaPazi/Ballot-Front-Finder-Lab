@@ -42,7 +42,7 @@ All outputs go into the folder `output/` (created when needed): an `--out` name 
   - veto: move the veto to another candidate
   - ranking with ties: move one candidate to any other level (equal levels are ties)
   - truncated ranking: swap two candidates, or rank one more or one fewer
-  - score: set one candidate to a different value 0–5
+  - score: set one candidate to a different value 0–max. For ranges above 0–5, half of the proposals use the six levels of the 0–5 scale stretched to the range (0, 20, … 100 for 0–100), so the chance of trying an extreme does not shrink as the range grows and learning is not slowed by the range alone
   - three grades: set one candidate to a different grade
 
   Voters start sincere. A group that has not deviated yet changes the sincere ballot of its average member (mean utilities of the group); a deviating group changes its current shared ballot, and sometimes (15% of proposals) proposes going back to sincere.
@@ -88,12 +88,13 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--samples` | 10 | poll resamples per round |
 | `--group-size` | 10 | most voters that coordinate as one group: a number of voters (1 = every voter alone), a share of the electorate between 0 and 1 (0.05 = 5% of the voters, rounded, at least 1), or 0 = whole ranking group |
 | `--strategic` | 0.5 | share of voters who vote strategically (see Partial strategy) |
+| `--max-score` | 5 | score ballots range over 0–max (see Score range) |
 | `--workers` | all cores | parallel processes |
 | `--methods` | all | run only these methods (start from none); method or group names (see Methods), case ignored |
 | `--exclude` | none | run all methods except these |
 | `--out` | `results` | output prefix: `output/<out>-elections.csv` and `output/<out>-summary.csv` |
 
-`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--group-size`, `--strategic`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `output/<out>-elections.csv` (default `--out sweep`), one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid.
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--group-size`, `--strategic`, `--max-score`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `output/<out>-elections.csv` (default `--out sweep`), one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid.
 
 `analyze.py`:
 
@@ -143,6 +144,12 @@ Smaller groups mean more groups, and run time grows with their number.
 `--strategic p` makes a random share p of the voters strategic; the others always vote sincerely. Each voter is strategic with probability p, drawn from its own random stream per election, so the same voters are strategic for every method. Groups (and their size cap) form only among the strategic voters. p = 1 gives full strategy; p = 0 gives the sincere results. The default 0.5 is an intermediate level, in the spirit of other simulations that report 0, 50 and 100% strategy. Sincerity and the strategy types are averaged over all voters, including the sincere ones.
 
 Run time falls less than in proportion to p: halving the strategic voters removes fewer than half of the groups, since many groups are small.
+
+## Score range
+
+`--max-score m` sets the range of the score ballot to 0–m for every method that uses it (Score, MJ, STAR, BTR-score, MARS, ARA, ARA-Top, Score+, Reciprocal score, Smith//Score). The default 0–5 is an implementation choice, not part of these methods; other simulations (e.g. Quinn's VSE) also run 0–10 and 0–100. With a coarse range, sincere voters must give candidates they like differently the same score, so pairwise preferences are lost: this is the cap on WME seen for the rated and hybrid methods. A wider range reduces it. MCA and 321 keep their three grades, and methods on other ballots are unaffected; the electorates are the same for every value, so a sweep (`sweep.py --max-score 5 10 100`) isolates the effect of the range, and its chain plot draws the reachable frontier.
+
+Rules that refer to the range scale with it: ARA approves ratings above the middle, ARA-Top only the top score, Score+ stretches to the full range, Reciprocal score measures support as a share of the top score. Learning: see the score mutation in Strategy engine.
 
 ## Axes and other outputs
 
@@ -198,14 +205,16 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | one name | one candidate | the favourite |
 | ranking | full strict ranking | by utility |
 | approval | approve or not | every candidate above the voter's mean utility (at least the favourite) |
-| 0–5 | integer score per candidate | stretched to the voter's own utility range, rounded |
+| score 0–max | integer score per candidate (`--max-score`, default 5) | stretched to the voter's own utility range, rounded |
 | ranking + approval line | ranking, the top k approved | ranking by utility, line below the last candidate above the mean |
 | veto | one candidate against | the least liked |
 | ranking, ties allowed | levels, equal = tied | strict ranking by utility (ties only arise from learning) |
 | truncated ranking | the top k ranked, the rest unranked (tied last) | rank every candidate above the mean |
-| three grades | good / OK / bad per candidate | stretched to the voter's own utility range, rounded to 0–2 (as the 0–5 score ballot, with three levels) |
+| three grades | good / OK / bad per candidate | stretched to the voter's own utility range, rounded to 0–2 (as the score ballot, with three levels; not affected by `--max-score`) |
 
 ## Methods
+
+"0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
 
 | Method | Ballot | Rule |
 |---|---|---|
@@ -225,15 +234,15 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | STAR | 0–5 | top two by total, majority runoff; a runoff tie goes to the higher total |
 | BTR-score | 0–5 | order by total score, bottom-two pairwise runoffs climbing up |
 | MARS | 0–5 | as BTR-score; each match adds share preferring to score as share of maximum |
-| ARA | 0–5 | ratings 3–5 are approvals; order by approvals; each match adds voters preferring to approvals (formerly MARA) |
-| ARA-Top | 0–5 | as ARA, but only a 5 counts as approval |
+| ARA | 0–5 | ratings above the middle of the range are approvals (0–5: 3–5; 0–10: 6–10); order by approvals; each match adds voters preferring to approvals (formerly MARA) |
+| ARA-Top | 0–5 | as ARA, but only the top score counts as approval |
 | Anti-plurality | veto (one name against) | fewest vetoes wins; sincere: against the least liked |
 | TRASH | ranking | "This Random Acronym Sounds Honest": the plurality runner-up and the anti-plurality runner-up (second fewest last places) meet in a runoff, and the one ranked lower by more voters wins; if both are the same candidate, it wins. A deliberately bad reference |
 | Ranked pairs | ranking | lock pairwise wins from the largest margin down, skipping any that would close a cycle; the candidate with no locked defeat wins. Equal margins are locked in every order and averaged (at most 240 orders, otherwise 240 fixed random ones) |
 | Schulze | ranking | strongest path by margins; a candidate whose path to every rival is at least as strong as the rival's path back wins |
 | Approval cond. runoff | ranking + approval line | as Approval runoff, but a candidate approved by more than half the voters wins outright |
-| Reciprocal score | 0–5 | interpretation of [electowiki](https://electowiki.org/wiki/Reciprocal_Score_Voting): a voter's faction is their top-rated candidate(s). R(X→Y) is the mean rating supporters of X give Y, as a share of 5. A score for c is multiplied by min(1, R(c→F)/R(F→c)), F the voter's faction: support that c's supporters do not return is cut. Scores for the voter's own top and for candidates nobody top-rates stay unchanged; highest total wins |
-| Score+ | 0–5 | simplified variant from the [votingtheory.org thread](https://www.votingtheory.org/forum/topic/138/score-interval-score-with-additional-protection-against-the-chicken-dilemma): A defeats B robustly if A's total minus the scores both share (per voter the lower of the two) still exceeds B's total. Robustly defeated candidates are eliminated, each voter's scores among the rest are stretched again to 0–5, highest total wins |
+| Reciprocal score | 0–5 | interpretation of [electowiki](https://electowiki.org/wiki/Reciprocal_Score_Voting): a voter's faction is their top-rated candidate(s). R(X→Y) is the mean rating supporters of X give Y, as a share of the top score. A score for c is multiplied by min(1, R(c→F)/R(F→c)), F the voter's faction: support that c's supporters do not return is cut. Scores for the voter's own top and for candidates nobody top-rates stay unchanged; highest total wins |
+| Score+ | 0–5 | simplified variant from the [votingtheory.org thread](https://www.votingtheory.org/forum/topic/138/score-interval-score-with-additional-protection-against-the-chicken-dilemma): A defeats B robustly if A's total minus the scores both share (per voter the lower of the two) still exceeds B's total. Robustly defeated candidates are eliminated, each voter's scores among the rest are stretched again to the full range, highest total wins |
 | Condorcet-random-drop | ranking | Condorcet winner if there is one; otherwise voters are dropped one at a time in random order until the rest have one. Averaged over 32 fixed random orders (the same on every call), so probabilities come in steps of 1/32 |
 | SICT | ranking, ties allowed | Symmetrical ICT: p(X,Y) if (X>Y) + (X=Y at bottom) > (Y>X) + (X=Y at top); X beats Y if p(X,Y) and not p(Y,X), or both and (X>Y) > (Y>X). One unbeaten candidate wins; none or all unbeaten: most first places; otherwise most first places among the unbeaten. Sincere ballots are strict; ties are learned |
 | MDDA | truncated ranking (ranked = approved) | disqualify every candidate that more than half the voters rank some other candidate above (unless all would be); most approved remaining wins. Sincere: rank everyone above the mean |

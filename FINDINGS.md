@@ -6,6 +6,33 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
 
+## Score range 0–5, 0–10, 0–100 (2026-10-07)
+
+Settings: the defaults (99 voters, 6 candidates, 10 Zipf dimensions, 3 clusters, spread 0.5, width 1.5, group size 10, 20 rounds), strategic share 0.5, 400 elections per condition, seed 1; `--max-score 5 10 100`. Methods: Score, MJ, STAR, BTR-score, MARS, ARA, ARA-Top, Score+, Reciprocal score, Smith//Score, and as fixed references 321 and MCA (three grades, unchanged across conditions, as they should be). The electorates are the same in all three conditions.
+
+Honest VSE / WME → learned VSE* / WME*:
+
+| Method | 0–5 | 0–10 | 0–100 |
+|---|---|---|---|
+| Score | 96.1 / 93.2 → 91.9 / 91.0 | 96.2 / 93.3 → 92.8 / 90.8 | 96.1 / 93.2 → 93.8 / 91.8 |
+| Score+ | 95.6 / 92.6 → 94.4 / 93.3 | 96.1 / 94.1 → 95.0 / 94.3 | 96.2 / 94.2 → 94.3 / 94.1 |
+| STAR | 95.4 / 95.6 → 94.8 / 96.0 | 94.9 / 97.4 → 93.8 / 97.0 | 94.6 / 99.0 → 94.3 / 97.2 |
+| MARS | 95.8 / 95.6 → 94.3 / 96.4 | 95.8 / 97.1 → 94.2 / 97.1 | 95.0 / 99.3 → 93.9 / 98.1 |
+| ARA | 96.0 / 94.4 → 94.2 / 95.7 | 95.3 / 96.6 → 94.7 / 95.9 | 94.3 / 97.7 → 93.8 / 96.6 |
+| BTR-score | 94.9 / 95.7 → 93.5 / 97.2 | 94.4 / 98.0 → 93.9 / 98.1 | 92.8 / 99.9 → 92.4 / 99.1 |
+| Smith//Score | 95.3 / 95.6 → 94.3 / 97.8 | 94.4 / 98.0 → 94.7 / 98.0 | 93.2 / 99.9 → 92.8 / 98.6 |
+| MJ | 93.7 / 81.8 → 92.5 / 88.6 | 92.9 / 80.8 → 92.0 / 87.1 | 92.8 / 80.2 → 93.0 / 84.0 |
+| Reciprocal score | 92.0 / 85.5 → 91.6 / 91.0 | 91.3 / 83.3 → 93.6 / 87.7 | 90.5 / 80.2 → 92.9 / 86.8 |
+| ARA-Top | 91.4 / 88.1 → 91.1 / 88.4 | 91.1 / 90.0 → 90.3 / 90.6 | 89.1 / 90.5 → 88.5 / 88.0 |
+
+Frontier (the same in all conditions): best WME 100 at VSE 92.6, best VSE 100 at WME 88.4, balanced point 97.9 / 98.0.
+
+- **The WME cap of the rated methods was an artefact of the 0–5 range.** With 0–100, BTR-score and Smith//Score reach 99.9 WME with honest ballots and behave like Condorcet methods on full rankings (VSE 92.8–93.2, the best-WME end of the frontier); STAR and MARS reach 99.0–99.3. The "Rated ballots cap WME" observation below holds for 0–5 only.
+- **Score:** honest values do not change at all (rounding to 0–5 already averages out over voters). The learned VSE* rises (91.9 → 92.8 → 93.8), WME* stays about level. Not yet checked with a paired comparison across conditions; and since the score mutation differs above 0–5 (README, Strategy engine), part of the change may come from the learning rather than the range.
+- **Hybrids move along the frontier rather than toward it:** a wider range trades VSE for WME (STAR 95.4 / 95.6 → 94.6 / 99.0; MARS 95.8 / 95.6 → 95.0 / 99.3). With honest ballots that brings STAR and MARS close to the frontier at the WME end: the straight line from the best-WME end to the balanced point, which the frontier cannot lie below, gives VSE 94.5 at WME 99.3, and MARS has 95.0. Under strategy they stay well inside it (MARS* 93.9 / 98.1).
+- **Score+ gains a little** (WME 92.6 → 94.2), consistent with its re-stretching losing less information on a finer range.
+- **Methods that suffer from a finer range:** Reciprocal score (honest WME 85.5 → 80.2), MJ (WME* 88.6 → 84.0) and ARA-Top (VSE 91.4 → 89.1). For ARA-Top this is by construction: on 0–100 practically only the favourite gets the top score, so it approaches a plurality-based approval count. Reciprocal score works with factions of top-rated candidates, which shrink to single favourites as well.
+
 ## Number of candidates, 3 to 9 (2026-10-07)
 
 Settings: the defaults (99 voters, 10 Zipf dimensions, 3 clusters, spread 0.5, width 1.5, group size 10, 20 rounds), strategic share 0.5, 400 elections per condition, seed 1; base 3 candidates, swept over 3–9 (`--cands`).
@@ -79,7 +106,7 @@ Margin band (proposed in this lab, removed again): every candidate whose worst m
 - It tied Smith//Score on every axis at both strategy levels: with a Condorcet winner in 98% of elections, the band and the Smith set nearly always pick the same candidate.
 - The hoped-for burial resistance did not appear: 17.5% of voters buried at full strategy, about as many as with the other hybrids, against about 6% with Schulze, Minimax and Ranked pairs.
 - **Under full strategy the margin-based Condorcet methods weakly dominate the hybrids:** the hybrids' VSE advantage holds only with honest or partly strategic voters. At full strategy all hybrids drop to VSE* 92.2–92.8, level with Schulze, Ranked pairs and Minimax (92.5–93.1), while the Condorcet methods keep the clearly higher WME* (97–98 against 93–95).
-- **Rated ballots cap WME:** every method taking pairwise preferences from 0–5 ratings (Smith//Score, BTR-score, STAR, Margin band) reached only about 95 WME with honest ballots. Equal ratings hide preferences, so even a Condorcet rule on ratings misses some sincere Condorcet winners.
+- **Rated ballots cap WME** (on 0–5; with 0–100 the cap disappears, see "Score range"): every method taking pairwise preferences from 0–5 ratings (Smith//Score, BTR-score, STAR, Margin band) reached only about 95 WME with honest ballots. Equal ratings hide preferences, so even a Condorcet rule on ratings misses some sincere Condorcet winners.
 
 ## Current picture (6 candidates, Zipf, 2026-10-06)
 

@@ -203,13 +203,15 @@ def sincerity(r, path, hide):
 CHAIN = LinearSegmentedColormap.from_list("chain", ["#bcd6f5", "#6aa3e6", "#2a78d6", "#1c5cab", "#0d366b"])
 
 
-def chain(results, param, values, path, hide, learning_only, groups):
+def chain(results, param, values, path, hide, learning_only, groups, same_electorates=None):
     """One parameter swept: for each method, a chain of arrows through the conditions in the order
     of the parameter's values, in the VSE/WME plane with learned ballots. Point shade follows the
     value (light = first, dark = last). If the parameter only affects learning (the electorates are
     the same), every chain starts at the method's honest point (open circle); otherwise the honest
-    points form their own chain (open circles, dashed). One panel per method group (groups: name ->
-    methods; methods in no group go to "other"), all panels on the same scale."""
+    points form their own chain (open circles, dashed, labelled in grey italics). One panel per method group (groups: name ->
+    methods; methods in no group go to "other"), all panels on the same scale. If the electorates
+    are the same in every condition (same_electorates; default: learning_only), the reachable
+    frontier is drawn."""
     base = results[0]
     names = [m for m in base["methods"] if m not in hide and all(m in r["methods"] for r in results)]
     panels = [(g, [m for m in names if m in ms]) for g, ms in groups.items()]
@@ -242,6 +244,13 @@ def chain(results, param, values, path, hide, learning_only, groups):
                 for i in range(k):
                     ax.scatter([hx[i]], [hy[i]], s=24, facecolors=SURFACE, edgecolors=shades[i], linewidths=1.1,
                                zorder=3)
+                # label the honest chain too (grey italics), at its last point, so honest and learned
+                # chains can be told apart when they lie far from each other
+                # (skipped when the honest end lies on the learned end: one label is enough there)
+                if abs(hx[-1] - lx[-1]) + abs(hy[-1] - ly[-1]) > 0.3:
+                    anchors.append((hx[-1], hy[-1]))
+                    texts.append(ax.text(hx[-1], hy[-1], m, fontsize=6.5, color=MUTED, style="italic",
+                                         va="center", zorder=5))
             for (x0, y0), (x1, y1) in zip(pts[:-1], pts[1:]):
                 ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
                             arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=0.9, shrinkA=3, shrinkB=4,
@@ -258,7 +267,9 @@ def chain(results, param, values, path, hide, learning_only, groups):
         ax.set_ylabel(WME_LABEL.replace("WME", "WME*", 1), fontsize=8)
     for ax in axs[-1, :]:
         ax.set_xlabel(VSE_LABEL.replace("VSE", "VSE*", 1), fontsize=8)
-    F = base.get("frontier") if learning_only else None    # same electorates: one frontier for all conditions
+    if same_electorates is None:
+        same_electorates = learning_only
+    F = base.get("frontier") if same_electorates else None   # same electorates: one frontier for all conditions
     _unreachable(axs.flat[0], "xy", lines=F is None)       # shared axes: limits apply to all panels
     _frontier(axs.flat[0], F)
     for ax in list(axs.flat)[1:len(panels)]:
@@ -271,7 +282,9 @@ def chain(results, param, values, path, hide, learning_only, groups):
             ax.axhline(100, color=BOUNDARY, lw=1.0, zorder=1)
         _frontier(ax, F)
     handles = [plt.Line2D([], [], ls="", marker="o", ms=7, color=shades[i], label=str(v)) for i, v in enumerate(values)]
-    handles.append(plt.Line2D([], [], ls="", marker="o", ms=6, mfc=SURFACE, mec=MUTED, label="honest ballots"))
+    handles.append(plt.Line2D([], [], ls="--" if not learning_only else "", lw=0.8, color="#c4c3be", marker="o", ms=6,
+                              mfc=SURFACE, mec=MUTED,
+                              label="honest ballots" + ("" if learning_only else " (grey italic labels)")))
     fig.legend(handles=handles, loc="upper right", ncol=len(handles), frameon=False, fontsize=8,
                title=f"{param} (light → dark)", title_fontsize=8)
     fig.suptitle(f"Sweep over {param}: learned ballots", x=0.01, ha="left", fontweight="bold")
