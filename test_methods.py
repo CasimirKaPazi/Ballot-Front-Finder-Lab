@@ -25,7 +25,7 @@ check("ARA (3-5)", METHODS["ARA"].honest(u), [0, 1, 0, 0])
 
 # New methods on the same 4-3-2 profile
 check("Random pair runoff", METHODS["Random pair runoff"].honest(u), [36 / 72, 30 / 72, 6 / 72, 0])
-check("Top-two runoff (R vs B)", METHODS["Top-two runoff"].honest(u), [1, 0, 0, 0])
+check("TTR (R vs B)", METHODS["TTR"].honest(u), [1, 0, 0, 0])
 check("Approval runoff (G vs R)", METHODS["Approval runoff"].honest(u), [0, 1, 0, 0])
 check("BTR-Borda", METHODS["BTR-Borda"].honest(u), [0, 1, 0, 0])
 check("Minimax", METHODS["Minimax"].honest(u), [0, 1, 0, 0])
@@ -45,7 +45,7 @@ check("Benham (Condorcet winner at once)", METHODS["Benham"].honest(u), [0, 1, 0
 # Methods added in the third batch, same 4-3-2 profile
 check("Ranked pairs", METHODS["Ranked pairs"].honest(u), [0, 1, 0, 0])
 check("Schulze", METHODS["Schulze"].honest(u), [0, 1, 0, 0])
-check("Approval runoff if needed (G approved by all 9)", METHODS["Approval runoff if needed"].honest(u), [0, 1, 0, 0])
+check("Approval cond. runoff (G approved by all 9)", METHODS["Approval cond. runoff"].honest(u), [0, 1, 0, 0])
 check("TRASH (runner-ups; B vs R/G/B: B always wins)", METHODS["TRASH"].honest(u), [0, 0, 1, 0])
 check("Score+ (only K eliminated, G wins after renormalising)", METHODS["Score+"].honest(u), [0, 1, 0, 0])
 p = METHODS["Reciprocal score"].honest(u)
@@ -57,8 +57,17 @@ print("Reciprocal score on 4-3-2:", np.round(p, 3)); assert abs(p.sum() - 1) < 1
 for m, want in [("Black", [0, 1, 0, 0]), ("Ranked Robin", [0, 1, 0, 0]), ("Nanson", [0, 1, 0, 0]),
                 ("321", [0, 1, 0, 0]), ("ER-IRV", [1, 0, 0, 0]), ("Dowdall", [1, 0, 0, 0]),
                 ("Smith//Score", [0, 1, 0, 0]), ("Supplementary vote", [1, 0, 0, 0]), ("MCA", [0, 1, 0, 0]),
-                ("MMPO", [0, 1, 0, 0]), ("Minimax-wv", [0, 1, 0, 0])]:
+                ("MMPO", [0, 1, 0, 0]), ("MMWV", [0, 1, 0, 0])]:
     check(m, METHODS[m].honest(u), want)
+
+# MMPOWV on the 4-3-2 profile: G has no defeat and largest opposition 4 of 9: 1 x 5/9; R is beaten 5:4:
+# 4/9 x 4/9 -> G.
+check("MMPOWV", METHODS["MMPOWV"].honest(u), [0, 1, 0, 0])
+# With an equal ranking: 2 voters A > B > C, 2 voters B > A = C, 1 voter C > A > B. A beats B 3:2 and C 2:1
+# (two voters tie A = C), B beats C 4:1. MMPOWV: A has no defeat, largest opposition 2 (B over A) -> 1 x 3/5;
+# B: defeat 3, opposition 3 -> 2/5 x 2/5; C: defeat 4, opposition 4 -> 1/5 x 1/5. A wins.
+mw = np.array([[2, 1, 0]] * 2 + [[1, 2, 1]] * 2 + [[1, 0, 2]], dtype=float)
+check("MMPOWV with equal rankings", METHODS["MMPOWV"].tally(mw), [1, 0, 0])
 
 # ER-IRV with an equal ranking: 3 voters rank A = B first, 2 voters C > B > A. First votes A 3, B 3, C 2;
 # C is out, its voters go to B: B wins 5:3.
@@ -73,11 +82,11 @@ check("Ranked Robin tiebreak on a cycle", METHODS["Ranked Robin"].honest(cy4), [
 # Exact three-way tie: each method shares probability equally among R, G, B
 t = profile([(3, [0.55, 0.17, 0.15, 0.13]), (3, [0.15, 0.55, 0.17, 0.13]), (3, [0.17, 0.15, 0.55, 0.13])])
 for m in ["Plurality", "IRV", "Copeland", "Score", "STAR", "BTR-score", "MARS", "ARA", "ARA-Top", "MJ",
-          "Top-two runoff", "Approval runoff", "BTR-Borda", "Minimax", "Baldwin", "Borda",
+          "TTR", "Approval runoff", "BTR-Borda", "Minimax", "Baldwin", "Borda",
           "Anti-plurality", "SICT", "MDDA", "BTR-IRV", "Benham",
-          "Ranked pairs", "Schulze", "Approval runoff if needed", "Reciprocal score", "Score+",
+          "Ranked pairs", "Schulze", "Approval cond. runoff", "Reciprocal score", "Score+",
           "Black", "Ranked Robin", "Nanson", "321", "ER-IRV", "Dowdall", "Smith//Score", "Supplementary vote",
-          "MCA", "MMPO", "Minimax-wv"]:
+          "MCA", "MMPO", "MMWV", "MMPOWV"]:
     check(f"{m} three-way tie", METHODS[m].honest(t), [1 / 3, 1 / 3, 1 / 3, 0])
 
 # Reference points: on the 4-3-2 profile the random ballot elects R, B, G with 4/9, 3/9, 2/9.
@@ -124,7 +133,7 @@ sp = np.array([[5, 4, 0, 0]] * 4 + [[4, 5, 0, 0]] * 3 + [[0, 0, 5, 0]] * 2, dtyp
 print("Score+ chicken example:", np.round(METHODS["Score+"].tally(sp), 3))
 
 # Conditional top-two runoff (no runoff when a candidate has more than half the first choices) is the
-# same method as Top-two runoff here: a majority of first choices also wins every runoff, because the
+# same method as TTR here: a majority of first choices also wins every runoff, because the
 # runoff reuses the same rankings. So it is not a separate method. Checked on random rankings:
 r = np.random.default_rng(3)
 for _ in range(500):
@@ -132,7 +141,7 @@ for _ in range(500):
     B = np.array([r.permutation(C) for _ in range(n)], dtype=float)
     first = np.bincount(B.argmax(axis=1), minlength=C)
     if first.max() > n / 2:
-        assert METHODS["Top-two runoff"].tally(B)[first.argmax()] == 1
+        assert METHODS["TTR"].tally(B)[first.argmax()] == 1
 print("conditional top-two runoff = top-two runoff ok")
 
 # Feature sums give the same winners as the ballots they come from, also when built incrementally

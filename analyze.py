@@ -79,7 +79,8 @@ def arrays(rows):
     den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
     dwm = np.zeros(E)          # per election: WM_best - WM_rb (WME denominator)
     has = np.zeros(E)
-    ele = {k: np.full(E, np.nan) for k in ["cw_is_util", "U_cw", "U_best", "fav_ratio"]}   # electorate properties
+    ele = {k: np.full(E, np.nan) for k in ["cw_is_util", "U_cw", "U_best", "fav_ratio", "U_rb", "WM_rb"]}
+    cands = [None] * E           # per election: (total utility, worst margin) of every candidate, for the frontier
     for r in rows:
         i, j = ei[(r["seed"], r["election"])], mi[r["method"]]
         num = float(r["U_method"]) - float(r["U_rb"])
@@ -92,12 +93,14 @@ def arrays(rows):
             has[i] = float(r["has_cw"])
             for k in ele:
                 ele[k][i] = float(r.get(k) or "nan")         # older CSVs lack the electorate columns
+            if r.get("U_cands"):
+                cands[i] = (np.array(r["U_cands"].split(";"), float), np.array(r["WM_cands"].split(";"), float))
         else:
             A["num_l"][i, j], A["cw_l"][i, j], A["wm_l"][i, j] = num, pcw, nwm
             A["sin"][i, j] = float(r["sincerity"])
             for t in TYPES:
                 A[t][i, j] = float(r.get(t) or "nan")      # older CSVs have no strategy types
-    return methods, A, (den, dwm), has, ele
+    return methods, A, (den, dwm), has, ele, cands
 
 
 def axis_values(W, A, dens, has):
@@ -128,6 +131,30 @@ def dominance(P_b):
     return dom, better
 
 
+def frontier(cands, dens, ele, steps=101):
+    """The best combinations of VSE and WME any rule could reach in these elections, knowing every
+    voter's sincere utilities: for each weight lam, elect in every election the candidate with the
+    highest lam * VSE contribution + (1 - lam) * WME contribution. Both axes are ratios of sums with
+    fixed denominators, so this traces the exact upper-right boundary of what is reachable (lotteries
+    fill in between the points). Returns points (VSE, WME), from best WME to best VSE, or None."""
+    if any(c is None for c in cands):
+        return None
+    du, dw = dens[0].sum(), dens[1].sum()
+    pts = []
+    for lam in np.linspace(0, 1, steps):
+        nu = nw = 0.0
+        for (U, W), urb, wrb in zip(cands, ele["U_rb"], ele["WM_rb"]):
+            gu, gw = (U - urb) / du, (W - wrb) / dw
+            c = np.argmax(lam * gu + (1 - lam) * gw + 1e-12 * gu + 1e-12 * gw)   # break exact ties toward both
+            nu, nw = nu + gu[c], nw + gw[c]
+        pts.append((nu, nw))
+    out = []
+    for p in pts:                                       # drop repeats
+        if not out or abs(p[0] - out[-1][0]) > 1e-9 or abs(p[1] - out[-1][1]) > 1e-9:
+            out.append(p)
+    return np.array(out)
+
+
 def electorate_summary(dens, has, ele):
     """Electorate properties of a condition (point estimates), or None for CSVs without them."""
     if np.isnan(ele["fav_ratio"]).all():
@@ -140,6 +167,15 @@ def electorate_summary(dens, has, ele):
             "fav": float(np.median(ele["fav_ratio"]))}
 
 
+def frontier_text(F):
+    if F is None:
+        return ""
+    k = int(np.argmax(F[:, 0] + F[:, 1]))
+    return (f" Reachable frontier (any rule, knowing the sincere utilities): with the best WME (100) at most VSE "
+            f"{F[0, 0] * 100:.1f}; with the best VSE (100) at most WME {F[-1, 1] * 100:.1f}; the most balanced point "
+            f"VSE {F[k, 0] * 100:.1f} / WME {F[k, 1] * 100:.1f}.")
+
+
 def electorate_text(e):
     return (f"Electorates: Condorcet winner in {e['cw']:.1%}; it also has the highest total utility in "
             f"{e['cw_util']:.1%} of those; electing it loses {e['cw_loss']:.1%} of VSE; "
@@ -147,7 +183,7 @@ def electorate_text(e):
 
 
 def analyse_condition(rows, boot, rng):
-    methods, A, dens, has, ele = arrays(rows)
+    methods, A, dens, has, ele, cands = arrays(rows)
     E = len(dens[0])
     W = rng.multinomial(E, np.full(E, 1 / E), size=boot).astype(float)
     point = axis_values(np.ones((1, E)), A, dens, has)
@@ -158,7 +194,7 @@ def analyse_condition(rows, boot, rng):
     # each dominating method with the axes on which it is clearly better, most axes first
     dominated_by = [[(methods[j], [AXES[k] for k in np.flatnonzero(better[i, j])]) for j in np.flatnonzero(dom[i])]
                     for i in range(len(methods))]
-    res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs, "halves": halves,
+    res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs, "halves": halves, "frontier": frontier(cands, dens, ele),
            "electorate": electorate_summary(dens, has, ele)}
     for a in AXES + EXTRA + ["sincerity"] + TYPES:
         res[a] = point[a][0]
@@ -369,7 +405,8 @@ def main():
               f"{' (Zipf)' if p['zipf'] == '1' else ''}, {p['clusters']} clusters, spread {p['spread']}, "
               f"width {p['width']}; learning {p['rounds']} rounds × {p['samples']} poll samples, "
               f"group size {group_text(p['group_size'])}, "
-              f"strategic share {p['strategic']}." + (" " + electorate_text(r["electorate"]) if r["electorate"] else ""),
+              f"strategic share {p['strategic']}." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")
+              + frontier_text(r["frontier"]),
               "",
               "| Method | VSE | WME | VSE* | WME* | CE | CE* | Sincerity | Compromise | Burial | Push-over | Dominated by |",
               "|---|---|---|---|---|---|---|---|---|---|---|---|"]

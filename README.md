@@ -13,7 +13,7 @@ python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> output/a
 
 All outputs go into the folder `output/` (created when needed): an `--out` name without a directory is placed there, and `analyze.py` looks there for CSVs given without a directory. An `--out` with a directory (`--out runs/test`) is used as given.
 
-200 elections with all 41 methods at the default settings take about 14 minutes on 2 cores; time scales linearly with cores. More candidates, more voters and smaller groups take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
+200 elections with all 42 methods at the default settings take about 14 minutes on 2 cores; time scales linearly with cores. More candidates, more voters and smaller groups take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
 
 ## Files
 
@@ -127,7 +127,7 @@ An **electorates** table (and a line in each condition's section) describes the 
 
 How many voters move together decides which strategies pay, and the methods differ sharply in this.
 
-- **Compromise** (voting for a viable candidate instead of a hopeless favourite) pays even for a single voter. It is the main strategy in Top-two runoff and IRV, and it tends to carry the Condorcet winner into the final round.
+- **Compromise** (voting for a viable candidate instead of a hopeless favourite) pays even for a single voter. It is the main strategy in TTR (top-two runoff) and IRV, and it tends to carry the Condorcet winner into the final round.
 - **Burial** (ranking or rating a rival below a candidate one likes less, to create a cycle or to drop the rival in a runoff) only pays when many voters do it together. A single voter out of 99 is almost never pivotal for it. It is the main strategy against Condorcet methods, STAR and BTR-score, and it targets exactly the Condorcet winner.
 
 With `--group-size 0` (whole ranking groups) the strategic axes measure resistance to **organised factional strategy**: every voter with the same ranking follows one recommendation, the case most favourable to burial. With `--group-size 1` they measure resistance to **individual strategy**, where burial almost never pays. The default of 10 lies in between; results under strategy should always be read together with the group size used.
@@ -161,6 +161,8 @@ Both axes are **efficiencies with the same two reference points**, as ratios of 
 - The motivation is legitimacy: after the election voters judge the result, and if someone other than the Condorcet winner won, they can argue that a majority would have preferred another candidate. The worst margin measures how strong that argument is, instead of only whether it exists: losing a Condorcet winner by one vote costs little, electing a candidate whom a large majority prefers a rival to costs a lot.
 - Every election counts, cycles included, and the value does not depend on the number of voters.
 - With honest ballots Minimax reaches 100 by construction (it elects the candidate with the best worst margin), and all Condorcet methods reach it whenever there is a Condorcet winner, just as they reach 100 on CE. The strategic version WME* is where methods are tested.
+
+**Reachable frontier.** VSE and WME pull apart: the candidate with the highest total utility is often not the one with the best worst margin, so no rule can reach 100 on both. `analyze.py` computes what any rule could reach in the simulated elections if it knew every voter's sincere utilities: for each weight λ between 0 and 1 it elects, in every election, the candidate with the highest λ × (its VSE contribution) + (1 − λ) × (its WME contribution). Since both axes are ratios of sums with denominators that do not depend on the rule, this traces the exact boundary of the reachable region (lotteries fill in between the points). The plots draw it as a curve and grey out the region beyond it; the report gives its two ends and its most balanced point (highest VSE + WME). A method's distance to the curve is what it loses to having only ballots, not utilities, and to strategy. For this, run.py stores every candidate's total utility and worst margin per election (columns U_cands, WM_cands).
 
 **Condorcet efficiency (CE)**, reported alongside but not an axis: among elections with a Condorcet winner by sincere utilities, the probability the method elects it. It ignores elections without a Condorcet winner and does not distinguish narrow from clear ones.
 
@@ -209,7 +211,7 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 |---|---|---|
 | Random pair runoff | ranking | two random ballots; same first choice wins, else majority runoff between the two |
 | Plurality | one name | most first choices |
-| Top-two runoff | ranking | top two by first choices, then majority runoff |
+| TTR | ranking | top two by first choices, then majority runoff |
 | IRV | ranking | eliminate fewest first choices among remaining |
 | Borda | ranking | points by position |
 | Baldwin | ranking | eliminate lowest Borda score, recounted among remaining |
@@ -229,7 +231,7 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | TRASH | ranking | "This Random Acronym Sounds Honest": the plurality runner-up and the anti-plurality runner-up (second fewest last places) meet in a runoff, and the one ranked lower by more voters wins; if both are the same candidate, it wins. A deliberately bad reference |
 | Ranked pairs | ranking | lock pairwise wins from the largest margin down, skipping any that would close a cycle; the candidate with no locked defeat wins. Equal margins are locked in every order and averaged (at most 240 orders, otherwise 240 fixed random ones) |
 | Schulze | ranking | strongest path by margins; a candidate whose path to every rival is at least as strong as the rival's path back wins |
-| Approval runoff if needed | ranking + approval line | as Approval runoff, but a candidate approved by more than half the voters wins outright |
+| Approval cond. runoff | ranking + approval line | as Approval runoff, but a candidate approved by more than half the voters wins outright |
 | Reciprocal score | 0–5 | interpretation of [electowiki](https://electowiki.org/wiki/Reciprocal_Score_Voting): a voter's faction is their top-rated candidate(s). R(X→Y) is the mean rating supporters of X give Y, as a share of 5. A score for c is multiplied by min(1, R(c→F)/R(F→c)), F the voter's faction: support that c's supporters do not return is cut. Scores for the voter's own top and for candidates nobody top-rates stay unchanged; highest total wins |
 | Score+ | 0–5 | simplified variant from the [votingtheory.org thread](https://www.votingtheory.org/forum/topic/138/score-interval-score-with-additional-protection-against-the-chicken-dilemma): A defeats B robustly if A's total minus the scores both share (per voter the lower of the two) still exceeds B's total. Robustly defeated candidates are eliminated, each voter's scores among the rest are stretched again to 0–5, highest total wins |
 | Condorcet-random-drop | ranking | Condorcet winner if there is one; otherwise voters are dropped one at a time in random order until the rest have one. Averaged over 32 fixed random orders (the same on every call), so probabilities come in steps of 1/32 |
@@ -240,8 +242,9 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | Black | ranking | Condorcet winner if there is one, otherwise the Borda winner |
 | Ranked Robin | ranking, ties allowed | Equal Vote's Condorcet method: most pairwise wins; ties go to the greatest sum of margins against the other tied candidates, then against all candidates; remaining ties (its 3rd and 4th tiebreakers) are split. Sincere ballots are strict; ties are learned |
 | Nanson | ranking | repeatedly eliminate every candidate whose Borda score among the remaining is at or below the average (Baldwin eliminates only the lowest) |
-| Minimax-wv | ranking, ties allowed | Minimax by winning votes: the worst defeat is measured by the votes for the winner of that pair. On strict rankings identical to Minimax (margins); differs only once equal rankings are learned |
+| MMWV | ranking, ties allowed | Minimax by winning votes: the worst defeat is measured by the votes for the winner of that pair. On strict rankings identical to Minimax (margins); differs only once equal rankings are learned |
 | MMPO | ranking, ties allowed | minimax pairwise opposition: the smallest largest number of voters ranking some rival above the candidate, whether or not that rival wins the pair. Not a Condorcet method; on strict rankings identical to Minimax |
+| MMPOWV | ranking, ties allowed | proposed in this lab: (1 − largest pairwise opposition / n) × (1 − worst defeat in winning votes / n); the highest product wins. Multiplying makes a weakness on either costly and is smooth, without thresholds for strategy to aim at. On strict rankings it orders candidates like Minimax, so it equals Minimax with honest ballots and differs only once equal rankings are learned. Not Condorcet-consistent once ties are used, so in no group |
 | Smith//Score | 0–5 | highest score total among the Smith set (pairwise from the ratings, equal ratings no preference). With a Condorcet winner by the ballots the same as BTR-score; they differ only in cycles |
 | ER-IRV | ranking, ties allowed | IRV where every candidate tied at the top of a ballot (among the remaining) gets a whole vote, as in approval. Sincere ballots are strict, so it equals IRV with honest ballots; ties are learned |
 | Supplementary vote | ranking (first two used) | top two by first preferences; a ballot whose first preference is out counts for its second preference if that is a finalist, otherwise it is exhausted |
@@ -253,11 +256,11 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 
 | Group | Methods |
 |---|---|
-| `condorcet` | Baldwin, Nanson, Copeland, Ranked Robin, Black, Minimax, Minimax-wv, Ranked pairs, Schulze, SICT, Condorcet-random-drop, BTR-Borda, BTR-IRV, Benham, Smith//Score |
-| `plurality-based` | Plurality, Top-two runoff, Supplementary vote, IRV, ER-IRV, BTR-IRV, Benham |
+| `condorcet` | Baldwin, Nanson, Copeland, Ranked Robin, Black, Minimax, MMWV, Ranked pairs, Schulze, SICT, Condorcet-random-drop, BTR-Borda, BTR-IRV, Benham, Smith//Score |
+| `plurality-based` | Plurality, TTR, Supplementary vote, IRV, ER-IRV, BTR-IRV, Benham |
 | `rated` | Score, MJ, MCA, Reciprocal score |
 | `hybrid` | STAR, BTR-score, MARS, ARA, ARA-Top, Score+, Smith//Score, 321 (ratings combined with pairwise comparisons or eliminations) |
-| `approval-based` | Approval, Approval runoff, Approval runoff if needed, MDDA |
+| `approval-based` | Approval, Approval runoff, Approval cond. runoff, MDDA |
 | `positional` | Borda, Dowdall |
 | `references` | Random pair runoff, Anti-plurality, TRASH |
 
@@ -289,7 +292,7 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 
 | File | Shows |
 |---|---|
-| `arrows-<c>.png` | VSE/WME plane (area above 100 greyed out), every method's shift from honest (open) to learned ballots (filled, labelled) in one picture; filled points coloured by sincerity (red ramp, darker = less honest, capped at the 10th percentile of the plotted methods) |
+| `arrows-<c>.png` | VSE/WME plane (the region beyond the reachable frontier greyed out), every method's shift from honest (open) to learned ballots (filled, labelled) in one picture; filled points coloured by sincerity (red ramp, darker = less honest, capped at the 10th percentile of the plotted methods) |
 | `shift-<c>.png` | the same shifts as one row per method, VSE and WME panels; easier to read per method |
 | `sincerity-<c>.png` | VSE* and WME* against sincerity |
 | `axes-heatmap.png` | the four axes, methods × conditions (when there are several) |

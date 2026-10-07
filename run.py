@@ -39,6 +39,9 @@ def one_election(args):
     u = electorate(sc, rng)
     m_cand = worst_margins(u)                       # each candidate's worst head-to-head margin
     estats = electorate_stats(u)                    # properties of the electorate, for the report
+    # every candidate's total utility and worst margin, for the frontier of what any rule could reach
+    estats["U_cands"] = ";".join(f"{x:.6g}" for x in u.sum(axis=0))
+    estats["WM_cands"] = ";".join(f"{x:.6g}" for x in m_cand)
     # strategic voters: own random stream, the same voters for every method
     strategic = np.random.default_rng([seed, e, zlib.crc32(b"strategic")]).random(len(u)) < share
     out = []

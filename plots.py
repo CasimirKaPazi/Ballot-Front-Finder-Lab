@@ -33,6 +33,12 @@ def _repel(ax, texts, anchors, iterations=300):
     """Nudge labels apart vertically until their boxes no longer overlap (simple, deterministic).
     Labels that end up away from their point get a thin leader line back to it."""
     fig = ax.figure
+    # labels start just right of their point, by a fixed share of the final axis width
+    # (a fixed offset in data units pushes them out of view when the axis is zoomed in)
+    x_lo, x_hi = ax.get_xlim()
+    dx = 0.008 * (x_hi - x_lo)
+    for t, (x, y) in zip(texts, anchors):
+        t.set_position((x + dx, y))
     fig.canvas.draw()
     inv = ax.transData.inverted()
     y_lo, y_hi = ax.get_ylim()
@@ -64,20 +70,47 @@ def _repel(ax, texts, anchors, iterations=300):
 VSE_LABEL = "VSE (%; 0 = random ballot, 100 = best candidate)"
 WME_LABEL = "WME (%; 0 = random ballot, 100 = best worst margin)"
 UNREACHABLE = "#ecebe7"
+BOUNDARY = "#a8a7a2"       # line along the edge of every unreachable area
 
 
-def _unreachable(ax, which):
-    """Grey out values above 100 on the x and/or y axis (efficiencies cannot exceed 100) and make
-    sure the boundary is in view."""
+def _unreachable(ax, which, extend=True, lines=True):
+    """Grey out values above 100 on the x and/or y axis (efficiencies cannot exceed 100). With
+    extend, the axis is widened so the boundary is in view; without, only a visible part is shaded."""
     for w in which:
         lo, hi = ax.get_xlim() if w == "x" else ax.get_ylim()
+        if not extend and hi <= 100:
+            continue
         hi = max(hi, 100 + 0.04 * (hi - lo))
         if w == "x":
             ax.set_xlim(lo, hi)
             ax.axvspan(100, hi, color=UNREACHABLE, zorder=0, lw=0)
+            if lines:
+                ax.axvline(100, color=BOUNDARY, lw=1.0, zorder=1)
         else:
             ax.set_ylim(lo, hi)
             ax.axhspan(100, hi, color=UNREACHABLE, zorder=0, lw=0)
+            if lines:
+                ax.axhline(100, color=BOUNDARY, lw=1.0, zorder=1)
+
+
+def _frontier(ax, F):
+    """Draw the reachable frontier (points (VSE, WME) as fractions, best WME first) and grey out the
+    region beyond it, which no rule can reach in these elections."""
+    if F is None or len(F) == 0:
+        return
+    x, y = F[:, 0] * 100, F[:, 1] * 100
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    hx, hy = max(x1, x.max() + 0.5), max(y1, y.max() + 0.5)
+    # region beyond: above the curve and to its right
+    px = np.concatenate([[x[0], x[0]], x, [hx, hx]])
+    py = np.concatenate([[hy, y[0]], y, [y[-1], hy]])
+    ax.fill(px, py, color=UNREACHABLE, zorder=0, lw=0)
+    # one boundary line: WME = 100 up to the frontier, the frontier, then VSE = 100 below it
+    ax.plot(np.concatenate([[min(x0, x[0]), x[0]], x, [100, 100]]),
+            np.concatenate([[100, 100], y, [y[-1], min(y0, y[-1])]]), color=BOUNDARY, lw=1.0, zorder=1)
+    ax.set_xlim(x0, hx)
+    ax.set_ylim(y0, hy)
 
 
 def _visible(r, hide):
@@ -86,6 +119,7 @@ def _visible(r, hide):
 
 def arrows(r, path, hide):
     """Honest (open circle) -> learned ballots (filled) in the VSE / WME plane, all methods together.
+    The grey area beyond the curve is out of reach for any rule in these elections (see analyze.frontier).
     Filled points are coloured by the sincerity of the learned ballots (darker = less honest)."""
     idx = _visible(r, hide)
     # cap the colour scale at the 10th percentile, so one extreme method does not wash out the rest
@@ -107,7 +141,8 @@ def arrows(r, path, hide):
         texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
     ax.set_xlabel(VSE_LABEL)
     ax.set_ylabel(WME_LABEL)
-    _unreachable(ax, "xy")
+    _unreachable(ax, "xy", lines=r.get("frontier") is None)
+    _frontier(ax, r.get("frontier"))
     ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}", loc="left")
     cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, fraction=0.035, pad=0.02,
                       extend="min" if vals.min() < smin else "neither")
@@ -157,7 +192,7 @@ def sincerity(r, path, hide):
             texts.append(ax.text(x + 0.12, y, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=4))
         ax.set_xlabel("sincerity of learned ballots (%)")
         ax.set_ylabel(name)
-        _unreachable(ax, "y")
+        _unreachable(ax, "y", extend=False)
         _repel(ax, texts, anchors)
     axs[0].set_title(f"Quality under strategy against sincerity (upper right is best)\n{r['label']}", loc="left")
     fig.tight_layout()
@@ -214,7 +249,7 @@ def chain(results, param, values, path, hide, learning_only, groups):
             for i in range(k):
                 ax.scatter([lx[i]], [ly[i]], s=40, color=shades[i], edgecolors=SURFACE, linewidths=0.8, zorder=4)
             anchors.append((lx[-1], ly[-1]))
-            texts.append(ax.text(lx[-1], ly[-1], " " + m, fontsize=7.5, color=INK2, va="center", zorder=5))
+            texts.append(ax.text(lx[-1], ly[-1], m, fontsize=7.5, color=INK2, va="center", zorder=5))
         ax.set_title(g, loc="left", fontsize=10)
         labelled.append((ax, texts, anchors))
     for ax in axs.flat[len(panels):]:
@@ -223,12 +258,18 @@ def chain(results, param, values, path, hide, learning_only, groups):
         ax.set_ylabel(WME_LABEL.replace("WME", "WME*", 1), fontsize=8)
     for ax in axs[-1, :]:
         ax.set_xlabel(VSE_LABEL.replace("VSE", "VSE*", 1), fontsize=8)
-    _unreachable(axs.flat[0], "xy")                       # shared axes: limits apply to all panels
+    F = base.get("frontier") if learning_only else None    # same electorates: one frontier for all conditions
+    _unreachable(axs.flat[0], "xy", lines=F is None)       # shared axes: limits apply to all panels
+    _frontier(axs.flat[0], F)
     for ax in list(axs.flat)[1:len(panels)]:
         lo, hi = ax.get_xlim()
         ax.axvspan(100, hi, color=UNREACHABLE, zorder=0, lw=0)
         lo, hi = ax.get_ylim()
         ax.axhspan(100, hi, color=UNREACHABLE, zorder=0, lw=0)
+        if F is None:
+            ax.axvline(100, color=BOUNDARY, lw=1.0, zorder=1)
+            ax.axhline(100, color=BOUNDARY, lw=1.0, zorder=1)
+        _frontier(ax, F)
     handles = [plt.Line2D([], [], ls="", marker="o", ms=7, color=shades[i], label=str(v)) for i, v in enumerate(values)]
     handles.append(plt.Line2D([], [], ls="", marker="o", ms=6, mfc=SURFACE, mec=MUTED, label="honest ballots"))
     fig.legend(handles=handles, loc="upper right", ncol=len(handles), frameon=False, fontsize=8,

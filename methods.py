@@ -799,6 +799,21 @@ def d_minimax_wv(s):
     return uniform_max(-defeat.max(axis=0))
 
 
+def d_mmpowv(s):
+    """MMPOWV (proposed in this lab): pairwise opposition and winning votes multiplied. Each turned into
+    a share between 0 (worst) and 1 (best): 1 - largest opposition / n (the most voters ranking some
+    rival above the candidate) and 1 - worst defeat / n (votes for the rival in the candidate's worst
+    defeat, 0 if undefeated); the highest product wins. Multiplying makes a weakness on either costly
+    and is smooth, without thresholds for strategy to aim at. On strict rankings it orders candidates
+    like Minimax, so it differs only once equal rankings are learned."""
+    n = s["n"]
+    gt = s["gt"].astype(float)
+    np.fill_diagonal(gt, 0)
+    wv = np.where(gt > gt.T, gt, 0.0).max(axis=0)
+    po = gt.max(axis=0)
+    return uniform_max((1 - wv / n) * (1 - po / n))
+
+
 @dataclass
 class Method:
     ballot: str
@@ -842,7 +857,7 @@ M_ = Method
 METHODS = {
     "Random pair runoff": M_("rank", d_random_pair, ("n", "first", "gt")),
     "Plurality": M_("fav", d_sum, ("sum",)),
-    "Top-two runoff": M_("rank", d_top_two, ("first", "gt")),
+    "TTR": M_("rank", d_top_two, ("first", "gt")),
     "IRV": M_("rank", d_irv, ("firsts",)),
     "Borda": M_("rank", d_sum, ("sum",)),
     "Baldwin": M_("rank", d_baldwin, ("gt",)),
@@ -862,7 +877,7 @@ METHODS = {
     "TRASH": M_("rank", d_trash, ("first", "last", "gt")),
     "Ranked pairs": M_("rank", d_ranked_pairs, ("gt",)),
     "Schulze": M_("rank", d_schulze, ("gt",)),
-    "Approval runoff if needed": M_("rankapp", d_approval_runoff_if_needed, ("n", "app", "gt")),
+    "Approval cond. runoff": M_("rankapp", d_approval_runoff_if_needed, ("n", "app", "gt")),
     "Reciprocal score": M_("score", d_reciprocal_score, ("fset", "fsetB")),
     "Score+": M_("score", d_score_plus, ("sum", "excess", "keepnorm")),
     "Condorcet-random-drop": M_("rank", full=t_condorcet_drop),
@@ -880,18 +895,19 @@ METHODS = {
     "Supplementary vote": M_("rank", d_supplementary, ("first", "firstsecond")),
     "MCA": M_("grade3", d_mca, ("n", "ge2", "ge1")),
     "MMPO": M_("weak", d_mmpo, ("gt",)),
-    "Minimax-wv": M_("weak", d_minimax_wv, ("gt",)),
+    "MMWV": M_("weak", d_minimax_wv, ("gt",)),
+    "MMPOWV": M_("weak", d_mmpowv, ("n", "gt")),
 }
 
 
 # Method groups for --methods / --exclude (tags: a method can be in several groups)
 GROUPS = {
-    "condorcet": ["Baldwin", "Nanson", "Copeland", "Ranked Robin", "Black", "Minimax", "Minimax-wv", "Ranked pairs",
+    "condorcet": ["Baldwin", "Nanson", "Copeland", "Ranked Robin", "Black", "Minimax", "MMWV", "Ranked pairs",
                   "Schulze", "SICT", "Condorcet-random-drop", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
-    "plurality-based": ["Plurality", "Top-two runoff", "Supplementary vote", "IRV", "ER-IRV", "BTR-IRV", "Benham"],
+    "plurality-based": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "BTR-IRV", "Benham"],
     "rated": ["Score", "MJ", "MCA", "Reciprocal score"],
     "hybrid": ["STAR", "BTR-score", "MARS", "ARA", "ARA-Top", "Score+", "Smith//Score", "321"],
-    "approval-based": ["Approval", "Approval runoff", "Approval runoff if needed", "MDDA"],
+    "approval-based": ["Approval", "Approval runoff", "Approval cond. runoff", "MDDA"],
     "positional": ["Borda", "Dowdall"],
     "references": ["Random pair runoff", "Anti-plurality", "TRASH"],
 }
