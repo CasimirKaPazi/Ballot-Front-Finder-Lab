@@ -132,9 +132,9 @@ def main():
     ap.add_argument("--dims", type=int, default=10)
     ap.add_argument("--zipf", type=int, default=1, choices=[0, 1],
                     help="1: dimension i has scale 1/i (Zipf dimensions, see scenario.py)")
-    ap.add_argument("--clusters", type=int, default=3)
+    ap.add_argument("--clusters", type=int, default=5)
     ap.add_argument("--spread", type=float, default=0.5)
-    ap.add_argument("--width", type=float, default=1.5)
+    ap.add_argument("--width", type=float, default=1.0)
     ap.add_argument("--rounds", type=int, default=20, help="learning rounds")
     ap.add_argument("--samples", type=int, default=10, help="poll samples per round")
     ap.add_argument("--group-size", type=group_size_arg, default=10,

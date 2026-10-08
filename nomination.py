@@ -35,7 +35,7 @@ change in VSE and WME is the effect of nomination on the outcome.
 """
 import numpy as np
 
-CLONE_SD = 0.01   # offset of a clone from its original, per dimension (positions are O(1), width 1.5)
+CLONE_SD = 0.01   # offset of a clone from its original, per dimension (positions are O(1), width about 1)
 ROUNDS = 20
 TOL = 1e-12
 

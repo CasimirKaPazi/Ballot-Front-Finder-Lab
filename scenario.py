@@ -22,9 +22,9 @@ class Scenario:
     n_voters: int = 99      # odd, so pairwise majorities rarely tie
     n_cands: int = 6
     dims: int = 10          # issue-space dimensions
-    n_clusters: int = 3     # voter clusters
+    n_clusters: int = 5     # voter clusters
     spread: float = 0.5     # standard deviation of voters around their cluster centre
-    width: float = 1.5      # distance scale of the utility fall-off
+    width: float = 1.0      # distance scale of the utility fall-off
     zipf: int = 1           # 1: dimension i has scale 1/i (see module docstring); 0: all dimensions equal
 
 

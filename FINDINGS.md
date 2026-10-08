@@ -6,6 +6,13 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
 
+## Defaults changed: width 1.0, 5 clusters (2026-10-08)
+
+Earlier sections used width 1.5 and 3 clusters; from now on the defaults are width 1.0 and 5 clusters (spread stays 0.5). Based on two one-at-a-time sweeps, 400 elections each, seed 1, with exits 1 and clones 2:
+
+- **Width** (0.25–2.0, 5 clusters, 6 candidates). Width only changes how utility falls with distance, not who prefers whom: the Condorcet winner share (96.8%) and the honest WME of ranked methods do not move (MMPO 99.6, IRV 86.0 at both 1.0 and 1.5). It acts on VSE, on rated and approval ballots, and on what strategy is worth. A wide width makes utility nearly linear in distance, so total utility and the majority mostly agree and the VSE axis is compressed: electing the Condorcet winner loses 12.9% of VSE at 1.0 and 8.5% at 1.5, the best-WME end of the frontier is at VSE 86.5 and 91.0, and the honest VSE gap between Score and MMPO is 6.7 and 4.3 points. Favourite ÷ least liked (median voter) is 4.4 at 1.0 and 2.7 at 1.5; very small widths are extreme (378 at 0.25, where electing the Condorcet winner loses 47% of VSE).
+- **Clusters** (1, 2, 3, 4, 5, 10; 8 candidates, width 1.5). One cluster leaves little to separate the methods (electing the Condorcet winner loses 1.6% of VSE, frontier best-WME end at VSE 98.3); the tension grows up to 5 clusters (8.2%, VSE 91.4) and eases again at 10 (7.1%, VSE 92.7), where many small clusters blur into a more even electorate. No even/odd pattern beyond noise: the more stable electorate measures move steadily from 3 to 5 clusters (VSE lost 6.6, 7.1, 8.2%; frontier VSE 93.5, 92.3, 91.4), and only the share of Condorcet winners with the highest total utility zigzags (72.7, 75.5, 67.7%), by about the size of its sampling error.
+
 ## Score range 0–5, 0–10, 0–100 (2026-10-07)
 
 Settings: the defaults (99 voters, 6 candidates, 10 Zipf dimensions, 3 clusters, spread 0.5, width 1.5, group size 10, 20 rounds), strategic share 0.5, 400 elections per condition, seed 1; `--max-score 5 10 100`. Methods: Score, MJ, STAR, BTR-score, MARS, ARA, ARA-Top, Score+, Reciprocal score, Smith//Score, and as fixed references 321 and MCA (three grades, unchanged across conditions, as they should be). The electorates are the same in all three conditions.

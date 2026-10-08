@@ -81,9 +81,9 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--cands` | 6 | candidates |
 | `--dims` | 10 | issue-space dimensions |
 | `--zipf` | 1 | 1: dimension i has scale 1/i (Zipf dimensions, above); 0: all dimensions equal |
-| `--clusters` | 3 | voter clusters |
+| `--clusters` | 5 | voter clusters |
 | `--spread` | 0.5 | standard deviation of voters around their cluster centre (centres have 1), before the Zipf scaling |
-| `--width` | 1.5 | distance scale of the utility fall-off |
+| `--width` | 1.0 | distance scale of the utility fall-off |
 | `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |
 | `--rounds` | 20 | learning rounds |
 | `--samples` | 10 | poll resamples per round |
