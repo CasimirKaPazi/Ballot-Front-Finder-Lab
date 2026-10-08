@@ -33,9 +33,48 @@ All outputs go into the folder `output/` (created when needed): an `--out` name 
 
 ## Strategy engine
 
+Two models of strategic voting (`strategy.py`). **Poll rounds** is the default; **convergent learning** (the model used for all strategic results up to 2026-10-08) is available with `--converge N`.
+
+### Poll rounds (default)
+
+One election, with a few polls before it. Voters see only published poll results, never anyone's preferences, and answer them all at the same time.
+
+- **Round 0:** everyone votes sincerely (naive, uninformed). `--rounds 0` reports this as the strategic result.
+- **Round r** (1 … `--rounds`, default 1): a poll of round r−1 is published, and every strategic group answers it at once. Nobody sees anyone else's answer before the next poll. The strategic axes report the last round. Each round answers a pure poll of the round before (level-k reasoning: round 1 best-responds to sincere voters, round 2 to round-1 voters, …).
+- **What a poll shows:** the method's own counts, the summed ballot features it decides from (first preferences for Plurality, approvals for Approval, the pairwise matrix for Condorcet methods, score totals and head-to-heads for STAR, …), from a random sample of `--poll-size` voters (default half the electorate, rounded to an odd number: 99 → 49, 100 → 51, 200 → 101), scaled up to the electorate. `--samples` independent polls (30) stand for the uncertainty. For some methods these counts say more than a real poll would (IRV's counts include every elimination order); methods with richer counts may profit from that.
+- **Uncertainty:** voters treat a poll as `--poll-error` times (2) less precise than its sampling error: the polls are spread around the true count by that factor. Real polls miss results by about twice their stated sampling error (Shirani-Mehr, Rothschild, Goel & Gelman 2018). With the sampling error alone, the leader's supporters almost never see a poll in which they are behind, so they never protect their lead, while the runner-up's supporters attack it.
+- **Groups:** whole ranking groups (strategic voters with the same sincere ranking, no cap). Voters who share a ranking and see the same poll reach the same answer, so they act as a bloc. Factions across rankings are not built in; they emerge when groups answer the same poll alike (all who prefer the runner-up to the leader, say).
+- **Leaders:** the two candidates that win most often over the round's polls, the same for everyone. If one candidate wins every poll, the polls are widened (deviations × 2, 4, …) until another one wins somewhere: the race that would matter first.
+- **Answer:** a group estimates the count for a ballot b as poll count − its own previous ballots + its size × b, and judges b by its expected utility gain over its sincere ballots, over the polls. It first tries a few candidate ballots: its previous answer, and the naive exaggerations of its ballot type around the two leaders (A = the one it prefers, B = the other):
+
+  | Ballot | Naive exaggerations |
+  |---|---|
+  | one name | vote A |
+  | approval | approve everyone liked at least as much as A |
+  | score, three grades | top grade for everyone liked at least as much as A, bottom for everyone liked no more than B, stretched in between; or top down to A and bottom below |
+  | ranking | A to the top and B to the bottom; A to the top; B to the bottom |
+  | ranking with ties | everyone liked at least as much as A tied at the top, with or without B at the bottom; or the ranking moves |
+  | truncated ranking | rank only down to A, sincerely or with A first |
+  | ranking + approval line | line at A, with B at the bottom, with A first, or neither |
+  | veto | veto B |
+
+  The best of these is taken if it does not lose in the polls: exaggeration wins ties, since strategic voters exaggerate when it cannot hurt, whatever the gap. They are only candidates: one that backfires in the polls is not taken. Then random search (at most `--search` proposals, 10; it stops after 3 in a row without gain) takes a change only if it strictly gains. A group none of whose candidates is safe and whose search finds no gain stays sincere. Without a runner-up (exact polls) there are no exaggerations, only the search.
+- **Settled:** the last round gave the same ballots as the round before (a fixed point).
+- Condorcet-random-drop, which has no feature sums, is polled by tallying the sampled ballots, with the group's sampled members changed.
+
+### Convergent learning (`--converge N`)
+
+The earlier model: over N rounds, groups take turns and each sees the others' latest strategic ballots through a fresh poll of the full electorate. It finds where an electorate ends up after long adjustment, with much more information and coordination than one election offers. That makes it resistant to strategies that only fail when many voters use them at once: mass burial under Borda, for example, which sinks Borda when everyone buries simultaneously (FINDINGS.md). Kept for comparison and as a long-run view; the results up to 2026-10-08 used it with N = 20 and 10 poll samples (`--converge 20 --samples 10`).
+
 - **Groups:** strategic voters with the same sincere ranking, split at random into subgroups of at most `--group-size` voters (see Coordination below). A group either votes sincerely (each member their own sincere ballot) or casts one shared ballot.
-- **Polls:** each round draws 10 bootstrap resamples of the electorate. A proposal is judged by the group's total expected utility averaged over these samples, so a group gains in proportion to how often it would be pivotal, not only when it is decisive in the exact electorate.
-- **Proposals:** one small change to the group's ballot:
+- **Polls:** each round draws `--samples` bootstrap resamples of the electorate. A proposal is judged by the group's total expected utility averaged over these samples, so a group gains in proportion to how often it would be pivotal, not only when it is decisive in the exact electorate.
+- Voters start sincere. A group that has not deviated yet changes the sincere ballot of its average member (mean utilities of the group); a deviating group changes its current shared ballot, and sometimes (15% of proposals) proposes going back to sincere.
+- **Acceptance:** a proposal is kept only if it raises the group's expected utility. A return to sincere is also kept when it is not worse: voters prefer honesty when indifferent. Without this, a deviation that once paid off stays forever once it stops mattering, and sincerity keeps falling with the number of rounds instead of reflecting what strategy actually pays.
+- **Rounds:** groups in random order each round; no early stop. Each group tries only one random change per round, so a round without any accepted change does not mean learning has finished, and `settled` (no change in the last round) is a weak sign of convergence.
+
+### Common to both
+
+- **Proposals** (one small change to a ballot; `strategy.mutate`):
   - one name: switch to another candidate
   - ranking: swap two candidates
   - approval: toggle one candidate (never empty or full)
@@ -45,12 +84,7 @@ All outputs go into the folder `output/` (created when needed): an `--out` name 
   - truncated ranking: swap two candidates, or rank one more or one fewer
   - score: set one candidate to a different value 0–max. For ranges above 0–5, half of the proposals use the six levels of the 0–5 scale stretched to the range (0, 20, … 100 for 0–100), so the chance of trying an extreme does not shrink as the range grows and learning is not slowed by the range alone
   - three grades: set one candidate to a different grade
-
-  Voters start sincere. A group that has not deviated yet changes the sincere ballot of its average member (mean utilities of the group); a deviating group changes its current shared ballot, and sometimes (15% of proposals) proposes going back to sincere.
-- **Acceptance:** a proposal is kept only if it raises the group's expected utility. A return to sincere is also kept when it is not worse: voters prefer honesty when indifferent. Without this, a deviation that once paid off stays forever once it stops mattering, and sincerity keeps falling with the number of rounds instead of reflecting what strategy actually pays.
-- **Rounds:** 20, groups in random order each round; no early stop. Each group tries only one random change per round, so a round without any accepted change does not mean learning has finished, and `settled` (no change in the last round) is a weak sign of convergence. The tests behind both choices are in FINDINGS.md.
-- **Feature sums:** every tally except Condorcet-random-drop depends on the ballots only through sums over voters of per-voter features (totals, first and last places, the pairwise matrix, grade counts, first choices among each subset of candidates, ...). Each method lists its features and decides from their sums. During learning the sums are kept per poll sample and updated only for the group that changes. All features are integers, so this gives exactly the same learned ballots as recounting (checked against the earlier code).
-- **Conditional top-two runoff** is not a separate method: a candidate with more than half the first choices also wins every runoff, since the runoff reuses the same rankings. (In a real two-round election voters vote again, with new information and different turnout; that is not modelled.)
+- **Feature sums:** every tally except Condorcet-random-drop depends on the ballots only through sums over voters of per-voter features (totals, first and last places, the pairwise matrix, grade counts, first choices among each subset of candidates, ...). Each method lists its features and decides from their sums. In both models a group's change is evaluated by updating the polled sums instead of recounting. In convergent learning all features are integers, so this gives exactly the same ballots as recounting (checked against the earlier code); poll counts are scaled from a sample and need not be integers.
 - **Random streams:** each method learns with its own random stream per election, keyed by the method's name, so results do not change when methods are added or reordered.
 
 ## Electorates
@@ -85,9 +119,13 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--spread` | 0.5 | standard deviation of voters around their cluster centre (centres have 1), before the Zipf scaling |
 | `--width` | 1.0 | distance scale of the utility fall-off |
 | `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |
-| `--rounds` | 20 | learning rounds |
-| `--samples` | 10 | poll resamples per round |
-| `--group-size` | 10 | most voters that coordinate as one group: a number of voters (1 = every voter alone), a share of the electorate between 0 and 1 (0.05 = 5% of the voters, rounded, at least 1), or 0 = whole ranking group |
+| `--rounds` | 1 | poll rounds before the vote (0 = everyone sincere); see Strategy engine |
+| `--samples` | 30 | polls per round (they stand for the uncertainty); convergent learning used 10, so `--converge 20 --samples 10` reproduces earlier results |
+| `--poll-error` | 2 | voters treat polls as this many times less precise than their sampling error |
+| `--poll-size` | 0 | voters per poll; 0 = half the electorate, rounded to an odd number |
+| `--search` | 10 | random ballot changes a group tries per poll round, after the naive exaggerations |
+| `--converge` | 0 | N > 0: convergent learning with N rounds instead of poll rounds (the earlier model; N = 20 before 2026-10-08) |
+| `--group-size` | 10 | convergent learning only: most voters that coordinate as one group: a number of voters (1 = every voter alone), a share of the electorate between 0 and 1 (0.05 = 5% of the voters, rounded, at least 1), or 0 = whole ranking group |
 | `--strategic` | 0.5 | share of voters who vote strategically (see Partial strategy) |
 | `--max-score` | 5 | score ballots range over 0–max (see Score range) |
 | `--exits` | 0 | 1: candidates may withdraw and re-enter strategically (see Strategic nomination) |
@@ -97,7 +135,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--exclude` | none | run all methods except these |
 | `--out` | `results` | output prefix: `output/<out>-elections.csv` and `output/<out>-summary.csv` |
 
-`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--group-size`, `--strategic`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `output/<out>-elections.csv` (default `--out sweep`), one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid.
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--search`, `--converge`, `--group-size`, `--strategic`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `output/<out>-elections.csv` (default `--out sweep`), one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid.
 
 `analyze.py`:
 
@@ -128,6 +166,8 @@ Conditions are labelled by how they differ from the base (`c1: base`, `clusters 
 An **electorates** table (and a line in each condition's section) describes the generated electorates themselves, independent of the methods: how often a Condorcet winner exists, how often it also has the highest total utility, how much VSE electing it loses (ratio of sums, as VSE), and how steep preferences are (u(favourite) ÷ u(least liked), median over voters, then median over elections). The third column explains most VSE differences between Condorcet and rated methods; the last one is a concrete handle for choosing `--width`.
 
 ## Coordination: what the strategic axes measure
+
+This section applies to convergent learning (`--converge`). Poll rounds always use whole ranking groups; there, coordination is limited by information (one poll, simultaneous answers) instead of by a group-size cap.
 
 How many voters move together decides which strategies pay, and the methods differ sharply in this.
 
@@ -188,7 +228,7 @@ Both axes are **efficiencies with the same two reference points**, as ratios of 
 
 **Condorcet efficiency (CE)**, reported alongside but not an axis: among elections with a Condorcet winner by sincere utilities, the probability the method elects it. It ignores elections without a Condorcet winner and does not distinguish narrow from clear ones.
 
-VSE, WME and CE use sincere ballots; VSE*, WME* and CE* (in the CSV: VSE_learned, WME_learned, CE_learned) the learned ballots. In all cases the preferences that count are the sincere ones.
+VSE, WME and CE use sincere ballots; VSE*, WME* and CE* (in the CSV: VSE_learned, WME_learned, CE_learned) the strategic ballots ("learned": after the poll rounds, or after convergent learning). In all cases the preferences that count are the sincere ones.
 
 Earlier versions (before 2026-10-06) used PE, with a utility-proportional lottery as zero, and WM, the raw worst margin in % of voters; FINDINGS.md says which applies where.
 
@@ -200,7 +240,7 @@ Earlier versions (before 2026-10-06) used PE, with a utility-proportional lotter
 | VSE_learned, WME_learned | the same with learned ballots |
 | CE, CE_learned | Condorcet efficiency, sincere and learned ballots |
 | sincerity | mean sincerity of the learned ballots, over all voters (below) |
-| settled | share of elections where no group changed its ballot in the last round; cycles never settle |
+| settled | poll rounds: share of elections where the last round gave the same ballots as the round before (a fixed point); convergent learning: no group changed its ballot in the last round. Cycles never settle |
 
 `on_front` in the summary is a quick check on point estimates (VSE, WME, VSE_learned, WME_learned, no uncertainty). The analysis uses the tie-aware "Dominated by" instead (see Analysis).
 

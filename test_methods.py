@@ -237,3 +237,31 @@ from strategy import learn
 for name, m in METHODS.items():
     learn(m, np.random.default_rng(1).random((15, 2)), np.random.default_rng(2), 2, 2, 5, None)
 print("learning on 2 candidates ok")
+
+# Poll rounds (strategy.respond)
+from strategy import respond, default_poll_size
+assert (default_poll_size(100), default_poll_size(99), default_poll_size(200)) == (51, 49, 101)
+P_ = METHODS["Plurality"]
+# 4 voters A>C>B, 3 voters B>A>C, 5 voters C>A>B: C wins honestly. With an exact poll (poll size = all
+# voters), only B's voters can do better: they compromise on A, and A wins. A's voters gain nothing
+# by moving (B is their last choice), C's voters are winning.
+u = profile([(4, [0.6, 0.0, 0.3, 0.0]), (3, [0.4, 0.6, 0.0, 0.0]), (5, [0.3, 0.0, 0.6, 0.0])])
+u = u[:, :3] + 0.01                                     # three candidates
+B, st, _ = respond(P_, u, np.random.default_rng(0), rounds=1, samples=3, poll_size=len(u), search=20)
+check("Plurality after one poll round (B's voters compromise)", P_.tally(B), [1, 0, 0])
+B0, st0, s0 = respond(P_, u, np.random.default_rng(0), rounds=0)
+assert np.array_equal(B0, P_.sincere(u)) and st0 and s0 == 1.0
+mask = np.zeros(len(u), bool); mask[:4] = True          # only A's voters strategic: nothing changes
+B, st, _ = respond(P_, u, np.random.default_rng(0), rounds=2, samples=3, poll_size=len(u), search=20, strategic=mask)
+assert np.array_equal(B, P_.sincere(u)) and st
+print("poll rounds ok")
+
+# Leader rule emerges (poll rounds): A leads B clearly; voters who approve both drop the leader they
+# like less, on both sides, although the gap is large; nobody approves both front-runners any more.
+Ap = METHODS["Approval"]
+u = profile([(10, [0.9, 0.7, 0.0]), (6, [0.7, 0.9, 0.0]), (4, [0.9, 0.0, 0.2]), (3, [0.0, 0.2, 0.9])]) + 0.01
+Bs = Ap.sincere(u)
+assert list(Bs.sum(axis=0)) == [20, 16, 3], Bs.sum(axis=0)
+B, _, _ = respond(Ap, u, np.random.default_rng(1), rounds=1, samples=30, poll_size=0, search=30)
+assert (B[:10, 1] == 0).all() and (B[10:16, 0] == 0).all(), B[:16]
+print("leader rule on both sides ok")

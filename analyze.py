@@ -40,16 +40,26 @@ from collections import OrderedDict
 import numpy as np
 
 import plots
-from run import out_path, group_text, OUTPUT_DIR
+from run import out_path, group_text, strategy_text, OUTPUT_DIR
 from methods import GROUPS
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
 EXTRA = ["CE", "CE*"]           # reported, not used for dominance
 TYPES = ["compromise", "burial", "pushover"]
 PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size", "strategic",
-          "max_score", "exits", "clones"]
+          "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge"]
 NOM = ["nom_changed", "nom_exits", "nom_clones", "nom_settled"]     # per method and election (sincere rows)
 OLD_DEFAULTS = {"zipf": "0", "max_score": "5"}      # parameters missing from older CSVs
+
+
+def param_value(r, k):
+    """A row's parameter value; older CSVs lack some. CSVs from before poll rounds (2026-10-08)
+    used convergent learning, with its rounds in the rounds column."""
+    if k in r:
+        return r[k]
+    if k == "converge":
+        return r.get("rounds", "20")
+    return OLD_DEFAULTS.get(k, "0")
 
 
 def load(paths):
@@ -67,7 +77,7 @@ def conditions(rows):
     """Group rows by parameters (seed excluded). Returns {key: rows} in first-seen order."""
     out = OrderedDict()
     for r in rows:
-        out.setdefault(tuple(r.get(k, OLD_DEFAULTS.get(k, "0")) for k in PARAMS), []).append(r)
+        out.setdefault(tuple(param_value(r, k) for k in PARAMS), []).append(r)
     return out
 
 
@@ -219,8 +229,9 @@ def label(key, varying, first):
                      for k in diff) or "base"
 
 
-PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score"}
-LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic"}     # same electorates, only learning differs
+PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
+               "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error", "converge": "convergent rounds"}
+LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "poll_size", "poll_error", "search", "converge"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones"}  # same electorates (honest results may differ)
 
 
@@ -353,7 +364,9 @@ def main():
           "head-to-head margin by sincere preferences (a refined Condorcet measure; every election counts; Minimax "
           "reaches 100 with honest ballots by construction). CE (Condorcet efficiency, elections with a Condorcet "
           "winner only, elected or not) is shown for comparison and not used for dominance.",
-          "- The strategic axes (VSE*, WME*) depend on the group size: see the README section on coordination.",
+          "- The strategic axes (VSE*, WME*) give the result after the poll rounds: voters see polls of the previous round "
+          "(the method's counts only) and answer them all at once (README, Strategic voting). Under convergent learning "
+          "(--converge) they describe a long-run state instead and depend on the group size.",
           "- **Compromise, burial, push-over** are shares of voters whose learned ballot reverses a real preference, "
           "by kind (see strategy.strategy_types): compromise raises a liked second choice above the favourite, "
           "push-over raises a disliked candidate to the top, burial keeps the favourite on top and reverses a "
@@ -411,8 +424,7 @@ def main():
               f"{r['elections']} elections (seeds {', '.join(r['seeds'])}), {r['with_cw']} with a Condorcet winner. "
               f"{p['voters']} voters, {p['cands']} candidates, {p['dims']} dimensions"
               f"{' (Zipf)' if p['zipf'] == '1' else ''}, {p['clusters']} clusters, spread {p['spread']}, "
-              f"width {p['width']}; learning {p['rounds']} rounds × {p['samples']} poll samples, "
-              f"group size {group_text(p['group_size'])}, "
+              f"width {p['width']}; {strategy_text(p, p['voters'])}, "
               f"strategic share {p['strategic']}, scores 0..{p['max_score']}"
               + (f"; nomination: exits {p['exits']}, clones {p['clones']}" if p['exits'] != '0' or p['clones'] != '0' else "")
               + "." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")

@@ -4,7 +4,8 @@ Usage:
     python run.py --elections 200                      # defaults: see README, Parameters
 
 Each electorate is tallied twice per method: with sincere ballots, and after the groups
-(voters with the same sincere ranking) have learned shared ballots (see strategy.py).
+(voters with the same sincere ranking) have answered polls strategically (see strategy.py: poll
+rounds by default, convergent learning with --converge). The "learned" rows hold those ballots.
 
 Axes of the Pareto front (0 = random ballot, 100 = best candidate; see metrics.py):
     VSE, WME     voter satisfaction and worst-margin efficiency, sincere ballots
@@ -30,12 +31,13 @@ import numpy as np
 from scenario import Scenario, electorate_positions
 from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, select, set_max_score
-from strategy import learn, strategy_types
+from strategy import learn, respond, strategy_types, default_poll_size
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats
 
 
 def one_election(args):
-    sc, seed, e, rounds, samples, group_size, share, max_score, exits, clones, names = args
+    (sc, seed, e, rounds, samples, group_size, share, max_score, exits, clones, poll_size, poll_error, search,
+     converge, names) = args
     set_max_score(max_score)                        # per process: workers do not share module state
     rng = np.random.default_rng([seed, e])
     u, voters, cands = electorate_positions(sc, rng)
@@ -71,7 +73,10 @@ def one_election(args):
         # Each method learns with its own random stream, keyed by name, so results stay
         # the same when methods are added or reordered.
         mrng = np.random.default_rng([seed, e, zlib.crc32(name.encode())])
-        B, settled, sin = learn(m, uf, mrng, rounds, samples, group_cap(group_size, len(u)), strategic)
+        if converge > 0:
+            B, settled, sin = learn(m, uf, mrng, converge, samples, group_cap(group_size, len(u)), strategic)
+        else:
+            B, settled, sin = respond(m, uf, mrng, rounds, samples, poll_size, search, strategic, poll_error)
         out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, back(m.tally(B)), m_cand),
                     **estats, "sincerity": sin, "settled": int(settled), **strategy_types(B, uf), **nstats})
     return out
@@ -85,6 +90,17 @@ def out_path(name):
     path = name if os.path.dirname(name) else os.path.join(OUTPUT_DIR, name)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     return path
+
+
+def strategy_text(p, n):
+    """One-line description of the strategy model of a run (p: namespace or dict of parameters)."""
+    g = (lambda k: p[k]) if isinstance(p, dict) else (lambda k: getattr(p, k))
+    if int(g("converge")) > 0:
+        return (f"convergent learning {g('converge')} rounds x {g('samples')} poll samples, "
+                f"group size {group_text(g('group_size'))}")
+    ps = int(g("poll_size")) or default_poll_size(int(n))
+    return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
+            f"search {g('search')}")
 
 
 def group_size_arg(x):
@@ -108,7 +124,7 @@ def group_text(g):
 
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size",
-          "strategic", "max_score", "exits", "clones", "seed"]
+          "strategic", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge", "seed"]
 
 
 def simulate(p, elections, workers=None, names=None):
@@ -117,7 +133,7 @@ def simulate(p, elections, workers=None, names=None):
     names = names or list(METHODS)
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"])
     jobs = [(sc, p["seed"], e, p["rounds"], p["samples"], p["group_size"], p["strategic"], p["max_score"],
-             p["exits"], p["clones"], names) for e in range(elections)]
+             p["exits"], p["clones"], p["poll_size"], p["poll_error"], p["search"], p["converge"], names) for e in range(elections)]
     with Pool(workers) as pool:
         rows = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
     meta = {k: p[k] for k in PARAMS}
@@ -135,8 +151,19 @@ def main():
     ap.add_argument("--clusters", type=int, default=5)
     ap.add_argument("--spread", type=float, default=0.5)
     ap.add_argument("--width", type=float, default=1.0)
-    ap.add_argument("--rounds", type=int, default=20, help="learning rounds")
-    ap.add_argument("--samples", type=int, default=10, help="poll samples per round")
+    ap.add_argument("--rounds", type=int, default=1,
+                    help="poll rounds before the vote (0 = everyone votes sincerely); see strategy.py")
+    ap.add_argument("--samples", type=int, default=30,
+                    help="polls per round (they stand for the uncertainty); convergent learning used 10")
+    ap.add_argument("--poll-size", type=int, default=0,
+                    help="voters per poll (0 = half the electorate, rounded to an odd number)")
+    ap.add_argument("--search", type=int, default=10,
+                    help="random ballot changes a group tries per poll round, after the naive exaggerations")
+    ap.add_argument("--poll-error", type=float, default=2.0,
+                    help="voters treat polls as this many times less precise than their sampling error")
+    ap.add_argument("--converge", type=int, default=0,
+                    help="N > 0: instead of poll rounds, the convergent learning model with N rounds "
+                         "(groups see each other's moves; uses --group-size)")
     ap.add_argument("--group-size", type=group_size_arg, default=10,
                     help="max voters coordinating as one group: a number of voters (1 = individual), a share of the electorate between 0 and 1 (0.05 = 5%%), or 0 = whole ranking group")
     ap.add_argument("--strategic", type=float, default=0.5,
@@ -185,8 +212,8 @@ def main():
 
     print(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.dims} dimensions"
           f"{' (Zipf)' if a.zipf else ''}, {a.clusters} clusters, "
-          f"spread {a.spread}, width {a.width}; learning {a.rounds} rounds x {a.samples} poll samples, "
-          f"group size {group_text(a.group_size)}, strategic share {a.strategic}, scores 0..{a.max_score}"
+          f"spread {a.spread}, width {a.width}; {strategy_text(a, a.voters)}, "
+          f"strategic share {a.strategic}, scores 0..{a.max_score}"
           f"{f', nomination: exits {a.exits}, clones {a.clones}' if a.exits or a.clones else ''}; seed {a.seed}")
     print(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
     for m in sorted(names, key=lambda m: -summ[m]["VSE"]):

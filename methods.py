@@ -388,9 +388,26 @@ def d_approval_runoff(s):
     return P
 
 
+def _common_total(g):
+    """Grade counts as integers with the same total for every candidate. Real counts already are;
+    estimated poll counts (strategy.respond) can be fractional, slightly negative, and differ in
+    total, so they are clipped at 0 and scaled to the mean total (largest remainders)."""
+    g = np.clip(np.asarray(g, float), 0, None)
+    if np.allclose(g, np.rint(g)) and len(set(np.rint(g).sum(axis=1))) == 1:
+        return np.rint(g).astype(int)
+    N = max(1, int(round(g.sum(axis=1).mean())))
+    out = np.zeros(g.shape, int)
+    for c, row in enumerate(g):
+        x = row * N / row.sum() if row.sum() > 0 else np.full(len(row), N / len(row))
+        f = np.floor(x).astype(int)
+        f[np.argsort(-(x - f), kind="stable")[:N - f.sum()]] += 1
+        out[c] = f
+    return out
+
+
 def d_mj(s):
     """Majority judgment on 0..MAXS grades: compare median grades, removing medians to break ties."""
-    h = np.rint(s["grades"]).astype(int)                  # h[c, g]: voters giving c grade g
+    h = _common_total(s["grades"])                        # h[c, g]: voters giving c grade g
     order = mj_order(int(h[0].sum()))
     seqs = [tuple(np.repeat(np.arange(MAXS + 1), h[c])[order]) for c in range(len(h))]
     best = max(seqs)
@@ -674,6 +691,8 @@ def d_score_plus(s):
     C = len(tot)
     defeated = (excess > tot[None, :] + EPS).any(axis=0)
     keep = np.flatnonzero(~defeated)
+    if len(keep) == 0:              # impossible for real counts; can happen for estimated poll counts
+        keep = np.arange(C)
     P = np.zeros(C)
     P[keep] = uniform_max(s["keepnorm"][int(sum(1 << c for c in keep))][keep])
     return P

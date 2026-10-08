@@ -6,6 +6,43 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
 
+## Strategy model changed: poll rounds (2026-10-08)
+
+**All strategic results above this line (and in the older sections below) used convergent learning:** over 20 rounds, groups of up to 10 voters with the same ranking took turns, each seeing the others' latest strategic ballots, and kept changes that paid. That describes where an electorate ends up after long adjustment, with far more information and coordination than one election offers. It protects methods whose strategy fails only when many use it at once.
+
+The test that showed it (300 electorates, 200 voters, 6 candidates, defaults): when all voters bury at once, each putting the preferred of the two honest frontrunners first and the other last, Borda collapses from VSE 86.9 / WME 93.6 to 46.5 / 29.2 (the dark horse wins), while IRV, TTR, Minimax, Schulze, Baldwin, Ranked Robin and Black keep VSE about 85–86 and WME 97–99. Under convergent learning Borda kept VSE* 87.6 / WME* 94.4 (600 elections, full strategy), because burying groups saw the dark horse rise and backed off; allowing whole ranking groups instead of groups of 10 already lowered it to 81.1 / 86.2 (100 elections).
+
+New default (README, Strategy engine): round 0 is sincere; each poll round publishes only the method's counts from a sample of half the electorate, and all groups (whole ranking groups) answer at once; the strategic axes report round 1. Convergent learning stays available with `--converge 20 --samples 10`.
+
+**First version, and what was wrong with it.** With polls only as uncertain as their sampling error, one round hit Approval and Score hard (40 elections, strategic share 0.5: WME 87 → 69 and 86 → 71). The runner-up's supporters dropped the leader, but the leader's supporters did not drop the runner-up. Two reasons, both about information, not strategy:
+
+- In a 99-voter election the leader's lead (6 votes in the case examined) was far larger than the poll's sampling error (2.8), so the leader's supporters saw a poll in which they were behind in 0.4% of polls: nothing to protect against. The runner-up's ranking groups (8 and 12 voters) could overturn the lead outright.
+- Most ranking groups have 1–3 voters. Their change flipped no poll, so their expected gain was exactly 0 and honesty won, although theory (Myerson & Weber 1993) has every voter act on the direction of a positive gain, however small.
+
+**First fix (replaced):** wider poll uncertainty plus a minimum weight for small groups. It helped (leader rule on 68% / 77% of the two sides) but still depended on how close the race was: a leader's supporters protected the lead only when some poll showed it in danger.
+
+**Second fix (replaced): "it helps when it first matters."** Each change was judged at levels with 4^k times wider polls and 4^k times as many voters making it, compared lexicographically. It made the leader rule independent of the gap, but it was slow (26 s per election and core), and changes among hopeless candidates, harmless in the polls as voters see them, got decided by wild scenarios at the outer levels: burial rose to 42–58% for almost every method in a full-strategy run (100 elections), Score included.
+
+**Rule now: leaders and naive exaggerations.** The race that matters is found once per round for everyone: the two candidates that win most often over the polls; if one wins every poll, the polls are widened until another one wins somewhere. Each group then tries a few candidate ballots, the naive exaggerations of its ballot type around those two (approve down to the preferred leader; top score down to it, bottom from the other one, stretched in between; vote for it; move it to the top or the other one to the bottom of a ranking; …), plus its previous answer, and takes the best if it does not lose in the polls: exaggeration wins ties, since strategic voters exaggerate when it cannot hurt, whatever the gap. A few random changes follow, each needing a real gain (README, Strategy engine). About 6.5 s per election and core with all methods.
+
+Approval, same 40 elections, defaults (strategic share 0.5): among strategic voters who honestly approve both poll leaders, 98% of the leader's side and 76% of the runner-up's side approve only the one they prefer after one round, 88% for gaps under 10% of the voters and 87% over; approving only the preferred leader went from 25% of strategic voters (honest) to 78%; Approval VSE* / WME* 91.8 / 89.7 (honest 85.2 / 86.9).
+
+Full strategy, one round, 40 elections (honest VSE / WME → VSE* / WME*, burial, compromise):
+
+| Method | | burial | compromise |
+|---|---|---|---|
+| Plurality | 60.2 / 52.0 → 82.0 / 57.0 | 0% | 33% |
+| IRV | 85.9 / 64.7 → 77.4 / 74.5 | 36% | 22% |
+| Borda | 78.9 / 89.1 → 49.0 / 45.7 | 44% | 37% |
+| Dowdall | 78.8 / 66.2 → 81.6 / 75.0 | 46% | 27% |
+| Minimax, Schulze | 88.5 / 100 → 81–82 / 91 | 41% | 25% |
+| Approval | 85.2 / 86.9 → 84.3 / 91.0 | 2% | 0% |
+| Score | 93.6 / 85.9 → 88.6 / 94.8 | 3% | 0% |
+| STAR | 94.2 / 92.7 → 90.9 / 88.2 | 12% | 1% |
+| BTR-score | 92.7 / 95.2 → 88.0 / 94.0 | 10% | 0% |
+
+The burial artefact is gone for rated ballots. Ranked ballots show about 40% burial by design: burying the other leader is the naive exaggeration and is taken whenever it cannot hurt in the polls. That sinks Borda (linear points: the dark horse wins) but not Dowdall (harmonic points: the bottom places hardly differ, and compromise, which helps, dominates); Condorcet methods lose some WME but keep 91. This is the naive first response; how it develops over more rounds is open.
+
 ## Defaults changed: width 1.0, 5 clusters (2026-10-08)
 
 Earlier sections used width 1.5 and 3 clusters; from now on the defaults are width 1.0 and 5 clusters (spread stays 0.5). Based on two one-at-a-time sweeps, 400 elections each, seed 1, with exits 1 and clones 2:
