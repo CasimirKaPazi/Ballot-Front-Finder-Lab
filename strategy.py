@@ -40,6 +40,8 @@ def mutate(b, ballot, rng):
         i, j = rng.choice(C, 2, replace=False)
         b[i], b[j] = b[j], b[i]
     elif ballot == "approval":
+        if C == 2:              # the only valid ballots are A or B: no single flip stays valid, so swap
+            return b[::-1].copy()
         while True:
             c = rng.integers(C)
             b[c] = 1 - b[c]

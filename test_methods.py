@@ -185,3 +185,55 @@ for S in (10, 100):
 _m.set_max_score(5)
 check("Score+ chicken example, default range again", METHODS["Score+"].tally(sp), [1, 0, 0, 0])
 print("score range 0..10 and 0..100 ok")
+
+# Strategic nomination (nomination.py)
+from nomination import nominate, clone_setup, utilities, to_original, moves, Field
+from scenario import Scenario, electorate_positions
+
+
+def spatial(vpos, cpos, width=1.5, seed=0):
+    vp, cp = np.array(vpos, float)[:, None], np.array(cpos, float)[:, None]
+    u = np.exp(-np.abs(vp - cp.T) / width)
+    return (u, *clone_setup(vp, cp, width, np.random.default_rng(seed)))
+
+
+# Vote splitting: A (0.0) and B (0.1) share the left, C (1.0) has the right. Plurality elects C;
+# B (or A) withdraws, and the other one of the two wins.
+u, uc, cu = spatial([-0.1, -0.05, 0.0, 0.08, 0.12, 0.2, 0.9, 1.0, 1.0, 1.1], [0.0, 0.1, 1.0])
+P0 = METHODS["Plurality"].honest(u)
+f, st = nominate(METHODS["Plurality"], u, uc, cu, np.random.default_rng(1), exits=1)
+P1 = to_original(METHODS["Plurality"].honest(utilities(f.entries(), u, uc)), f.entries(), 3)
+check("Plurality before nomination", P0, [0, 0, 1])
+assert P1[2] == 0 and st["nom_exits"] == 1 and st["nom_settled"] == 1, (P1, st)
+print("nomination: vote splitting resolved by an exit", np.round(P1, 3))
+
+# A clone is ranked next to its original by every voter
+u, uc, cu = spatial(np.linspace(-1, 2, 21), [0.0, 0.5, 1.0])
+g = Field(3); g.clones[1] = 0
+uf = utilities(g.entries(), u, uc)
+assert np.all(np.abs(np.argsort(-uf, axis=1).argsort(axis=1)[:, 1] - np.argsort(-uf, axis=1).argsort(axis=1)[:, 3]) == 1)
+print("nomination: clones ranked next to their originals ok")
+
+# Settled fields are equilibria: no candidate has a strictly improving move
+sc = Scenario(n_voters=31, n_cands=5)
+for name in ["Plurality", "Borda", "IRV", "Minimax", "Score"]:
+    m = METHODS[name]
+    for e in range(4):
+        u, vp, cp = electorate_positions(sc, np.random.default_rng([7, e]))
+        uc, cu = clone_setup(vp, cp, sc.width, np.random.default_rng([7, e, 1]))
+        f, st = nominate(m, u, uc, cu, np.random.default_rng(e), exits=1, clones=2)
+        if not st["nom_settled"]:
+            continue
+        def val(i, g):
+            ents = g.entries(); P = m.honest(utilities(ents, u, uc))
+            return to_original(P, ents, 5) @ cu[i]
+        for i in range(5):
+            assert all(val(i, g) <= val(i, f) + 1e-12 for g in moves(f, i, 1, 2)), (name, e, i)
+        assert f.inn.sum() >= 2 and len(f.clones) <= 2
+print("nomination: settled fields are equilibria ok")
+
+# Learning works on fields of 2 candidates (strategic exits can leave only two)
+from strategy import learn
+for name, m in METHODS.items():
+    learn(m, np.random.default_rng(1).random((15, 2)), np.random.default_rng(2), 2, 2, 5, None)
+print("learning on 2 candidates ok")

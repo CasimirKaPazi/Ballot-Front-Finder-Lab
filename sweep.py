@@ -39,6 +39,8 @@ def main():
     ap.add_argument("--group-size", type=group_size_arg, nargs="+", default=[10])
     ap.add_argument("--strategic", type=float, nargs="+", default=[0.5])
     ap.add_argument("--max-score", type=int, nargs="+", default=[5])
+    ap.add_argument("--exits", type=int, nargs="+", default=[0], choices=[0, 1])
+    ap.add_argument("--clones", type=int, nargs="+", default=[0])
     ap.add_argument("--seeds", type=int, nargs="+", default=[1])
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--methods", nargs="+", default=None, help="run only these methods (start from none)")

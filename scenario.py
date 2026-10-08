@@ -30,6 +30,11 @@ class Scenario:
 
 def electorate(sc: Scenario, rng: np.random.Generator):
     """Return utilities u[v, c] > 0 for one election."""
+    return electorate_positions(sc, rng)[0]
+
+
+def electorate_positions(sc: Scenario, rng: np.random.Generator):
+    """Return (u, voter positions, candidate positions) for one election (same draws as electorate)."""
     centres = rng.normal(0.0, 1.0, (sc.n_clusters, sc.dims))
     # Cluster sizes vary: Dirichlet weights, so some elections have a dominant cluster
     weights = rng.dirichlet(np.ones(sc.n_clusters))
@@ -48,4 +53,4 @@ def electorate(sc: Scenario, rng: np.random.Generator):
         voters = centres_z[vc] + (voters - centres[vc]) * own[vc]
         cands = centres_z[cc] + (cands - centres[cc]) * own[cc]
     d = np.linalg.norm(voters[:, None, :] - cands[None, :, :], axis=2)
-    return np.exp(-d / sc.width)
+    return np.exp(-d / sc.width), voters, cands

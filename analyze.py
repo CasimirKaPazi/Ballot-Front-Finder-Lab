@@ -47,7 +47,8 @@ AXES = ["VSE", "WME", "VSE*", "WME*"]
 EXTRA = ["CE", "CE*"]           # reported, not used for dominance
 TYPES = ["compromise", "burial", "pushover"]
 PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size", "strategic",
-          "max_score"]
+          "max_score", "exits", "clones"]
+NOM = ["nom_changed", "nom_exits", "nom_clones", "nom_settled"]     # per method and election (sincere rows)
 OLD_DEFAULTS = {"zipf": "0", "max_score": "5"}      # parameters missing from older CSVs
 
 
@@ -77,7 +78,7 @@ def arrays(rows):
     ei = {e: i for i, e in enumerate(eids)}
     mi = {m: j for j, m in enumerate(methods)}
     E, M = len(eids), len(methods)
-    A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "wm_s", "wm_l", "sin"] + TYPES}
+    A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "wm_s", "wm_l", "sin"] + TYPES + NOM}
     den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
     dwm = np.zeros(E)          # per election: WM_best - WM_rb (WME denominator)
     has = np.zeros(E)
@@ -90,6 +91,8 @@ def arrays(rows):
         pcw = float(r["p_cw"]) if r["has_cw"] == "1" else 0.0
         if r["ballots"] == "sincere":
             A["num_s"][i, j], A["cw_s"][i, j], A["wm_s"][i, j] = num, pcw, nwm
+            for k in NOM:
+                A[k][i, j] = float(r.get(k) or (1 if k == "nom_settled" else 0))   # older CSVs: no nomination
             den[i] = float(r["U_best"]) - float(r["U_rb"])
             dwm[i] = float(r["WM_best"]) - float(r["WM_rb"])
             has[i] = float(r["has_cw"])
@@ -197,7 +200,8 @@ def analyse_condition(rows, boot, rng):
     dominated_by = [[(methods[j], [AXES[k] for k in np.flatnonzero(better[i, j])]) for j in np.flatnonzero(dom[i])]
                     for i in range(len(methods))]
     res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs, "halves": halves, "frontier": frontier(cands, dens, ele),
-           "electorate": electorate_summary(dens, has, ele)}
+           "electorate": electorate_summary(dens, has, ele),
+           "nomination": {k: A[k].mean(axis=0) for k in NOM}}
     for a in AXES + EXTRA + ["sincerity"] + TYPES:
         res[a] = point[a][0]
         res[a + "_lo"], res[a + "_hi"] = np.percentile(bs[a], [2.5, 97.5], axis=0)
@@ -217,7 +221,7 @@ def label(key, varying, first):
 
 PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score"}
 LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic"}     # same electorates, only learning differs
-SAME_ELECTORATES = LEARNING_ONLY | {"max_score"}                     # same electorates (honest ballots may differ)
+SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones"}  # same electorates (honest results may differ)
 
 
 def param_order(k, v):
@@ -409,7 +413,9 @@ def main():
               f"{' (Zipf)' if p['zipf'] == '1' else ''}, {p['clusters']} clusters, spread {p['spread']}, "
               f"width {p['width']}; learning {p['rounds']} rounds × {p['samples']} poll samples, "
               f"group size {group_text(p['group_size'])}, "
-              f"strategic share {p['strategic']}, scores 0..{p['max_score']}." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")
+              f"strategic share {p['strategic']}, scores 0..{p['max_score']}"
+              + (f"; nomination: exits {p['exits']}, clones {p['clones']}" if p['exits'] != '0' or p['clones'] != '0' else "")
+              + "." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")
               + frontier_text(r["frontier"]),
               "",
               "| Method | VSE | WME | VSE* | WME* | CE | CE* | Sincerity | Compromise | Burial | Push-over | Dominated by |",
@@ -419,7 +425,19 @@ def main():
                      + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in AXES + EXTRA + ["sincerity"])
                      + " | " + " | ".join(f"{r[t][j] * 100:.1f}%" for t in TYPES)
                      + f" | {dom_text(r['dominated_by'][j], limit=3)} |")
-        L += ["", f"![strategy arrows](arrows-{r['tag']}.png)", "", f"![strategy shifts](shift-{r['tag']}.png)", "",
+        L += [""]
+        if p["exits"] != "0" or p["clones"] != "0":
+            nm = r["nomination"]
+            L += ["**Nomination** (with sincere ballots; per method, averaged over elections): how often the "
+                  "honest result changed, how many candidates were out of the race and how many clones in it "
+                  "at the end, and how often the candidates reached a field where nobody wanted to move "
+                  "(settled). VSE and WME above are judged on the original field.", "",
+                  "| Method | Result changed | Exits | Clones | Settled |", "|---|---|---|---|---|"]
+            for j in np.argsort(-nm["nom_changed"], kind="stable"):
+                L.append(f"| {r['methods'][j]} | {nm['nom_changed'][j]:.1%} | {nm['nom_exits'][j]:.2f} "
+                         f"| {nm['nom_clones'][j]:.2f} | {nm['nom_settled'][j]:.0%} |")
+            L += [""]
+        L += [f"![strategy arrows](arrows-{r['tag']}.png)", "", f"![strategy shifts](shift-{r['tag']}.png)", "",
               f"![sincerity](sincerity-{r['tag']}.png)", ""]
         if a.compare:
             L += ["Paired differences (first minus second), percentage points:", "",

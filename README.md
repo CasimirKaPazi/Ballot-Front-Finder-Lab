@@ -22,6 +22,7 @@ All outputs go into the folder `output/` (created when needed): an `--out` name 
 | `scenario.py` | Electorate generator: spatial clusters, Zipf dimensions, absolute utilities `exp(-distance / width)` |
 | `methods.py` | Ballot types, sincere ballots, exact tallies on ballot matrices (ties shared), method groups |
 | `strategy.py` | Learning engine, sincerity and strategy types |
+| `nomination.py` | Strategic nomination: exits, re-entry and clones from the initial field |
 | `metrics.py` | Efficiencies for three baselines, winner's worst margin, Condorcet efficiency, electorate properties, Pareto front |
 | `run.py` | Tallies every electorate with sincere and learned ballots, runs in parallel, writes CSV with the run's parameters as columns |
 | `sweep.py` | Runs a grid of conditions (or one parameter at a time) and seeds into one CSV |
@@ -89,12 +90,14 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--group-size` | 10 | most voters that coordinate as one group: a number of voters (1 = every voter alone), a share of the electorate between 0 and 1 (0.05 = 5% of the voters, rounded, at least 1), or 0 = whole ranking group |
 | `--strategic` | 0.5 | share of voters who vote strategically (see Partial strategy) |
 | `--max-score` | 5 | score ballots range over 0–max (see Score range) |
+| `--exits` | 0 | 1: candidates may withdraw and re-enter strategically (see Strategic nomination) |
+| `--clones` | 0 | most clones in the race at once, fielded strategically; 0 = none (see Strategic nomination) |
 | `--workers` | all cores | parallel processes |
 | `--methods` | all | run only these methods (start from none); method or group names (see Methods), case ignored |
 | `--exclude` | none | run all methods except these |
 | `--out` | `results` | output prefix: `output/<out>-elections.csv` and `output/<out>-summary.csv` |
 
-`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--group-size`, `--strategic`, `--max-score`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `output/<out>-elections.csv` (default `--out sweep`), one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid.
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--group-size`, `--strategic`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `output/<out>-elections.csv` (default `--out sweep`), one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid.
 
 `analyze.py`:
 
@@ -150,6 +153,18 @@ Run time falls less than in proportion to p: halving the strategic voters remove
 `--max-score m` sets the range of the score ballot to 0–m for every method that uses it (Score, MJ, STAR, BTR-score, MARS, ARA, ARA-Top, Score+, Reciprocal score, Smith//Score). The default 0–5 is an implementation choice, not part of these methods; other simulations (e.g. Quinn's VSE) also run 0–10 and 0–100. With a coarse range, sincere voters must give candidates they like differently the same score, so pairwise preferences are lost: this is the cap on WME seen for the rated and hybrid methods. A wider range reduces it. MCA and 321 keep their three grades, and methods on other ballots are unaffected; the electorates are the same for every value, so a sweep (`sweep.py --max-score 5 10 100`) isolates the effect of the range, and its chain plot draws the reachable frontier.
 
 Rules that refer to the range scale with it: ARA approves ratings above the middle, ARA-Top only the top score, Score+ stretches to the full range, Reciprocal score measures support as a share of the top score. Learning: see the score mutation in Strategy engine.
+
+## Strategic nomination
+
+`--exits 1` and `--clones N` let the candidates of the initial draw change the field before the vote (`nomination.py`; after Green-Armytage 2014, "Strategic voting and nomination", *Social Choice and Welfare* 42, with clones added). Nobody new enters.
+
+- **Moves.** Exit (at least two original candidates stay in), re-entry after an exit, fielding a clone of any original in the race (itself included; at most one clone per original and N in the race), withdrawing a clone it fielded. A clone is a copy at a small random offset (0.01 per dimension), so voters rank it next to its original and split between the two.
+- **Who moves and why.** Candidates sit in the issue space and value a winner like a voter at their position (exp(−distance/width); themselves 1). A clone counts exactly as its original. A candidate makes a move only if it strictly improves its expected utility under the method's result with **sincere** ballots on the new field: candidates foresee honest voting, not learned strategy.
+- **Dynamics.** Rounds in which the candidates take turns in random order, each making its best improving move. A round without a move ends it (an equilibrium); otherwise it stops after 20 rounds. Each method gets its own field. The voters then vote on that field, honestly and with learned ballots as usual.
+- **Baseline.** Results are judged on the **original field**: a clone's chance of winning counts as its original's, and withdrawn candidates stay in the comparison. VSE, WME, the random ballot, the best candidate and the reachable frontier are therefore the same as without nomination, and the change in VSE and WME is what nomination does to the outcome. Withdrawing the best candidate counts as a loss.
+- **Report.** With nomination on, each condition gets a table per method: how often the honest result changed (Green-Armytage's measure of vulnerability, here after the dynamics rather than for a single move), the average number of exits and clones at the end, and how often the field settled. A sweep `--exits 0 1` or `--clones 0 2` draws chain plots with the frontier.
+
+Cost: each candidate move is checked with one sincere tally on the changed field, a few hundred tallies per method and election; learning remains the larger part.
 
 ## Axes and other outputs
 

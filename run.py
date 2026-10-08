@@ -27,17 +27,23 @@ import zlib
 from multiprocessing import Pool
 import numpy as np
 
-from scenario import Scenario, electorate
+from scenario import Scenario, electorate_positions
+from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, select, set_max_score
 from strategy import learn, strategy_types
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats
 
 
 def one_election(args):
-    sc, seed, e, rounds, samples, group_size, share, max_score, names = args
+    sc, seed, e, rounds, samples, group_size, share, max_score, exits, clones, names = args
     set_max_score(max_score)                        # per process: workers do not share module state
     rng = np.random.default_rng([seed, e])
-    u = electorate(sc, rng)
+    u, voters, cands = electorate_positions(sc, rng)
+    C = u.shape[1]
+    nominating = bool(exits or clones)
+    if nominating:   # clones' positions: own random stream, the same for every method
+        u_clone, cu = clone_setup(voters, cands, sc.width,
+                                            np.random.default_rng([seed, e, zlib.crc32(b"clones")]))
     m_cand = worst_margins(u)                       # each candidate's worst head-to-head margin
     estats = electorate_stats(u)                    # properties of the electorate, for the report
     # every candidate's total utility and worst margin, for the frontier of what any rule could reach
@@ -48,14 +54,26 @@ def one_election(args):
     out = []
     for name in names:
         m = METHODS[name]
-        out.append({"election": e, "method": name, "ballots": "sincere", **election_row(u, m.honest(u), m_cand), **estats,
-                    "sincerity": 1.0, "settled": 1, "compromise": 0.0, "pushover": 0.0, "burial": 0.0})
+        # Strategic nomination (nomination.py): the field the voters face. Without it, the original field.
+        # Results are always judged on the original field (a clone's win counts as its original's).
+        uf, back = u, (lambda P: P)
+        nstats = {"nom_exits": 0, "nom_clones": 0, "nom_settled": 1, "nom_moves": 0, "nom_changed": 0}
+        if nominating:
+            nrng = np.random.default_rng([seed, e, zlib.crc32(name.encode()), zlib.crc32(b"nomination")])
+            field, st = nominate(m, u, u_clone, cu, nrng, exits, clones)
+            ents = field.entries()
+            uf, back = utilities(ents, u, u_clone), (lambda P, ents=ents: to_original(P, ents, C))
+        P_h = back(m.honest(uf))
+        if nominating:
+            nstats = {**st, "nom_changed": int(np.abs(P_h - m.honest(u)).sum() > 1e-9)}
+        out.append({"election": e, "method": name, "ballots": "sincere", **election_row(u, P_h, m_cand), **estats,
+                    "sincerity": 1.0, "settled": 1, "compromise": 0.0, "pushover": 0.0, "burial": 0.0, **nstats})
         # Each method learns with its own random stream, keyed by name, so results stay
         # the same when methods are added or reordered.
         mrng = np.random.default_rng([seed, e, zlib.crc32(name.encode())])
-        B, settled, sin = learn(m, u, mrng, rounds, samples, group_cap(group_size, len(u)), strategic)
-        out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, m.tally(B), m_cand), **estats,
-                    "sincerity": sin, "settled": int(settled), **strategy_types(B, u)})
+        B, settled, sin = learn(m, uf, mrng, rounds, samples, group_cap(group_size, len(u)), strategic)
+        out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, back(m.tally(B)), m_cand),
+                    **estats, "sincerity": sin, "settled": int(settled), **strategy_types(B, uf), **nstats})
     return out
 
 
@@ -90,7 +108,7 @@ def group_text(g):
 
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size",
-          "strategic", "max_score", "seed"]
+          "strategic", "max_score", "exits", "clones", "seed"]
 
 
 def simulate(p, elections, workers=None, names=None):
@@ -98,7 +116,8 @@ def simulate(p, elections, workers=None, names=None):
     Returns rows with p as columns."""
     names = names or list(METHODS)
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"])
-    jobs = [(sc, p["seed"], e, p["rounds"], p["samples"], p["group_size"], p["strategic"], p["max_score"], names) for e in range(elections)]
+    jobs = [(sc, p["seed"], e, p["rounds"], p["samples"], p["group_size"], p["strategic"], p["max_score"],
+             p["exits"], p["clones"], names) for e in range(elections)]
     with Pool(workers) as pool:
         rows = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
     meta = {k: p[k] for k in PARAMS}
@@ -124,6 +143,10 @@ def main():
                     help="share of voters who vote strategically (random, the same for every method)")
     ap.add_argument("--max-score", type=int, default=5,
                     help="score ballots range over 0..max (Score, STAR, MJ, ARA, ...; MCA and 321 keep 3 grades)")
+    ap.add_argument("--exits", type=int, default=0, choices=[0, 1],
+                    help="1: candidates may withdraw and re-enter strategically (see nomination.py)")
+    ap.add_argument("--clones", type=int, default=0,
+                    help="most clones in the race at once, fielded strategically (0 = none; see nomination.py)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--methods", nargs="+", default=None, help="run only these methods (start from none)")
@@ -163,7 +186,8 @@ def main():
     print(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.dims} dimensions"
           f"{' (Zipf)' if a.zipf else ''}, {a.clusters} clusters, "
           f"spread {a.spread}, width {a.width}; learning {a.rounds} rounds x {a.samples} poll samples, "
-          f"group size {group_text(a.group_size)}, strategic share {a.strategic}, scores 0..{a.max_score}; seed {a.seed}")
+          f"group size {group_text(a.group_size)}, strategic share {a.strategic}, scores 0..{a.max_score}"
+          f"{f', nomination: exits {a.exits}, clones {a.clones}' if a.exits or a.clones else ''}; seed {a.seed}")
     print(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
     for m in sorted(names, key=lambda m: -summ[m]["VSE"]):
         s = summ[m]
