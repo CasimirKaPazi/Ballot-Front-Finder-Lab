@@ -37,7 +37,7 @@ from metrics import election_row, summarize, pareto, worst_margins, electorate_s
 
 def one_election(args):
     (sc, seed, e, rounds, samples, group_size, share, max_score, exits, clones, poll_size, poll_error, search,
-     converge, names) = args
+     converge, aggr, names) = args
     set_max_score(max_score)                        # per process: workers do not share module state
     rng = np.random.default_rng([seed, e])
     u, voters, cands = electorate_positions(sc, rng)
@@ -53,6 +53,8 @@ def one_election(args):
     estats["WM_cands"] = ";".join(f"{x:.6g}" for x in m_cand)
     # strategic voters: own random stream, the same voters for every method
     strategic = np.random.default_rng([seed, e, zlib.crc32(b"strategic")]).random(len(u)) < share
+    # aggressive strategic voters (exaggerate when it cannot hurt) vs kind ones: own stream, same for every method
+    aggressive = np.random.default_rng([seed, e, zlib.crc32(b"aggressive")]).random(len(u)) < aggr
     out = []
     for name in names:
         m = METHODS[name]
@@ -68,17 +70,21 @@ def one_election(args):
         P_h = back(m.honest(uf))
         if nominating:
             nstats = {**st, "nom_changed": int(np.abs(P_h - m.honest(u)).sum() > 1e-9)}
-        out.append({"election": e, "method": name, "ballots": "sincere", **election_row(u, P_h, m_cand), **estats,
-                    "sincerity": 1.0, "settled": 1, "compromise": 0.0, "pushover": 0.0, "burial": 0.0, **nstats})
+        sincere_row = {**election_row(u, P_h, m_cand), **estats, "sincerity": 1.0, "settled": 1,
+                       "compromise": 0.0, "pushover": 0.0, "burial": 0.0, **nstats}
         # Each method learns with its own random stream, keyed by name, so results stay
         # the same when methods are added or reordered.
         mrng = np.random.default_rng([seed, e, zlib.crc32(name.encode())])
-        if converge > 0:
-            B, settled, sin = learn(m, uf, mrng, converge, samples, group_cap(group_size, len(u)), strategic)
-        else:
-            B, settled, sin = respond(m, uf, mrng, rounds, samples, poll_size, search, strategic, poll_error)
-        out.append({"election": e, "method": name, "ballots": "learned", **election_row(u, back(m.tally(B)), m_cand),
-                    **estats, "sincerity": sin, "settled": int(settled), **strategy_types(B, uf), **nstats})
+        if converge > 0:     # convergent learning does not use rounds: one result for every rounds value
+            res = [learn(m, uf, mrng, converge, samples, group_cap(group_size, len(u)), strategic)] * len(rounds)
+        else:                # all requested numbers of poll rounds from one run (see strategy.respond)
+            res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
+                          poll_error=poll_error, report=rounds, aggressive=aggressive)
+        for r, (B, settled, sin) in zip(rounds, res):
+            out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row})
+            out.append({"rounds": r, "election": e, "method": name, "ballots": "learned",
+                        **election_row(u, back(m.tally(B)), m_cand), **estats, "sincerity": sin,
+                        "settled": int(settled), **strategy_types(B, uf), **nstats})
     return out
 
 
@@ -100,7 +106,7 @@ def strategy_text(p, n):
                 f"group size {group_text(g('group_size'))}")
     ps = int(g("poll_size")) or default_poll_size(int(n))
     return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
-            f"search {g('search')}")
+            f"search {g('search')}, aggressive share {g('aggressive')}")
 
 
 def group_size_arg(x):
@@ -124,20 +130,27 @@ def group_text(g):
 
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size",
-          "strategic", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge", "seed"]
+          "strategic", "aggressive", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
+          "seed"]
 
 
 def simulate(p, elections, workers=None, names=None):
     """Run one condition. p: dict with the keys in PARAMS; names: methods (default all).
+    p["rounds"] may be a list of numbers of poll rounds: they all come from one run (the rounds
+    up to the highest are computed once), one condition per value, in that order.
     Returns rows with p as columns."""
     names = names or list(METHODS)
+    rounds = list(p["rounds"]) if isinstance(p["rounds"], (list, tuple)) else [p["rounds"]]
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"])
-    jobs = [(sc, p["seed"], e, p["rounds"], p["samples"], p["group_size"], p["strategic"], p["max_score"],
-             p["exits"], p["clones"], p["poll_size"], p["poll_error"], p["search"], p["converge"], names) for e in range(elections)]
+    jobs = [(sc, p["seed"], e, rounds, p["samples"], p["group_size"], p["strategic"], p["max_score"],
+             p["exits"], p["clones"], p["poll_size"], p["poll_error"], p["search"], p["converge"], p["aggressive"],
+             names) for e in range(elections)]
     with Pool(workers) as pool:
         rows = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
-    meta = {k: p[k] for k in PARAMS}
-    return [{**meta, **r} for r in rows]
+    meta = {k: p[k] for k in PARAMS if k != "rounds"}
+    rows = [{**meta, **r} for r in rows]
+    rows.sort(key=lambda r: rounds.index(r["rounds"]))          # stable: one condition after another
+    return [{k: r[k] for k in PARAMS} | r for r in rows]
 
 
 def main():
@@ -159,6 +172,9 @@ def main():
                     help="voters per poll (0 = half the electorate, rounded to an odd number)")
     ap.add_argument("--search", type=int, default=10,
                     help="random ballot changes a group tries per poll round, after the naive exaggerations")
+    ap.add_argument("--aggressive", type=float, default=0.5,
+                    help="share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) "
+                         "only when the polls show a gain (poll rounds only)")
     ap.add_argument("--poll-error", type=float, default=2.0,
                     help="voters treat polls as this many times less precise than their sampling error")
     ap.add_argument("--converge", type=int, default=0,

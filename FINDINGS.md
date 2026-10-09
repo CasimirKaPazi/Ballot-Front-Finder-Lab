@@ -43,6 +43,27 @@ Full strategy, one round, 40 elections (honest VSE / WME → VSE* / WME*, burial
 
 The burial artefact is gone for rated ballots. Ranked ballots show about 40% burial by design: burying the other leader is the naive exaggeration and is taken whenever it cannot hurt in the polls. That sinks Borda (linear points: the dark horse wins) but not Dowdall (harmonic points: the bottom places hardly differ, and compromise, which helps, dominates); Condorcet methods lose some WME but keep 91. This is the naive first response; how it develops over more rounds is open.
 
+## Poll rounds 1–5, full strategy; aggressive and kind voters (2026-10-09)
+
+Run (user): `--rounds 1 2 3 4 5 --strategic 1`, 200 elections, defaults otherwise (all strategic voters aggressive, the only behaviour at the time).
+
+- **Burial under Condorcet methods is large**, something convergent learning missed: 55–65% of voters for MMPO, MMWV, MMPOWV, Ranked Robin, SICT; about 45% for Schulze, Baldwin, Black. Burying the other leader is the naive exaggeration, taken whenever it cannot hurt in the polls.
+- **The methods that held up best before suffer most in round 1:** WME* 79.5 (MMWV), 84.8 (MMPOWV), 78.6 (Ranked Robin), against 90–94 for Baldwin, Schulze and MMPO; STAR 87.4. With more rounds they recover: by round 3, WME* 94.3 (MMWV), 93.6 (MMPOWV), 94.3 (Ranked Robin); STAR 93.6.
+- **More rounds help most methods**; the order of methods on WME* changes a lot between rounds (rank correlation with round 1: 0.07–0.26, noise reference 0.75).
+- **Borda** collapses in round 1 (WME* 40) and partly recovers (61–68); **Dowdall** gains from strategy (VSE 83 → 88–90, WME 75 → 84–87). Since Borda's weakness under naive strategy comes from its linear points, the Borda-based methods (Black, Baldwin, Nanson, BTR-Borda; Ranked Robin's tiebreak) might do better with Dowdall points; to try once the strategy model is settled.
+
+**Aggressive vs kind voters.** Whether real voters bury when it buys nothing is doubtful, so `--aggressive` sets the share of strategic voters who exaggerate whenever it cannot hurt (aggressive); the others (kind) change their ballot only when the polls show a gain. Default 0.5. A first look (40 elections, full strategy, rounds 1 and 3; efficiencies noisy, burial shares clear):
+
+| Burial | all aggressive | half | all kind |
+|---|---|---|---|
+| MMWV, MMPOWV | 58–63% | 33–37% | 17–23% |
+| Schulze, Baldwin | 39–46% | 22–28% | 13–18% |
+| IRV | 38–39% | 20–22% | 4% |
+| STAR | 13–16% | 8% | 10–14% |
+| Approval | 2–4% | 3% | 2–3% |
+
+What remains with only kind voters is burial that pays in the polls. Kind voters also lose the leader rule's protective half (a leader's supporters see no gain in dropping the runner-up unless a poll shows danger), so under Approval the share mainly decides how strongly leads are protected.
+
 ## Defaults changed: width 1.0, 5 clusters (2026-10-08)
 
 Earlier sections used width 1.5 and 3 clusters; from now on the defaults are width 1.0 and 5 clusters (spread stays 0.5). Based on two one-at-a-time sweeps, 400 elections each, seed 1, with exits 1 and clones 2:

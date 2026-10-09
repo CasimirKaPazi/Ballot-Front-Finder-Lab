@@ -58,7 +58,7 @@ One election, with a few polls before it. Voters see only published poll results
   | ranking + approval line | line at A, with B at the bottom, with A first, or neither |
   | veto | veto B |
 
-  The best of these is taken if it does not lose in the polls: exaggeration wins ties, since strategic voters exaggerate when it cannot hurt, whatever the gap. They are only candidates: one that backfires in the polls is not taken. Then random search (at most `--search` proposals, 10; it stops after 3 in a row without gain) takes a change only if it strictly gains. A group none of whose candidates is safe and whose search finds no gain stays sincere. Without a runner-up (exact polls) there are no exaggerations, only the search.
+  **Aggressive** voters take the best of these if it does not lose in the polls: exaggeration wins ties, they exaggerate when it cannot hurt, whatever the gap. **Kind** voters take it only if it strictly gains: honesty wins ties. `--aggressive` (0.5) is the share of strategic voters who are aggressive; each voter's type is drawn per election from its own random stream (the same for every method), and aggressive and kind voters form separate groups. They are only candidates: one that backfires in the polls is not taken. Then random search (at most `--search` proposals, 10; it stops after 3 in a row without gain) takes a change only if it strictly gains. A group none of whose candidates is safe and whose search finds no gain stays sincere. Without a runner-up (exact polls) there are no exaggerations, only the search.
 - **Settled:** the last round gave the same ballots as the round before (a fixed point).
 - Condorcet-random-drop, which has no feature sums, is polled by tallying the sampled ballots, with the group's sampled members changed.
 
@@ -122,6 +122,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--rounds` | 1 | poll rounds before the vote (0 = everyone sincere); see Strategy engine |
 | `--samples` | 30 | polls per round (they stand for the uncertainty); convergent learning used 10, so `--converge 20 --samples 10` reproduces earlier results |
 | `--poll-error` | 2 | voters treat polls as this many times less precise than their sampling error |
+| `--aggressive` | 0.5 | share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) only when the polls show a gain (poll rounds only) |
 | `--poll-size` | 0 | voters per poll; 0 = half the electorate, rounded to an odd number |
 | `--search` | 10 | random ballot changes a group tries per poll round, after the naive exaggerations |
 | `--converge` | 0 | N > 0: convergent learning with N rounds instead of poll rounds (the earlier model; N = 20 before 2026-10-08) |
@@ -135,7 +136,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--exclude` | none | run all methods except these |
 | `--out` | `results` | output prefix: `output/<out>-elections.csv` and `output/<out>-summary.csv` |
 
-`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--search`, `--converge`, `--group-size`, `--strategic`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `output/<out>-elections.csv` (default `--out sweep`), one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid.
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--converge`, `--group-size`, `--strategic`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `output/<out>-elections.csv` (default `--out sweep`), one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
 
 `analyze.py`:
 

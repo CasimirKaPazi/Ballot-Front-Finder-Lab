@@ -265,3 +265,14 @@ assert list(Bs.sum(axis=0)) == [20, 16, 3], Bs.sum(axis=0)
 B, _, _ = respond(Ap, u, np.random.default_rng(1), rounds=1, samples=30, poll_size=0, search=30)
 assert (B[:10, 1] == 0).all() and (B[10:16, 0] == 0).all(), B[:16]
 print("leader rule on both sides ok")
+
+# Aggressive vs kind strategic voters (poll rounds): A leads by far under Borda; burying A cannot
+# change the result. Aggressive voters do it anyway (it cannot hurt), kind ones stay sincere.
+Bo = METHODS["Borda"]
+u = profile([(30, [0.9, 0.5, 0.1]), (4, [0.5, 0.9, 0.1]), (3, [0.1, 0.5, 0.9])]) + 0.01
+for aggr, expect_buried in ((True, True), (False, False)):
+    B, _, _ = respond(Bo, u, np.random.default_rng(2), rounds=1, aggressive=np.full(len(u), aggr))
+    buried = bool((B[30:34, 0] < B[30:34, 2]).all())       # B's voters put A below C
+    assert buried == expect_buried, (aggr, B[30:34])
+    assert Bo.tally(B)[0] == 1
+print("aggressive vs kind ok")

@@ -24,8 +24,10 @@ POLL ROUNDS (default; respond): a single election with a few polls before it.
     exaggerations of its ballot type around the two leaders (A = the one it prefers, B = the
     other; `exaggerations`): approve everyone liked at least as much as A; top score down to A,
     0 from B down, stretched in between; vote A; A to the top and/or B to the bottom of a
-    ranking; and the like. The best is taken if it does not lose in the polls: exaggeration wins
-    ties, since strategic voters exaggerate when it cannot hurt, whatever the gap. Then random
+    ranking; and the like. Aggressive voters take the best if it does not lose in the polls:
+    exaggeration wins ties, they exaggerate when it cannot hurt, whatever the gap. Kind voters
+    take it only if it strictly gains (honesty wins ties). `aggressive` marks the aggressive
+    voters (None = all; drawn in run.py); aggressive and kind voters form separate groups. Then random
     search (`search` proposals at most, stopping after PATIENCE = 3 in a row) takes a change only
     if it strictly gains. A group none of whose candidates is safe and whose search finds no
     gain stays sincere.
@@ -239,20 +241,42 @@ def default_poll_size(n):
     return m if m % 2 else m + 1
 
 
-def respond(method, u, rng, rounds=1, samples=30, poll_size=0, search=10, strategic=None, poll_error=2.0):
+def respond(method, u, rng, rounds=1, samples=30, poll_size=0, search=10, strategic=None, poll_error=2.0,
+            report=None, aggressive=None):
     """Poll rounds (see the module docstring). Returns ballots of the last round, whether it
-    settled (same as the round before), and mean sincerity (all voters)."""
+    settled (same as the round before), and mean sincerity (all voters).
+    report: a list of round numbers; then `rounds` is ignored, the rounds run up to the highest,
+    and the result is a list of such triples, one per listed round. Round r here is exactly what
+    rounds = r gives (each round depends only on the ones before it, and draws its random numbers
+    in sequence), so one run serves a sweep over the number of rounds."""
+    if report is not None:
+        want = sorted(set(int(r) for r in report))
+        snaps = {}
+        _respond(method, u, rng, max(want), samples, poll_size, search, strategic, poll_error, aggressive,
+                 lambda r, res: snaps.__setitem__(r, res) if r in want else None)
+        return [snaps[int(r)] for r in report]
+    return _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive)
+
+
+def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive=None,
+             snapshot=None):
     n, C = u.shape
     sincere = method.sincere(u)
     B = sincere.copy()
+    if snapshot:
+        snapshot(0, (B, True, 1.0))
     if rounds <= 0:
         return B, True, 1.0
     keys = [tuple(r) for r in np.argsort(-u, axis=1, kind="stable")]
     groups = {}
-    for v, k in enumerate(keys):
+    for v, k in enumerate(keys):      # ranking groups, aggressive and kind voters apart
         if strategic is None or strategic[v]:
-            groups.setdefault(k, []).append(v)
+            groups.setdefault((k, aggressive is None or bool(aggressive[v])), []).append(v)
+    eager = [k[1] for k in groups]
     if not groups:
+        if snapshot:
+            for r in range(1, rounds + 1):
+                snapshot(r, (B, True, 1.0))
         return B, True, 1.0
     groups = [np.array(x) for x in groups.values()]
     m = min(n, poll_size if poll_size > 0 else default_poll_size(n))
@@ -263,7 +287,7 @@ def respond(method, u, rng, rounds=1, samples=30, poll_size=0, search=10, strate
     shared = [None] * len(groups)              # each group's answer in the last round (None = sincere)
     inc = method.full is None
     settled = False
-    for _ in range(rounds):
+    for r in range(1, rounds + 1):
         polls = np.stack([rng.choice(n, m if inc else m_full, replace=False) for _ in range(samples)])
         if inc:
             F = method.features(B)
@@ -281,7 +305,7 @@ def respond(method, u, rng, rounds=1, samples=30, poll_size=0, search=10, strate
             else:
                 gain = _gain_full(method, B, mem, sincere[mem], polls, Ug[g])
             cands = ([shared[g]] if shared[g] is not None else []) + exaggerations(method.ballot, Ug[g], a, b)
-            answers.append(_answer(gain, method.ballot, ref[g], cands, search, rng))
+            answers.append(_answer(gain, method.ballot, ref[g], cands, search, rng, eager[g]))
         settled = all((x is None and y is None) or (x is not None and y is not None and np.array_equal(x, y))
                       for x, y in zip(answers, shared))
         shared = answers
@@ -289,6 +313,8 @@ def respond(method, u, rng, rounds=1, samples=30, poll_size=0, search=10, strate
         for mem, x in zip(groups, shared):        # everyone switches at once
             if x is not None:
                 B[mem] = x
+        if snapshot:
+            snapshot(r, (B, settled, float(sincerity(B, u).mean())))
     return B, settled, float(sincerity(B, u).mean())
 
 
@@ -406,16 +432,17 @@ def exaggerations(ballot, Ug, a, b):
     return out
 
 
-def _answer(gain, ballot_type, ref, cands, search, rng):
+def _answer(gain, ballot_type, ref, cands, search, rng, eager=True):
     """A group's answer to one poll round. First the candidate ballots (its previous answer, then
-    the naive exaggerations): the best one is taken if it does not lose in the polls (gain >= 0;
-    exaggeration wins ties: strategic voters exaggerate when it cannot hurt). Then random search
-    (at most `search` proposals, stopping after PATIENCE in a row) from that ballot, or from the
-    sincere one: a change is taken only if it strictly gains. None = stay sincere."""
+    the naive exaggerations): the best one is taken if it does not lose in the polls (gain >= 0)
+    for aggressive voters (eager: exaggeration wins ties, they exaggerate when it cannot hurt), or
+    only if it strictly gains for kind voters (honesty wins ties). Then random search (at most
+    `search` proposals, stopping after PATIENCE in a row) from that ballot, or from the sincere
+    one: a change is taken only if it strictly gains. None = stay sincere."""
     best, best_v = None, 0.0
     for c in cands:
         v = gain(c)
-        if v > best_v + TOL or (best is None and v >= -TOL):
+        if v > best_v + TOL or (eager and best is None and v >= -TOL):
             best, best_v = c, v
     cur, misses = (best if best is not None else ref), 0
     for _ in range(search):

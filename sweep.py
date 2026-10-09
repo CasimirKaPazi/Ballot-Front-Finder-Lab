@@ -44,6 +44,7 @@ def main():
     ap.add_argument("--poll-size", type=int, nargs="+", default=[0])
     ap.add_argument("--search", type=int, nargs="+", default=[10])
     ap.add_argument("--poll-error", type=float, nargs="+", default=[2.0])
+    ap.add_argument("--aggressive", type=float, nargs="+", default=[0.5])
     ap.add_argument("--converge", type=int, nargs="+", default=[0])
     ap.add_argument("--seeds", type=int, nargs="+", default=[1])
     ap.add_argument("--workers", type=int, default=None)
@@ -62,7 +63,19 @@ def main():
         grid = [{**c, "seed": sd} for c in conds for sd in values["seed"]]
     else:
         grid = [dict(zip(PARAMS, combo)) for combo in itertools.product(*values.values())]
-    print(f"{len(grid)} runs x {a.elections} elections, {len(names)} methods")
+    # Conditions that differ only in the number of poll rounds come from one run (strategy.respond):
+    # merge them, keeping the order of first appearance.
+    runs = {}
+    for p in grid:
+        key = tuple(p[k] for k in PARAMS if k != "rounds")
+        if key in runs:
+            if p["rounds"] not in runs[key]["rounds"]:
+                runs[key]["rounds"].append(p["rounds"])
+        else:
+            runs[key] = {**p, "rounds": [p["rounds"]]}
+    grid = list(runs.values())
+    print(f"{len(grid)} runs x {a.elections} elections, {len(names)} methods"
+          + (f" (poll rounds {', '.join(map(str, values['rounds']))} from one run each)" if len(values["rounds"]) > 1 else ""))
     out = out_path(a.out)
     with open(f"{out}-elections.csv", "w", newline="") as f:
         w = None

@@ -47,9 +47,9 @@ AXES = ["VSE", "WME", "VSE*", "WME*"]
 EXTRA = ["CE", "CE*"]           # reported, not used for dominance
 TYPES = ["compromise", "burial", "pushover"]
 PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size", "strategic",
-          "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge"]
+          "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge", "aggressive"]
 NOM = ["nom_changed", "nom_exits", "nom_clones", "nom_settled"]     # per method and election (sincere rows)
-OLD_DEFAULTS = {"zipf": "0", "max_score": "5"}      # parameters missing from older CSVs
+OLD_DEFAULTS = {"zipf": "0", "max_score": "5", "aggressive": "1.0"}   # parameters missing from older CSVs
 
 
 def param_value(r, k):
@@ -230,8 +230,10 @@ def label(key, varying, first):
 
 
 PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
-               "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error", "converge": "convergent rounds"}
-LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "poll_size", "poll_error", "search", "converge"}   # same electorates
+               "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error", "converge": "convergent rounds",
+               "aggressive": "aggressive share"}
+LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "poll_size", "poll_error", "search", "converge",
+                 "aggressive"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones"}  # same electorates (honest results may differ)
 
 
