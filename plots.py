@@ -93,34 +93,81 @@ def _unreachable(ax, which, extend=True, lines=True):
                 ax.axhline(100, color=BOUNDARY, lw=1.0, zorder=1)
 
 
-def _frontier(ax, F):
-    """Draw the reachable frontier (points (VSE, WME) as fractions, best WME first) and grey out the
-    region beyond it, which no rule can reach in these elections."""
-    if F is None or len(F) == 0:
-        return
-    x, y = F[:, 0] * 100, F[:, 1] * 100
+GUIDES = (1, 2, 4, 8)      # distances (points) of the faint lines below the frontier
+GUIDE = "#cfcec8"
+
+
+def _guides(ax, bx, by):
+    """Faint copies of the boundary polyline (bx, by) shifted by d points down and left on both axes,
+    for d in GUIDES: a method on the line marked -d could gain d points of VSE and of WME at once
+    before it hits the frontier. Separates moving along the trade-off from getting worse on both."""
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
+    for d in GUIDES:
+        ax.plot(bx - d, by - d, color=GUIDE, lw=0.7, ls=(0, (4, 2)), zorder=0.5)
+        if x0 < 100 - d < x1:      # label at the bottom of the vertical part (VSE = 100 - d), away from the methods
+            ax.text(100 - d, y0 + 0.01 * (y1 - y0), f"−{d}", fontsize=6, color=MUTED, ha="center", va="bottom",
+                    zorder=0.6, clip_on=True)
+    ax.set_xlim(x0, x1)
+    ax.set_ylim(y0, y1)
+
+
+def _frontier(ax, F):
+    """Draw the reachable frontier (points (VSE, WME) as fractions, best WME first) and grey out the
+    region beyond it, which no rule can reach in these elections. Faint guide lines mark 1, 2, 4, 8
+    points below it (see _guides); without a frontier they follow the 100 / 100 corner instead."""
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    if F is None or len(F) == 0:
+        far = -1000.0          # far outside the axes; the lines are clipped
+        _guides(ax, np.array([far, 100, 100]), np.array([100, 100, far]))
+        return
+    x, y = F[:, 0] * 100, F[:, 1] * 100
     hx, hy = max(x1, x.max() + 0.5), max(y1, y.max() + 0.5)
     # region beyond: above the curve and to its right
     px = np.concatenate([[x[0], x[0]], x, [hx, hx]])
     py = np.concatenate([[hy, y[0]], y, [y[-1], hy]])
     ax.fill(px, py, color=UNREACHABLE, zorder=0, lw=0)
     # one boundary line: WME = 100 up to the frontier, the frontier, then VSE = 100 below it
-    ax.plot(np.concatenate([[min(x0, x[0]), x[0]], x, [100, 100]]),
-            np.concatenate([[100, 100], y, [y[-1], min(y0, y[-1])]]), color=BOUNDARY, lw=1.0, zorder=1)
+    bx = np.concatenate([[min(x0, x[0]), x[0]], x, [100, 100]])
+    by = np.concatenate([[100, 100], y, [y[-1], min(y0, y[-1])]])
+    ax.plot(bx, by, color=BOUNDARY, lw=1.0, zorder=1)
     ax.set_xlim(x0, hx)
     ax.set_ylim(y0, hy)
+    far = -1000.0
+    _guides(ax, np.concatenate([[far], bx[1:-1], [100]]), np.concatenate([[100], by[1:-1], [far]]))
 
 
 def _visible(r, hide):
     return [j for j, m in enumerate(r["methods"]) if m not in hide]
 
 
-def arrows(r, path, hide):
+def relative_intervals(r, idx, axis):
+    """95% intervals of each shown method's value relative to the average of the shown methods (per
+    bootstrap replicate: value minus the replicates' mean over methods), placed around the method's
+    point. This removes the variation all methods share (some elections are harder for everyone), so
+    clearly non-overlapping bars suggest a real difference; an approximation of the paired comparison.
+    Returns (lo, hi) in percent."""
+    bs = r["boot"][axis][:, idx] * 100
+    dev = bs - bs.mean(axis=1, keepdims=True)
+    pt = np.asarray(r[axis])[idx] * 100
+    lo, hi = np.nanpercentile(dev, [2.5, 97.5], axis=0)
+    return pt + lo - (pt - pt.mean()), pt + hi - (pt - pt.mean())
+
+
+def _errorbars(ax, r, idx, xa, ya, color, alpha):
+    (xl, xh), (yl, yh) = relative_intervals(r, idx, xa), relative_intervals(r, idx, ya)
+    x, y = np.asarray(r[xa])[idx] * 100, np.asarray(r[ya])[idx] * 100
+    ax.errorbar(x, y, xerr=[np.clip(x - xl, 0, None), np.clip(xh - x, 0, None)],
+                yerr=[np.clip(y - yl, 0, None), np.clip(yh - y, 0, None)],
+                fmt="none", ecolor=color, elinewidth=0.8, alpha=alpha, zorder=2, capsize=0)
+
+
+def arrows(r, path, hide, errorbars=False):
     """Honest (open circle) -> learned ballots (filled) in the VSE / WME plane, all methods together.
     The grey area beyond the curve is out of reach for any rule in these elections (see analyze.frontier).
-    Filled points are coloured by the sincerity of the learned ballots (darker = less honest)."""
+    Filled points are coloured by the sincerity of the learned ballots (darker = less honest).
+    errorbars: relative 95% intervals (see relative_intervals) on both points of every method."""
     idx = _visible(r, hide)
     # cap the colour scale at the 10th percentile, so one extreme method does not wash out the rest
     vals = np.array([r["sincerity"][j] * 100 for j in idx])
@@ -139,11 +186,16 @@ def arrows(r, path, hide):
                    linewidths=0.6, zorder=4)
         anchors.append((x1, y1))
         texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
+    if errorbars:
+        _errorbars(ax, r, idx, "VSE", "WME", MUTED, 0.35)
+        _errorbars(ax, r, idx, "VSE*", "WME*", INK2, 0.7)
     ax.set_xlabel(VSE_LABEL)
     ax.set_ylabel(WME_LABEL)
     _unreachable(ax, "xy", lines=r.get("frontier") is None)
     _frontier(ax, r.get("frontier"))
-    ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}", loc="left")
+    ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}"
+                 + ("; bars: 95% intervals relative to the average of the methods shown" if errorbars else ""),
+                 loc="left")
     cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, fraction=0.035, pad=0.02,
                       extend="min" if vals.min() < smin else "neither")
     cb.set_label("sincerity of learned ballots (%)", color=INK2)
@@ -293,6 +345,75 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
         _repel(ax, texts, anchors)
     fig.savefig(path, dpi=150)
     plt.close(fig)
+
+
+def track(conds, method, varying, names, path, same_electorates, errorbars=False):
+    """One method across all conditions of a sweep, in the VSE*/WME* plane (learned ballots; honest
+    values as open circles). conds: list of (result, params dict) in condition order; varying: the
+    parameters that differ between conditions; names: display names of parameters. With one varying
+    parameter the points form a chain in its order; with two, lines connect the points along the
+    parameter with more values and colour shows the other; with more, points carry condition tags.
+    errorbars: each point's own 95% interval (raw: includes the variation all methods share)."""
+    pts = [(r, p, r["methods"].index(method)) for r, p in conds if method in r["methods"]]
+    if not pts:
+        return False
+    fig, ax = plt.subplots(figsize=(8.6, 6.4))
+    num = float
+    lab = lambda k: names.get(k, k)
+    texts, anchors = [], []
+
+    def xy(r, j, star=True):
+        s = "*" if star else ""
+        return r["VSE" + s][j] * 100, r["WME" + s][j] * 100
+
+    # honest points: one if the electorates are the same in every condition, else one per condition
+    hon = pts[:1] if same_electorates else pts
+    for r, p, j in hon:
+        ax.scatter(*xy(r, j, False), s=34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
+    if len(varying) == 2:
+        k1, k2 = sorted(varying, key=lambda k: -len({p[k] for _, p, _ in pts}))   # lines along k1, colour by k2
+        v2 = sorted({p[k2] for _, p, _ in pts}, key=num)
+        shades = {v: CHAIN(0.2 + 0.8 * i / max(1, len(v2) - 1)) for i, v in enumerate(v2)}
+        for v in v2:
+            line = sorted([(r, p, j) for r, p, j in pts if p[k2] == v], key=lambda t: num(t[1][k1]))
+            X = [xy(r, j) for r, p, j in line]
+            ax.plot([x for x, _ in X], [y for _, y in X], color=shades[v], lw=1.4, zorder=3,
+                    label=f"{lab(k2)} {v}")
+            ax.scatter([x for x, _ in X], [y for _, y in X], s=36, color=shades[v], edgecolors=SURFACE,
+                       linewidths=0.7, zorder=4)
+            for (x, y), (r, p, j) in zip(X, line):
+                anchors.append((x, y)); texts.append(ax.text(x, y, p[k1], fontsize=7, color=INK2, va="center", zorder=5))
+        ax.legend(frameon=False, fontsize=8, loc="lower left", title=f"labels: {lab(k1)}", title_fontsize=8)
+        title = f"{method}: {lab(k1)} (labels, lines) × {lab(k2)} (colour)"
+    else:
+        order = sorted(pts, key=lambda t: num(t[1][varying[0]])) if len(varying) == 1 else pts
+        X = [xy(r, j) for r, p, j in order]
+        if len(varying) == 1:
+            ax.plot([x for x, _ in X], [y for _, y in X], color=MUTED, lw=1.0, zorder=2)
+        for i, ((x, y), (r, p, j)) in enumerate(zip(X, order)):
+            ax.scatter([x], [y], s=40, color=CHAIN(0.2 + 0.8 * i / max(1, len(X) - 1)), edgecolors=SURFACE,
+                       linewidths=0.7, zorder=4)
+            t = p[varying[0]] if len(varying) == 1 else r["tag"]
+            anchors.append((x, y)); texts.append(ax.text(x, y, t, fontsize=7, color=INK2, va="center", zorder=5))
+        title = f"{method}: " + (f"{lab(varying[0])} (labels, light → dark)" if len(varying) == 1 else "conditions (tags)")
+    if errorbars:
+        for r, p, j in pts:
+            x, y = xy(r, j)
+            ax.errorbar([x], [y], xerr=[[x - r["VSE*_lo"][j] * 100], [r["VSE*_hi"][j] * 100 - x]],
+                        yerr=[[y - r["WME*_lo"][j] * 100], [r["WME*_hi"][j] * 100 - y]],
+                        fmt="none", ecolor=MUTED, elinewidth=0.7, alpha=0.5, zorder=2)
+    ax.set_xlabel(VSE_LABEL.replace("VSE", "VSE*", 1))
+    ax.set_ylabel(WME_LABEL.replace("WME", "WME*", 1))
+    F = pts[0][0].get("frontier") if same_electorates else None
+    _unreachable(ax, "xy", lines=F is None)
+    _frontier(ax, F)
+    ax.set_title(title + "\nlearned ballots (filled); honest (open)"
+                 + ("; bars: each point's own 95% interval" if errorbars else ""), loc="left")
+    fig.tight_layout()
+    _repel(ax, texts, anchors)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return True
 
 
 def _row_order(results):

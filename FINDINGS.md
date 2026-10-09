@@ -6,6 +6,52 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
 
+## Current picture: all methods, poll rounds 5, with nomination (2026-10-09)
+
+Run (user): all 59 methods, 400 elections, 99 voters, 6 candidates, defaults (strategic share 0.5, aggressive share 0.5, poll error 2.0x, max score 5), `--rounds 5 --exits 1 --clones 2`. First run with separate runoffs and shared random streams (section below). Replaces the picture of 2026-10-06 further down, which used convergent learning and other axes. Only one round count, so differences between methods not in the "Dominated by" column are point estimates; the frontier's most balanced point is VSE 95.3 / WME 96.7.
+
+Undominated on all four axes: **STAR, ARA, MARS, Condorcet-random-drop, Minimax, Schulze, Ranked pairs.** Beaten on a single axis only:
+
+| Method | VSE | WME | VSE* | WME* | beaten by (axis) |
+|---|---|---|---|---|---|
+| STAR | 92.9 | 94.2 | 89.3 | 95.7 | — |
+| ARA | 91.5 | 94.9 | 89.6 | 96.2 | — |
+| IC-MARS | 91.0 | 95.0 | 89.9 | 96.0 | STAR (VSE) |
+| MARS | 90.3 | 95.9 | 88.5 | 97.3 | — |
+| Smith//Score | 89.2 | 96.4 | 88.5 | 97.3 | IC-MARS (VSE) |
+| MMWVxScore | 88.5 | 96.7 | 88.0 | 97.5 | MARS (VSE) |
+| MMWV+Score | 88.5 | 96.5 | 87.0 | 97.0 | MARS (VSE) |
+| Condorcet-random-drop | 86.3 | 99.7 | 88.2 | 98.2 | — |
+| Minimax | 86.1 | 99.6 | 85.6 | 99.2 | — |
+| Ranked pairs | 86.0 | 99.5 | 85.8 | 99.2 | — |
+| Schulze | 86.1 | 99.6 | 85.9 | 99.1 | — |
+| MMPO, MMWV, MMPOWV, Kemeny-Young, Schulze-ER, Coombs | 85.5–86.1 | 99.1–99.6 | 85.1–86.6 | 98.4–98.9 | Condorcet-random-drop (VSE*) |
+
+- **Two groups along the trade-off, as before:** score-based runoffs and hybrids (VSE 88–93, WME 94–97) and Condorcet methods (VSE 85–86, WME 99–100). Honestly the Condorcet methods sit almost on the frontier's WME end (86.5 / 100); the best hybrids are about 2.5 points inside it on both axes (STAR 92.9 / 94.2 against the balanced point 95.3 / 96.7), between the −2 and −4 guide lines.
+- **Strategy mostly moves the hybrids along the trade-off rather than inward:** STAR 92.9 / 94.2 → 89.3 / 95.7, ARA 91.5 / 94.9 → 89.6 / 96.2, MARS 90.3 / 95.9 → 88.5 / 97.3, IC-MARS 91.0 / 95.0 → 89.9 / 96.0. VSE falls 1–4 points, WME rises 1–1.5. Score loses VSE (92.8 → 90.5) and gains no WME (92.3 → 92.5).
+- **Condorcet methods lose little WME* under strategy;** they differ in how much. Least loss (WME* 98.8–99.2): Minimax, Ranked pairs, Schulze, Kemeny-Young, Coombs, MMWV, Nanson. More (94.5–97.3): Benham 94.5, Baldwin-Dowdall 95.8, Black-Dowdall 95.9, BTR-IRV 96.5, Black 97.0, SICT 97.0, BTR-Dowdall 97.2, Copeland 97.3.
+- **Condorcet-random-drop gains VSE under strategy** (86.3 → 88.2, WME* 98.2) and beats the minimax family, Kemeny-Young and Coombs on VSE*. Its burial share (19%) is high, but the burial does not translate into lost WME.
+- **Approval runoff with a separate runoff** is among the leaders under strategy (89.5 / 96.4, from 86.3 / 90.5 honest), close to STAR, ARA and IC-MARS. Honestly it is beaten by the hybrids on VSE and WME. Approval (87.4 / 91.8) and Approval cond. runoff (87.7 / 91.4) gain WME under strategy too, but stay far behind.
+- **TTR, Contingent vote and Contingent-ER** end up close together (VSE* 85.9–86.4, WME* 91.4–92.1), with the same honest values. Only TTR has no burial, since its runoff cannot be manipulated; compromise and push-over remain (9.5% and 8.6%). IRV and ER-IRV gain WME under strategy (85.7 → 91.3 and 92.4); IRV-3 less (88.6). Supplementary vote (80.5) and MCA (91.9, VSE* 85.3) trail.
+- **Dowdall instead of Borda points does not pay in the Condorcet-type methods.** Baldwin-Dowdall and Nanson-Dowdall are not Condorcet-consistent (CE 96.4 and 92.5 honest; WME 98.1 and 96.2): Baldwin and Nanson elect the Condorcet winner because it always has an above-average Borda score, which Dowdall points do not guarantee. Under strategy the Dowdall versions lose more WME than the originals (Baldwin 97.5 vs Baldwin-Dowdall 95.8, Nanson 98.8 vs 94.3, BTR-Borda 98.3 vs BTR-Dowdall 97.2, Black 97.0 vs Black-Dowdall 95.9) for at most a point of VSE* (Black-Dowdall 86.9 vs 86.2, Nanson-Dowdall 86.4 vs 85.5; Baldwin-Dowdall is lower, 84.2 vs 85.2). Plain Dowdall gains from strategy (85.9 / 84.1 → 87.5 / 88.3) and still trails almost everything, and nomination hits it hard (22% of honest results changed, 0.78 withdrawals per election, against 10% and 0.04 for Borda). An earlier run of the Borda family alone (400 elections, rounds 1–5, nomination on, before the random-stream fix) showed the same pattern in every round. The idea from the poll-rounds section, that Borda-based methods should use Dowdall points, is not supported.
+- **Borda** loses most under strategy (86.0 / 94.7 → 85.1 / 91.7; Borda-ER 85.5 / 91.7), then Baldwin-Dowdall (86.0 / 98.1 → 84.2 / 95.8). Minimax, Schulze, Ranked pairs, Kemeny-Young and Baldwin also end up lower on both axes, but by at most 0.5 VSE and 1.4 WME.
+- **Nomination** changes the honest result most under plurality-based methods (Plurality 35%, Supplementary vote 32%, TTR and contingent variants 30%, IRV 22%) and approval methods (21%), less under the rated and hybrid methods (8–13%, except MCA, MJ, 321, MDDA, ARA-Top and Reciprocal score at 17–23%) and least under the Condorcet methods (2.5–6%, except Baldwin-Dowdall 7.5% and Nanson-Dowdall 12%). Borda and Approval attract clones (0.65 and 0.81 per election).
+- **Sincerity:** rated, approval and hybrid ballots stay at 99.4–99.9 (Reciprocal score 98.7); Condorcet methods at 96–98; Borda is the least sincere serious method (94.3).
+
+## Equal ranking and two-round elections, poll rounds 1–6 (2026-10-09)
+
+Run (user): `--rounds 1 2 3 4 5 6`, 400 elections, nomination on (`--exits 1 --clones 2`), defaults otherwise; the ER pairs plus IRV-3, TTR, Supplementary vote and the three approval methods. Paired differences per round.
+
+- **Equal-ranking versions are mostly ties with their strict versions.** Honest values are identical (sincere ballots are strict). Under strategy, Minimax-ER, Schulze-ER, Baldwin-ER and Ranked Robin vs Ranked Robin-SR are ties in every round. ER-IRV is better than IRV twice (VSE* +1.7 in round 1, WME* +2.9 in round 4) and tied otherwise. Borda-ER vs Borda is a tie in every round, with the sign changing (−1.7 / −2.1 in round 1, +0.8 / +2.1 in round 3, −2.4 / −1.4 in round 6). The behaviour differs consistently: ER voters compromise less and bury more (Borda-ER 7–8% compromise and 24–28% burial vs 13–15% and 19% for Borda). Part of that burial is compromise by tying: a voter who ties the preferred leader with the favourite and moves the other leader down counts as burial, because the favourite stays on top. The prediction that ER versions are always better: equal or slightly better for IRV and the Condorcet methods, not shown for Borda.
+- **Approval cond. runoff is equal to or better than Approval:** better on honest WME (+1.5) and, barely, on VSE* in rounds 2 and 4 (+1.4 to +1.6); ties otherwise.
+- **Always holding the runoff is better still:** Approval runoff beats Approval cond. runoff on WME* in every round (+3.4 to +6.4), on honest WME (+4.2) and on CE* (+8 to +12); VSE and VSE* are ties. Ending the election at a majority of approvals gives away most of what the runoff adds, since that candidate often is not the head-to-head winner.
+- **Borda is the only method that loses clearly from honest to round 1** (86.0 / 94.7 → 83.3 / 88.6; Borda-ER 81.6 / 86.5). The others stay put or gain; TTR gains WME* now that burial is gone (88.5 → 89–92). Borda recovers partly with more rounds (87.2 / 93.9 in round 6).
+
+## Model changes: separate runoffs, shared random streams (2026-10-09)
+
+- **Two-round elections have a separate runoff.** TTR, Approval runoff and Approval cond. runoff used to read the runoff from the same ballot as the first round, so strategic voters could also misrank the finalists, which a real separate runoff gives no reason to do. Now the runoff is decided by sincere preferences and strategy changes only the round-1 marks; TTR also ends in round 1 when a candidate has a majority of the marks (README, Two-round elections). **Every section below this one used the old versions:** what they call TTR is now **Contingent vote** (results unchanged), and the old Approval runoff and Approval cond. runoff no longer exist. The old TTR-ER, which is not an equal-ranking version of a two-round election, is now **Contingent-ER**.
+- **Shared random streams.** Strategic nomination and the poll rounds used a random stream per method name; now every method uses the same one (README, Random streams). Pairs that agree on honest ballots used to differ in nomination (e.g. TTR 85.9 / 88.9 vs TTR-ER 85.8 / 87.9, honest, with nomination); they now agree exactly. Results from before differ by sampling noise.
+
 ## Strategy model changed: poll rounds (2026-10-08)
 
 **All strategic results above this line (and in the older sections below) used convergent learning:** over 20 rounds, groups of up to 10 voters with the same ranking took turns, each seeing the others' latest strategic ballots, and kept changes that paid. That describes where an electorate ends up after long adjustment, with far more information and coordination than one election offers. It protects methods whose strategy fails only when many use it at once.

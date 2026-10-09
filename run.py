@@ -64,7 +64,9 @@ def one_election(args):
         uf, back = u, (lambda P: P)
         nstats = {"nom_exits": 0, "nom_clones": 0, "nom_settled": 1, "nom_moves": 0, "nom_changed": 0}
         if nominating:
-            nrng = np.random.default_rng([seed, e, zlib.crc32(name.encode()), zlib.crc32(b"nomination")])
+            # the candidates' order of moves is a property of the election: the same stream for every
+            # method, so methods that agree on every field (e.g. IRV and ER-IRV on strict ballots) agree
+            nrng = np.random.default_rng([seed, e, zlib.crc32(b"nomination")])
             field, st = nominate(m, u, u_clone, cu, nrng, exits, clones)
             ents = field.entries()
             uf, back = utilities(ents, u, u_clone), (lambda P, ents=ents: to_original(P, ents, C))
@@ -73,9 +75,10 @@ def one_election(args):
             nstats = {**st, "nom_changed": int(np.abs(P_h - m.honest(u)).sum() > 1e-9)}
         sincere_row = {**election_row(u, P_h, m_cand), **estats, "sincerity": 1.0, "settled": 1,
                        "compromise": 0.0, "pushover": 0.0, "burial": 0.0, **nstats}
-        # Each method learns with its own random stream, keyed by name, so results stay
-        # the same when methods are added or reordered.
-        mrng = np.random.default_rng([seed, e, zlib.crc32(name.encode())])
+        # Each method learns with a fresh copy of the same stream (common random numbers: the same
+        # polls for every method as long as they draw alike), so results stay the same when methods
+        # are added or reordered, and paired comparisons are not blurred by different poll draws.
+        mrng = np.random.default_rng([seed, e, zlib.crc32(b"learning")])
         if converge > 0:     # convergent learning does not use rounds: one result for every rounds value
             res = [learn(m, uf, mrng, converge, samples, group_cap(group_size, len(u)), strategic)] * len(rounds)
         else:                # all requested numbers of poll rounds from one run (see strategy.respond)

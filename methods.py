@@ -5,11 +5,15 @@ A ballot matrix B has one row per voter and one column per candidate:
   "rank"     rank points: best C-1 ... worst 0
   "approval" 0/1
   "score"    0..MAXS (default 0..5; set_max_score changes the range)
-  "rankapp"  ranking with an approval line: rank points (C-1 ... 0), plus C for approved
-             candidates, who are always the top k of the ranking
+  "fav_run"  two-round election, plurality first round: the sincere ranking as rank points
+             (C-1 ... 0) for the separate runoff, plus C for the one candidate marked in round 1
+  "app_run"  two-round election, approval first round: as fav_run, plus C for every approved
+             candidate (any set). The ranking part is fixed: strategy changes only the round-1 marks,
+             since in a separate two-candidate runoff voting for the preferred one is always best
   "veto"     -1 for the one candidate voted against, 0 for all others
   "weak"     ranking with ties allowed: levels 0 ... C-1, higher is better, equal = tied
   "trunc"    truncated ranking: the k ranked candidates get k ... 1, unranked ones 0 (tied last)
+  "trunc3"   as trunc, at most 3 ranked (IRV-3)
   "grade3"   three grades: 2 = good, 1 = OK, 0 = bad
 Every tally returns exact winner probabilities; ties are split uniformly among
 the tied candidates and counted exactly.
@@ -18,10 +22,12 @@ Sincere ballots from utilities u[v, c]:
   rank     - order by utility
   approval - every candidate above the voter's mean utility
   score    - 0..MAXS, stretched to the voter's own utility range, rounded
-  rankapp  - ranking by utility, approval line below the last candidate above the mean
+  fav_run  - mark the favourite; ranking by utility
+  app_run  - approve every candidate above the voter's mean utility; ranking by utility
   veto     - against the least liked candidate
   weak     - strict ranking by utility (ties are only used strategically)
   trunc    - rank every candidate above the voter's mean utility, leave the rest unranked
+  trunc3   - rank the 3 best-liked candidates (all, with 3 or fewer), leave the rest unranked
   grade3   - 0..2, stretched to the voter's own utility range, rounded (as score, with 3 levels)
 """
 from dataclasses import dataclass
@@ -79,7 +85,11 @@ def score_ballots(u):
     return np.rint(MAXS * (u - mn) / d)
 
 
-def rankapp_ballots(u):
+def fav_run_ballots(u):
+    return rank_ballots(u) + u.shape[1] * fav_ballots(u)
+
+
+def app_run_ballots(u):
     return rank_ballots(u) + u.shape[1] * approval_ballots(u)
 
 
@@ -95,6 +105,16 @@ def trunc_ballots(u):
     return np.where(A > 0, R - (u.shape[1] - k) + 1, 0.0)   # top k get k ... 1
 
 
+TRUNC3 = 3       # most candidates ranked on a "trunc3" ballot
+
+
+def trunc3_ballots(u):
+    C = u.shape[1]
+    k = min(TRUNC3, C)
+    R = rank_ballots(u)
+    return np.where(R >= C - k, R - (C - k) + 1, 0.0)        # top k get k ... 1
+
+
 def grade3_ballots(u):
     mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
     d = np.where(mx - mn > 1e-12, mx - mn, 1.0)
@@ -102,7 +122,7 @@ def grade3_ballots(u):
 
 
 SINCERE = {"fav": fav_ballots, "rank": rank_ballots, "approval": approval_ballots, "score": score_ballots,
-           "rankapp": rankapp_ballots, "veto": veto_ballots, "weak": rank_ballots, "trunc": trunc_ballots,
+           "fav_run": fav_run_ballots, "app_run": app_run_ballots, "veto": veto_ballots, "weak": rank_ballots, "trunc": trunc_ballots, "trunc3": trunc3_ballots,
            "grade3": grade3_ballots}
 
 
@@ -236,6 +256,31 @@ def _firsts(B):
     return out.reshape(n, -1)
 
 
+def _firsts_ex(B):
+    """As _firsts, for truncated rankings: a ballot counts for its highest-ranked candidate in A only
+    if it ranks one there (value > 0); otherwise it is exhausted and counts for nobody."""
+    n, C = B.shape
+    m = masks(C)
+    Bm = np.where(m[None], B[:, None, :], -np.inf)
+    out = np.zeros((n, 2 ** C, C))
+    idx = Bm[:, 1:].argmax(axis=2)
+    live = np.take_along_axis(Bm[:, 1:], idx[:, :, None], axis=2)[:, :, 0] > 0
+    v, s_ = np.nonzero(live)
+    out[v, s_ + 1, idx[v, s_]] = 1
+    return out.reshape(n, -1)
+
+
+def _lasts(B):
+    """For every subset A: one-hot of the voter's lowest-ranked candidate in A (Coombs)."""
+    n, C = B.shape
+    m = masks(C)
+    Bm = np.where(m[None], B[:, None, :], np.inf)
+    out = np.zeros((n, 2 ** C, C))
+    idx = Bm[:, 1:].argmin(axis=2)
+    out[np.arange(n)[:, None], np.arange(1, 2 ** C)[None, :], idx] = 1
+    return out.reshape(n, -1)
+
+
 def _firsts_eq(B):
     """As _firsts, but every candidate tied at the top among A gets a whole vote (rankings with ties)."""
     n, C = B.shape
@@ -256,6 +301,18 @@ def _dowdall(B):
     C = B.shape[1]
     pos = (C - 1) - B                                   # 0 = first place
     return _lcm_upto(C) // (pos.astype(int) + 1)
+
+
+def _dowdall_sub(B):
+    """For every subset K of candidates: each candidate's Dowdall points among K (1, 1/2, 1/3, ... by
+    its place within K on a strict ranking, times lcm(1..C) so they are integers), 0 outside K.
+    Used to recount Dowdall points among the remaining candidates (Baldwin-, Nanson-Dowdall)."""
+    n, C = B.shape
+    m = masks(C).astype(float)                                 # (2^C, C)
+    above = (B[:, None, :] > B[:, :, None]).astype(float)      # above[v, c, k]: k ranked above c
+    rank = np.einsum("vck,sk->vsc", above, m)                  # candidates of K above c
+    out = np.where(m[None] > 0, _lcm_upto(C) // (rank.astype(int) + 1), 0)
+    return out.reshape(n, -1)
 
 
 def _firstsecond(B):
@@ -288,7 +345,9 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "first": (lambda B: _onehot(B.argmax(axis=1), B.shape[1]), lambda C: (C,)),
     "last": (lambda B: _onehot(B.argmin(axis=1), B.shape[1]), lambda C: (C,)),
     "gt": (lambda B: (B[:, :, None] > B[:, None, :]).reshape(len(B), -1), lambda C: (C, C)),
-    "app": (lambda B: B >= B.shape[1], lambda C: (C,)),                       # rankapp approvals
+    "app": (lambda B: B >= B.shape[1], lambda C: (C,)),                       # fav_run / app_run: round-1 marks
+    "runoff_gt": (lambda B: (lambda R: (R[:, :, None] > R[:, None, :]).reshape(len(B), -1))(np.mod(B, B.shape[1])),
+                  lambda C: (C, C)),                                           # fav_run / app_run: runoff rankings
     "upper": (lambda B: B > MAXS / 2, lambda C: (C,)),                         # above the middle (0..5: 3-5)
     "maxs": (lambda B: B >= MAXS, lambda C: (C,)),                            # top score only
     "pos": (lambda B: B > 0, lambda C: (C,)),
@@ -306,6 +365,9 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "keepnorm": (_keepnorm, lambda C: (2 ** C, C)),
     "firsts_eq": (_firsts_eq, lambda C: (2 ** C, C)),
     "dowdall": (_dowdall, lambda C: (C,)),
+    "dowdall_sub": (_dowdall_sub, lambda C: (2 ** C, C)),
+    "firsts_ex": (_firsts_ex, lambda C: (2 ** C, C)),
+    "lasts": (_lasts, lambda C: (2 ** C, C)),
     "firstsecond": (_firstsecond, lambda C: (C, C)),
     "ge1": (lambda B: B >= 1, lambda C: (C,)),
     "ge2": (lambda B: B >= 2, lambda C: (C,)),
@@ -654,11 +716,30 @@ def d_schulze(s):
 
 
 def d_approval_runoff_if_needed(s):
-    """Ranked approval ballot. The most approved candidate wins outright if more than half the
-    voters approve it; otherwise top two by approvals, majority runoff, a tie to more approvals."""
+    """The most approved candidate wins outright if more than half the voters approve it; otherwise
+    top two by approvals, majority runoff, a tie to more approvals."""
     if s["app"].max() > s["n"] / 2:
         return uniform_max(s["app"])
     return d_approval_runoff(s)
+
+
+def d_two_round(s):
+    """Two-round election (fav_run ballots): a candidate marked by more than half the voters wins in
+    round 1; otherwise the top two meet in a separate runoff, decided by the runoff rankings."""
+    if s["app"].max() > s["n"] / 2:
+        return uniform_max(s["app"])
+    return d_top_two({"first": s["app"], "gt": s["runoff_gt"]})
+
+
+def d_approval_two_round(s):
+    """Approval primary, then a separate runoff of the top two (app_run ballots); a runoff tie goes
+    to more approvals."""
+    return d_approval_runoff({"app": s["app"], "gt": s["runoff_gt"]})
+
+
+def d_approval_two_round_if_needed(s):
+    """As d_approval_two_round, but a candidate approved by more than half the voters wins outright."""
+    return d_approval_runoff_if_needed({"n": s["n"], "app": s["app"], "gt": s["runoff_gt"]})
 
 
 def d_reciprocal_score(s):
@@ -743,6 +824,154 @@ def d_nanson(s):
     P = np.zeros(len(gt))
     P[alive] = 1 / len(alive)
     return P
+
+
+# ---------- batch 5: Dowdall variants, equal-ranking variants, MARS variants ----------
+def d_black_dowdall(s):
+    """Condorcet winner if there is one, otherwise the Dowdall winner."""
+    M = margins_of(s)
+    cw = (M > 0).sum(axis=1) == len(M) - 1
+    return cw.astype(float) if cw.any() else uniform_max(s["dowdall"])
+
+
+def d_btr_dowdall(s):
+    """Order by Dowdall points, bottom-two pairwise runoffs climbing up."""
+    M = margins_of(s)
+    return bottom_two_runoff(s["dowdall"], lambda a, b: M[a, b])
+
+
+def _subset_points(s, alive):
+    """Dowdall points among the alive candidates (from the dowdall_sub feature)."""
+    return s["dowdall_sub"][int(sum(1 << c for c in alive))][alive]
+
+
+def d_baldwin_dowdall(s):
+    """Baldwin with Dowdall points: repeatedly eliminate the lowest Dowdall score, recounted among
+    the remaining candidates; ties for last are split."""
+    C = len(s["dowdall_sub"][0])
+    P = np.zeros(C)
+
+    def go(alive, w):
+        if len(alive) == 1:
+            P[alive[0]] += w
+            return
+        pts = _subset_points(s, alive)
+        low = np.flatnonzero(pts <= pts.min() + EPS)
+        for i in low:
+            go([c for j, c in enumerate(alive) if j != i], w / len(low))
+
+    go(list(range(C)), 1.0)
+    return P
+
+
+def d_nanson_dowdall(s):
+    """Nanson with Dowdall points: repeatedly eliminate every candidate at or below the average Dowdall
+    score among the remaining; if that would eliminate all, they tie."""
+    C = len(s["dowdall_sub"][0])
+    alive = list(range(C))
+    while len(alive) > 1:
+        pts = _subset_points(s, alive).astype(float)
+        out = pts <= pts.mean() + EPS
+        if out.all():
+            break
+        alive = [c for c, o in zip(alive, out) if not o]
+    P = np.zeros(C)
+    P[alive] = 1 / len(alive)
+    return P
+
+
+def d_borda_er(s):
+    """Borda on rankings with ties: a point for every candidate ranked strictly below (ties score
+    nothing). On strict rankings the same as Borda."""
+    return uniform_max(s["gt"].sum(axis=1).astype(float))
+
+
+def d_top_two_er(s):
+    """Contingent vote on rankings with ties: every candidate tied at the top counts as a first
+    choice (as in ER-IRV); then a majority runoff between the top two, read from the same ballot
+    (an automated runoff with the top tier approved)."""
+    return d_top_two({"first": s["top"], "gt": s["gt"]})
+
+
+def _worst_wv(s):
+    """Each candidate's worst defeat by winning votes, as a share of voters (0 if undefeated)."""
+    gt = s["gt"].astype(float)
+    np.fill_diagonal(gt, 0)
+    return np.where(gt > gt.T, gt, 0.0).max(axis=0) / s["n"]
+
+
+def d_mmwv_plus_score(s):
+    """Score share (total / (n x top score)) minus worst winning-votes defeat share; highest wins."""
+    return uniform_max(s["sum"] / (s["n"] * MAXS) - _worst_wv(s))
+
+
+def d_mmwv_times_score(s):
+    """Score share times (1 - worst winning-votes defeat share), as in MMPOWV; highest wins."""
+    return uniform_max(s["sum"] / (s["n"] * MAXS) * (1 - _worst_wv(s)))
+
+
+def d_ic_mars(s):
+    """IC-MARS: as MARS (order by score total, bottom-two runoffs, each match decided by margin + score
+    difference / top score), but a pairwise margin counts only beyond the votes rating both candidates
+    at the top (tied at the top, as in Improved Condorcet Approval): a margin those votes could
+    reverse counts 0. Less weight for votes, more for score."""
+    M, tot, eq = margins_of(s), s["sum"], s["eqtop"]
+    V = np.sign(M) * np.clip(np.abs(M) - eq, 0, None)
+    return bottom_two_runoff(tot, lambda a, b: V[a, b] + (tot[a] - tot[b]) / MAXS)
+
+
+def d_coombs(s):
+    """Coombs: a candidate with more than half of the first choices among the remaining wins;
+    otherwise the candidate with the most last places among the remaining is eliminated (ties split)."""
+    C = s["firsts"].shape[1]
+    P = np.zeros(C)
+
+    def go(alive, w):
+        first = first_among(s, alive)
+        if len(alive) == 1 or first.max() > first.sum() / 2:
+            win = np.flatnonzero(first == first.max()) if len(alive) > 1 else [0]
+            for i in win:
+                P[alive[i]] += w / len(win)
+            return
+        last = first_among(s, alive, "lasts")
+        top = np.flatnonzero(last == last.max())
+        for i in top:
+            go([c for j, c in enumerate(alive) if j != i], w / len(top))
+
+    go(list(range(C)), 1.0)
+    return P
+
+
+def d_kemeny(s):
+    """Kemeny-Young: the ranking that agrees with the most pairwise preferences (sum over ordered pairs
+    of voters preferring the earlier candidate); its top candidate wins. Dynamic programming over
+    subsets: best(R) = max over c in R of [votes for c over the rest of R] + best(R without c).
+    Candidates that head some optimal ranking split the win."""
+    gt = s["gt"].astype(float)
+    np.fill_diagonal(gt, 0)
+    C = len(gt)
+    m, layers = _kemeny_layers(C)
+    G = gt @ m.T                                    # G[c, R]: votes for c over the members of R
+    bits = 1 << np.arange(C)
+    best = np.zeros(1 << C)
+    for Rs in layers[:-1]:                          # subsets by size, smallest first
+        inR = m[Rs].T                               # (C, len(Rs))
+        sub = Rs[None, :] & ~bits[:, None]          # R without c
+        best[Rs] = np.where(inR, G[:, Rs] + best[sub], -np.inf).max(axis=0)
+    full = (1 << C) - 1
+    return uniform_max(G[:, full] + best[full & ~bits])
+
+
+_KEMENY = {}
+
+
+def _kemeny_layers(C):
+    """Subset masks and the subsets grouped by size (cached per number of candidates)."""
+    if C not in _KEMENY:
+        m = masks(C).astype(bool)
+        size = m.sum(axis=1)
+        _KEMENY[C] = (m, [np.flatnonzero(size == k) for k in range(1, C + 1)])
+    return _KEMENY[C]
 
 
 def d_dowdall(s):
@@ -896,7 +1125,8 @@ M_ = Method
 METHODS = {
     "Random pair runoff": M_("rank", d_random_pair, ("n", "first", "gt")),
     "Plurality": M_("fav", d_sum, ("sum",)),
-    "TTR": M_("rank", d_top_two, ("first", "gt")),
+    "TTR": M_("fav_run", d_two_round, ("n", "app", "runoff_gt")),
+    "Contingent vote": M_("rank", d_top_two, ("first", "gt")),
     "IRV": M_("rank", d_irv, ("firsts",)),
     "Borda": M_("rank", d_sum, ("sum",)),
     "Baldwin": M_("rank", d_baldwin, ("gt",)),
@@ -904,7 +1134,7 @@ METHODS = {
     "Copeland": M_("rank", d_copeland, ("gt",)),
     "Minimax": M_("rank", d_minimax, ("gt",)),
     "Approval": M_("approval", d_sum, ("sum",)),
-    "Approval runoff": M_("rankapp", d_approval_runoff, ("app", "gt")),
+    "Approval runoff": M_("app_run", d_approval_two_round, ("app", "runoff_gt")),
     "Score": M_("score", d_sum, ("sum",)),
     "MJ": M_("score", d_mj, ("grades",)),
     "STAR": M_("score", d_star, ("sum", "gt")),
@@ -916,7 +1146,7 @@ METHODS = {
     "TRASH": M_("rank", d_trash, ("first", "last", "gt")),
     "Ranked pairs": M_("rank", d_ranked_pairs, ("gt",)),
     "Schulze": M_("rank", d_schulze, ("gt",)),
-    "Approval cond. runoff": M_("rankapp", d_approval_runoff_if_needed, ("n", "app", "gt")),
+    "Approval cond. runoff": M_("app_run", d_approval_two_round_if_needed, ("n", "app", "runoff_gt")),
     "Reciprocal score": M_("score", d_reciprocal_score, ("fset", "fsetB")),
     "Score+": M_("score", d_score_plus, ("sum", "excess", "keepnorm")),
     "Condorcet-random-drop": M_("rank", full=t_condorcet_drop),
@@ -936,19 +1166,49 @@ METHODS = {
     "MMPO": M_("weak", d_mmpo, ("gt",)),
     "MMWV": M_("weak", d_minimax_wv, ("gt",)),
     "MMPOWV": M_("weak", d_mmpowv, ("n", "gt")),
+    # batch 5
+    "Black-Dowdall": M_("rank", d_black_dowdall, ("dowdall", "gt")),
+    "BTR-Dowdall": M_("rank", d_btr_dowdall, ("dowdall", "gt")),
+    "Baldwin-Dowdall": M_("rank", d_baldwin_dowdall, ("dowdall_sub",)),
+    "Nanson-Dowdall": M_("rank", d_nanson_dowdall, ("dowdall_sub",)),
+    "Borda-ER": M_("weak", d_borda_er, ("gt",)),
+    "Baldwin-ER": M_("weak", d_baldwin, ("gt",)),
+    "Contingent-ER": M_("weak", d_top_two_er, ("top", "gt")),
+    "Minimax-ER": M_("weak", d_minimax, ("gt",)),
+    "Schulze-ER": M_("weak", d_schulze, ("gt",)),
+    "Ranked Robin-SR": M_("rank", d_ranked_robin, ("gt",)),
+    "MMWV+Score": M_("score", d_mmwv_plus_score, ("n", "sum", "gt")),
+    "MMWVxScore": M_("score", d_mmwv_times_score, ("n", "sum", "gt")),
+    "IC-MARS": M_("score", d_ic_mars, ("sum", "gt", "eqtop")),
+    "Coombs": M_("rank", d_coombs, ("firsts", "lasts")),
+    "Kemeny-Young": M_("rank", d_kemeny, ("gt",)),
+    "IRV-3": M_("trunc3", lambda s: d_irv(s, "firsts_ex"), ("firsts_ex",)),
 }
 
 
 # Method groups for --methods / --exclude (tags: a method can be in several groups)
 GROUPS = {
     "condorcet": ["Baldwin", "Nanson", "Copeland", "Ranked Robin", "Black", "Minimax", "MMWV", "Ranked pairs",
-                  "Schulze", "SICT", "Condorcet-random-drop", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
-    "plurality-based": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "BTR-IRV", "Benham"],
+                  "Schulze", "SICT", "Condorcet-random-drop", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score",
+                  "Black-Dowdall", "BTR-Dowdall", "Baldwin-Dowdall", "Nanson-Dowdall", "Baldwin-ER",
+                  "Minimax-ER", "Schulze-ER", "Ranked Robin-SR", "Kemeny-Young"],
+    "plurality-based": ["Plurality", "TTR", "Contingent vote", "Contingent-ER", "Supplementary vote", "IRV", "ER-IRV",
+                        "BTR-IRV", "Benham",
+                        "IRV-3", "Coombs"],
     "rated": ["Score", "MJ", "MCA", "Reciprocal score"],
-    "hybrid": ["STAR", "BTR-score", "MARS", "ARA", "ARA-Top", "Score+", "Smith//Score", "321"],
+    "hybrid": ["STAR", "BTR-score", "MARS", "ARA", "ARA-Top", "Score+", "Smith//Score", "321", "MMWV+Score",
+               "MMWVxScore", "IC-MARS"],
     "approval-based": ["Approval", "Approval runoff", "Approval cond. runoff", "MDDA"],
-    "positional": ["Borda", "Dowdall"],
+    "positional": ["Borda", "Dowdall", "Borda-ER"],
     "references": ["Random pair runoff", "Anti-plurality", "TRASH"],
+}
+
+# Comparison sets for --methods / --exclude only (not plot panels; their methods sit in GROUPS too)
+COMPARISONS = {
+    "borda-family": ["Borda", "Black", "BTR-Borda", "Baldwin", "Nanson",
+                     "Dowdall", "Black-Dowdall", "BTR-Dowdall", "Baldwin-Dowdall", "Nanson-Dowdall"],
+    "er-pairs": ["IRV", "ER-IRV", "Borda", "Borda-ER", "Baldwin", "Baldwin-ER", "Minimax",
+                 "Minimax-ER", "MMWV", "Schulze", "Schulze-ER", "Ranked Robin-SR", "Ranked Robin"],
 }
 
 
@@ -956,13 +1216,13 @@ def select(include=None, exclude=None):
     """Method names to run: `include` starts from none, `exclude` from all. Names are methods or
     groups (see GROUPS); matching ignores case."""
     lookup = {k.lower(): [k] for k in METHODS}
-    lookup.update({g: ms for g, ms in GROUPS.items()})
+    lookup.update({g: ms for g, ms in {**GROUPS, **COMPARISONS}.items()})
 
     def resolve(names):
         bad = [x for x in names if x.lower() not in lookup]
         if bad:
             raise SystemExit(f"unknown method(s) or group(s): {', '.join(bad)}. Methods: {', '.join(METHODS)}. "
-                             f"Groups: {', '.join(GROUPS)}")
+                             f"Groups: {', '.join(GROUPS)}. Comparisons: {', '.join(COMPARISONS)}")
         return {m for x in names for m in lookup[x.lower()]}
 
     chosen = resolve(include) if include else set(METHODS)

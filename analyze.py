@@ -305,6 +305,11 @@ def main():
                          "give --hide with no names to show all")
     ap.add_argument("--show", nargs="+", default=None,
                     help="only these methods or groups in the scatter and chain plots (overrides --hide)")
+    ap.add_argument("--errorbars", action="store_true",
+                    help="arrow plots: 95%% intervals relative to the average of the methods shown; track plots: "
+                         "each point's own interval")
+    ap.add_argument("--track", nargs="+", default=None,
+                    help="methods (or groups) to follow across all conditions: track-<method>.png each")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
     a.out = out_path(a.out)
@@ -342,7 +347,7 @@ def main():
 
     # plots
     for key, r in results.items():
-        plots.arrows(r, os.path.join(a.out, f"arrows-{r['tag']}.png"), a.hide)
+        plots.arrows(r, os.path.join(a.out, f"arrows-{r['tag']}.png"), a.hide, a.errorbars)
         plots.shift(r, os.path.join(a.out, f"shift-{r['tag']}.png"), a.hide)
         plots.sincerity(r, os.path.join(a.out, f"sincerity-{r['tag']}.png"), a.hide)
     if len(results) > 1:
@@ -354,6 +359,15 @@ def main():
         plots.chain([results[key] for key in chain_keys], PARAM_NAMES.get(k, k), shown_vals,
                     os.path.join(a.out, f"chain-{k}.png"), a.hide, k in LEARNING_ONLY, GROUPS,
                     k in SAME_ELECTORATES)
+    tracked = []
+    if a.track and len(results) > 1:
+        from methods import select
+        conds_p = [(results[key], dict(zip(PARAMS, key))) for key in keys]
+        same = all(k in SAME_ELECTORATES for k in varying)
+        for m in select(a.track):
+            fn = "track-" + "".join(ch if ch.isalnum() else "_" for ch in m) + ".png"
+            if plots.track(conds_p, m, varying, PARAM_NAMES, os.path.join(a.out, fn), same, a.errorbars):
+                tracked.append((m, fn))
 
     # report.md
     L = ["# Voting Pareto Lab — analysis", ""]
@@ -373,8 +387,13 @@ def main():
           "election (values above 100 cannot be reached). VSE measures total utility; WME the winner's worst "
           "head-to-head margin by sincere preferences (a refined Condorcet measure; every election counts; Minimax "
           "reaches 100 with honest ballots by construction). CE (Condorcet efficiency, elections with a Condorcet "
-          "winner only, elected or not) is shown for comparison and not used for dominance.",
-          "- The strategic axes (VSE*, WME*) give the result after the poll rounds: voters see polls of the previous round "
+          "winner only, elected or not) is shown for comparison and not used for dominance."]
+    if a.errorbars:
+        L += ["- **Error bars** in the arrow plots are 95% intervals relative to the average of the methods shown: "
+              "the variation all methods share (some elections are harder for everyone) is removed, so clearly "
+              "separated bars suggest a real difference (an approximation of the paired differences). In track "
+              "plots they are each point's own interval."]
+    L += ["- The strategic axes (VSE*, WME*) give the result after the poll rounds: voters see polls of the previous round "
           "(the method's counts only) and answer them all at once (README, Strategic voting). Under convergent learning "
           "(--converge) they describe a long-run state instead and depend on the group size.",
           "- **Compromise, burial, push-over** are shares of voters whose learned ballot reverses a real preference, "
@@ -388,6 +407,10 @@ def main():
                   "of arrows in the order of the parameter's values (light to dark). Parameters that only affect "
                   "learning start each chain at the honest point; others show the honest values as a dashed chain.",
                   ""] + [f"![sweep over {k}](chain-{k}.png)\n" for k in chains]
+        if tracked:
+            L += ["**Tracked methods:** each method across all conditions, in the VSE*/WME* plane (learned ballots; "
+                  "honest values open). With two varied parameters, lines follow one and colour shows the other.", ""]
+            L += [f"![{m}]({fn})\n" for m, fn in tracked]
         # rank stability: does each condition order the methods like the base (first) condition?
         base = list(results.values())[0]
         shown = [m for m in base["methods"] if m not in a.hide]
