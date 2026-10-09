@@ -32,6 +32,7 @@ Outputs in --out (a directory; a bare name goes into output/):
     shift-<c>.png              per condition: the same shifts as one row per method (VSE and WME panels)
     sincerity-<c>.png          per condition: VSE* and WME* against sincerity
     axes-heatmap.png           all four axes, methods x conditions (if several conditions)
+    chain-<param>.png          per parameter varied around the base: each method's chain of results
 """
 import argparse
 import csv
@@ -40,25 +41,28 @@ from collections import OrderedDict
 import numpy as np
 
 import plots
-from run import out_path, group_text, strategy_text, OUTPUT_DIR
+from run import out_path, group_text, strategy_text, OUTPUT_DIR, PARAMS as RUN_PARAMS
 from methods import GROUPS
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
 EXTRA = ["CE", "CE*"]           # reported, not used for dominance
 TYPES = ["compromise", "burial", "pushover"]
-PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size", "strategic",
-          "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge", "aggressive"]
+PARAMS = [k for k in RUN_PARAMS if k != "seed"]      # condition parameters, as run.py writes them
 NOM = ["nom_changed", "nom_exits", "nom_clones", "nom_settled"]     # per method and election (sincere rows)
 OLD_DEFAULTS = {"zipf": "0", "max_score": "5", "aggressive": "1.0"}   # parameters missing from older CSVs
 
 
 def param_value(r, k):
     """A row's parameter value; older CSVs lack some. CSVs from before poll rounds (2026-10-08)
-    used convergent learning, with its rounds in the rounds column."""
+    used convergent learning, with its rounds in the rounds column: they count as converge, and
+    as 0 poll rounds."""
+    old = "converge" not in r
+    if k == "converge" and old:
+        return r.get("rounds", "20")
+    if k == "rounds" and old:
+        return "0"
     if k in r:
         return r[k]
-    if k == "converge":
-        return r.get("rounds", "20")
     return OLD_DEFAULTS.get(k, "0")
 
 
@@ -66,10 +70,14 @@ def load(paths):
     rows = []
     for p in paths:
         with open(p, newline="") as f:
-            rows.extend(csv.DictReader(f))
-    missing = [k for k in ["seed", "strategic", "WM_best", "U_rb", "sincerity"] if not rows or k not in rows[0]]
-    if missing:
-        raise SystemExit(f"CSV lacks {', '.join(missing)}; regenerate it with the current run.py or sweep.py")
+            reader = csv.DictReader(f)
+            missing = [k for k in ["seed", "strategic", "WM_best", "U_rb", "sincerity"]
+                       if k not in (reader.fieldnames or [])]
+            if missing:
+                raise SystemExit(f"{p} lacks {', '.join(missing)}; regenerate it with the current run.py or sweep.py")
+            rows.extend(reader)
+    if not rows:
+        raise SystemExit("no rows in the input CSVs")
     return rows
 
 
@@ -127,8 +135,8 @@ def axis_values(W, A, dens, has):
         "WME": (W @ A["wm_s"]) / dw[:, None],
         "VSE*": (W @ A["num_l"]) / d[:, None],
         "WME*": (W @ A["wm_l"]) / dw[:, None],
-        "CE": (W @ A["cw_s"]) / h[:, None],
-        "CE*": (W @ A["cw_l"]) / h[:, None],
+        "CE": (W @ A["cw_s"]) / np.where(h > 0, h, np.nan)[:, None],     # no Condorcet winner drawn: undefined
+        "CE*": (W @ A["cw_l"]) / np.where(h > 0, h, np.nan)[:, None],
         "sincerity": (W @ A["sin"]) / W.sum(axis=1)[:, None],
         **{t: (W @ A[t]) / W.sum(axis=1)[:, None] for t in TYPES},
     }
@@ -214,7 +222,7 @@ def analyse_condition(rows, boot, rng):
            "nomination": {k: A[k].mean(axis=0) for k in NOM}}
     for a in AXES + EXTRA + ["sincerity"] + TYPES:
         res[a] = point[a][0]
-        res[a + "_lo"], res[a + "_hi"] = np.percentile(bs[a], [2.5, 97.5], axis=0)
+        res[a + "_lo"], res[a + "_hi"] = np.nanpercentile(bs[a], [2.5, 97.5], axis=0)
     return res
 
 

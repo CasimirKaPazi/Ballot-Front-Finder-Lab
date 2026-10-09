@@ -48,7 +48,7 @@ check("Schulze", METHODS["Schulze"].honest(u), [0, 1, 0, 0])
 check("Approval cond. runoff (G approved by all 9)", METHODS["Approval cond. runoff"].honest(u), [0, 1, 0, 0])
 check("TRASH (runner-ups; B vs R/G/B: B always wins)", METHODS["TRASH"].honest(u), [0, 0, 1, 0])
 check("Score+ (only K eliminated, G wins after renormalising)", METHODS["Score+"].honest(u), [0, 1, 0, 0])
-p = METHODS["Reciprocal score"].honest(u)
+p = METHODS["Reciprocal score"].honest(u)   # printed for inspection (no hand-computed expectation)
 print("Reciprocal score on 4-3-2:", np.round(p, 3)); assert abs(p.sum() - 1) < 1e-9
 
 # Batch 4 on the 4-3-2 profile: G is the Condorcet winner; R has most first choices and the best Dowdall
@@ -110,7 +110,7 @@ assert abs(p.sum() - 1) < 1e-9 and p[3] == 0 and p[:3].min() > 0.15
 
 # SICT: equal-first ranking by a compromising faction keeps the compromise unbeaten
 w = np.array([[3, 3, 1, 0]] * 4 + [[1, 2, 3, 0]] * 3 + [[2, 3, 1, 0]] * 2, dtype=float)   # 4 voters rank R=G top
-print("SICT with R and G ranked equal first by 4 voters:", np.round(METHODS["SICT"].tally(w), 3))
+check("SICT with R and G ranked equal first by 4 voters (G stays the winner)", METHODS["SICT"].tally(w), [0, 1, 0, 0])
 
 from methods import select
 assert select(["star", "SICT"]) == ["STAR", "SICT"]
@@ -157,7 +157,6 @@ print("incremental feature sums ok")
 
 # Winner's worst margin: a 70:29 Condorcet winner has +41 points, the loser -41;
 # in a 2:1 cycle every candidate's worst margin is -33 points
-from metrics import worst_margins
 clear = profile([(70, [0.9, 0.5, 0.1]), (29, [0.1, 0.5, 0.9])])
 check("worst margins, clear winner", worst_margins(clear), [41 / 99, -41 / 99, -41 / 99])
 cyc3 = profile([(33, [0.9, 0.5, 0.1]), (33, [0.1, 0.9, 0.5]), (33, [0.5, 0.1, 0.9])])
@@ -242,6 +241,7 @@ print("learning on 2 candidates ok")
 from strategy import respond, default_poll_size
 assert (default_poll_size(100), default_poll_size(99), default_poll_size(200)) == (51, 49, 101)
 P_ = METHODS["Plurality"]
+# (With an exact poll there is no runner-up, so no naive exaggerations: this tests the random search.)
 # 4 voters A>C>B, 3 voters B>A>C, 5 voters C>A>B: C wins honestly. With an exact poll (poll size = all
 # voters), only B's voters can do better: they compromise on A, and A wins. A's voters gain nothing
 # by moving (B is their last choice), C's voters are winning.
@@ -276,3 +276,28 @@ for aggr, expect_buried in ((True, True), (False, False)):
     assert buried == expect_buried, (aggr, B[30:34])
     assert Bo.tally(B)[0] == 1
 print("aggressive vs kind ok")
+
+
+# Poll rounds on fields of 2 candidates (strategic exits can leave only two), every method
+for name, m in METHODS.items():
+    B, _, _ = respond(m, np.random.default_rng(1).random((15, 2)), np.random.default_rng(2), rounds=2, samples=3)
+    assert abs(m.tally(B).sum() - 1) < 1e-9, name
+print("poll rounds on 2 candidates ok")
+
+# Reusing rounds: round r of a longer run is exactly what rounds = r gives (run.py and sweep.py rely on it)
+from scenario import Scenario, electorate
+ue = electorate(Scenario(), np.random.default_rng([3, 0]))
+for name in ["Approval", "Borda", "STAR", "Condorcet-random-drop"]:
+    m = METHODS[name]
+    rep = respond(m, ue, np.random.default_rng(4), samples=5, report=[0, 1, 2])
+    for r, (Br, sr, cr) in zip([0, 1, 2], rep):
+        Bs, ss, cs = respond(m, ue, np.random.default_rng(4), rounds=r, samples=5)
+        assert np.array_equal(Br, Bs) and sr == ss and abs(cr - cs) < 1e-12, (name, r)
+print("reused rounds equal separate runs ok")
+
+# Settled means the ballots repeat the round before: Plurality voters whose favourite is a poll
+# leader "exaggerate" to their own sincere ballot; nothing changes, so the round is settled
+u = profile([(6, [0.9, 0.3, 0.1]), (5, [0.3, 0.9, 0.1])]) + 0.01
+B, st, _ = respond(METHODS["Plurality"], u, np.random.default_rng(0), rounds=1)
+assert np.array_equal(B, METHODS["Plurality"].sincere(u)) and st
+print("settled ok")

@@ -43,6 +43,33 @@ Full strategy, one round, 40 elections (honest VSE / WME → VSE* / WME*, burial
 
 The burial artefact is gone for rated ballots. Ranked ballots show about 40% burial by design: burying the other leader is the naive exaggeration and is taken whenever it cannot hurt in the polls. That sinks Borda (linear points: the dark horse wins) but not Dowdall (harmonic points: the bottom places hardly differ, and compromise, which helps, dominates); Condorcet methods lose some WME but keep 91. This is the naive first response; how it develops over more rounds is open.
 
+## Aggressive share 0–1 × poll rounds 1–5, full strategy (2026-10-09)
+
+Run (user): `--aggressive 0 0.25 0.5 0.75 1 --rounds 1 2 3 4 5 --strategic 1`, 200 elections per condition, defaults otherwise.
+
+WME* in round 1 by aggressive share (share of strategic voters who exaggerate whenever it cannot hurt; the others only when the polls show a gain):
+
+| Method | 0 (all kind) | 0.25 | 0.5 | 0.75 | 1 (all aggressive) |
+|---|---|---|---|---|---|
+| MMWV | 91.1 | 92.2 | 94.3 | 89.9 | 79.5 |
+| MMPOWV | 93.3 | 93.0 | 93.9 | 89.3 | 84.8 |
+| Ranked Robin | 87.3 | 89.2 | 90.7 | 89.9 | 78.6 |
+| Schulze | 96.3 | 96.2 | 95.8 | 94.8 | 90.0 |
+| Baldwin | 95.9 | 96.7 | 95.7 | 95.3 | 93.9 |
+| STAR | 84.9 | 90.9 | 92.9 | 93.6 | 87.4 |
+| BTR-score | 90.9 | 96.1 | 96.7 | 95.8 | 90.8 |
+| Score | 81.8 | 84.7 | 90.8 | 92.7 | 91.3 |
+| Approval | 84.5 | 87.0 | 89.0 | 90.2 | 88.9 |
+| IRV | 81.1 | 81.1 | 83.8 | 83.2 | 82.5 |
+| Borda | 43.0 | 43.0 | 39.5 | 48.8 | 40.2 |
+| Dowdall | 79.7 | 81.9 | 83.2 | 84.7 | 85.1 |
+
+- **The extremes are the outliers.** For nearly every method the mixed settings (0.25–0.75) beat both ends, and between them most methods change little; by round 3 the spread narrows further (MMWV 94–96 for every mixed share).
+- **A few kind voters are enough to stop mass burial.** The burial-prone Condorcet methods recover from all-aggressive to three quarters aggressive: MMWV 79.5 → 89.9, Ranked Robin 78.6 → 89.9, MMPOWV 84.8 → 89.3. Blind burial needs nearly everyone to do it.
+- **A few aggressive voters help the rated methods.** All-kind is the worst setting for Score (81.8), STAR (84.9), BTR-score (90.9) and Approval (84.5); a quarter aggressive voters lifts them (BTR-score 96.1, STAR 90.9). Aggressive voters protect a lead whatever the gap; with only kind voters the runner-up's side attacks when the polls show a chance and the leader's side does nothing (see the leader rule above).
+- **Borda collapses at every share**, all-kind included: its burial pays in the polls, it is not only naive.
+- Reading: each extreme is a stress test for one weakness, blind mass burial (all aggressive) or unprotected leads (all kind). Real electorates are mixed, and the conclusions do not hinge on the exact share in between; 0.5 stays the default.
+
 ## Poll rounds 1–5, full strategy; aggressive and kind voters (2026-10-09)
 
 Run (user): `--rounds 1 2 3 4 5 --strategic 1`, 200 elections, defaults otherwise (all strategic voters aggressive, the only behaviour at the time).

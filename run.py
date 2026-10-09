@@ -11,7 +11,8 @@ Axes of the Pareto front (0 = random ballot, 100 = best candidate; see metrics.p
     VSE, WME     voter satisfaction and worst-margin efficiency, sincere ballots
     VSE*, WME*   the same with learned ballots
 CE, CE* (Condorcet efficiency) are reported alongside, as are the sincerity of the learned
-ballots (see strategy.sincerity) and the share of elections where learning settled.
+ballots (see strategy.sincerity) and the share of elections where the strategic ballots settled
+(poll rounds: the last round repeated the one before).
 
 Partial strategy: --strategic p makes a random share p of the voters strategic (the same voters
 for every method); the rest always vote sincerely.
@@ -98,6 +99,19 @@ def out_path(name):
     return path
 
 
+def check_params(a, error):
+    """Reject values the simulation cannot use (a: parsed arguments; lists allowed, as in sweep.py)."""
+    vals = lambda k: getattr(a, k) if isinstance(getattr(a, k), list) else [getattr(a, k)]
+    for k, lo in (("rounds", 0), ("samples", 1), ("search", 0), ("poll_size", 0), ("converge", 0), ("clones", 0)):
+        if any(v < lo for v in vals(k)):
+            error(f"--{k.replace('_', '-')} must be at least {lo}")
+    for k in ("strategic", "aggressive"):
+        if any(not 0 <= v <= 1 for v in vals(k)):
+            error(f"--{k} must be between 0 and 1")
+    if any(v < 0 for v in vals("poll_error")):
+        error("--poll-error must be 0 or more")
+
+
 def strategy_text(p, n):
     """One-line description of the strategy model of a run (p: namespace or dict of parameters)."""
     g = (lambda k: p[k]) if isinstance(p, dict) else (lambda k: getattr(p, k))
@@ -167,21 +181,26 @@ def main():
     ap.add_argument("--rounds", type=int, default=1,
                     help="poll rounds before the vote (0 = everyone votes sincerely); see strategy.py")
     ap.add_argument("--samples", type=int, default=30,
-                    help="polls per round (they stand for the uncertainty); convergent learning used 10")
+                    help="poll rounds: polls per round (they stand for the uncertainty); --converge: bootstrap "
+                         "resamples per round (results up to 2026-10-08 used 10: add --samples 10 to reproduce them)")
     ap.add_argument("--poll-size", type=int, default=0,
-                    help="voters per poll (0 = half the electorate, rounded to an odd number)")
+                    help="poll rounds only: voters per poll (0 = half the electorate, rounded to an odd number)")
     ap.add_argument("--search", type=int, default=10,
-                    help="random ballot changes a group tries per poll round, after the naive exaggerations")
+                    help="poll rounds only: random ballot changes a group tries per round, after the naive "
+                         "exaggerations (at most; it stops after 3 in a row without gain)")
     ap.add_argument("--aggressive", type=float, default=0.5,
                     help="share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) "
                          "only when the polls show a gain (poll rounds only)")
     ap.add_argument("--poll-error", type=float, default=2.0,
-                    help="voters treat polls as this many times less precise than their sampling error")
+                    help="poll rounds only: voters treat polls as this many times less precise than their "
+                         "sampling error")
     ap.add_argument("--converge", type=int, default=0,
                     help="N > 0: instead of poll rounds, the convergent learning model with N rounds "
                          "(groups see each other's moves; uses --group-size)")
     ap.add_argument("--group-size", type=group_size_arg, default=10,
-                    help="max voters coordinating as one group: a number of voters (1 = individual), a share of the electorate between 0 and 1 (0.05 = 5%%), or 0 = whole ranking group")
+                    help="--converge only (poll rounds use whole ranking groups): max voters coordinating as one "
+                         "group: a number of voters (1 = individual), a share of the electorate between 0 and 1 "
+                         "(0.05 = 5%%), or 0 = whole ranking group")
     ap.add_argument("--strategic", type=float, default=0.5,
                     help="share of voters who vote strategically (random, the same for every method)")
     ap.add_argument("--max-score", type=int, default=5,
@@ -197,6 +216,7 @@ def main():
     ap.add_argument("--out", default="results")
     a = ap.parse_args()
 
+    check_params(a, ap.error)
     p = {k: getattr(a, k) for k in PARAMS}
     names = select(a.methods, a.exclude)
     results = simulate(p, a.elections, a.workers, names)

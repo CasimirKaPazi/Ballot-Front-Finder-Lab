@@ -198,9 +198,10 @@ def mj_order(n):
 # ---------- per-voter features ----------
 # Every tally except Condorcet-random-drop depends on the ballots only through sums over voters
 # of per-voter features (score totals, first places, the pairwise matrix, ...). A method lists the
-# features it needs and decides from their sums. During learning (strategy.py) these sums are kept
-# per poll sample and updated only for the group whose ballots change, instead of recounting every
-# ballot on every sample. All features are integer valued, so the sums are exact (except keepnorm
+# features it needs and decides from their sums. In convergent learning (strategy.learn) these sums
+# are kept per poll sample and updated only for the group whose ballots change; in poll rounds
+# (strategy.respond) each group's alternatives are evaluated against the polled sums. Neither
+# recounts every ballot on every sample. All features are integer valued, so the sums are exact (except keepnorm
 # for score ranges above 0..16, see _keepnorm_scale, where ties are found within EPS).
 
 def _onehot(idx, k):

@@ -5,11 +5,14 @@ With --one-at-a-time, the first value of every flag is the base condition, and e
 is run with all remaining flags at their base (one parameter varied at a time), per seed.
 
 Usage:
-    python sweep.py --one-at-a-time --dims 2 1 3 4 --clusters 3 1 2 5 --spread 0.5 0.25 1.0 \
-        --width 1.0 0.5 2.0 --group-size 10 --out model
-    python sweep.py --group-size 1 10 0 --cands 4 5 --seeds 1 2 --elections 200 --out sweep
-    python sweep.py --methods STAR "BTR-score" SICT --group-size 1 0
-    python sweep.py --exclude "Random ballot" "Random pair runoff"
+    python sweep.py --one-at-a-time --dims 10 2 5 --clusters 5 3 10 --spread 0.5 0.25 1.0 \
+        --width 1.0 0.5 2.0 --out model
+    python sweep.py --rounds 1 2 3 4 5 --strategic 0.5 1 --elections 200 --out rounds
+    python sweep.py --aggressive 0 0.5 1 --methods STAR "BTR-score" Schulze
+    python sweep.py --converge 20 --samples 10 --group-size 1 10 0 --out convergent
+    python sweep.py --exclude "Random pair runoff" TRASH
+
+Conditions that differ only in --rounds come from one run (see strategy.respond).
 
 Output:
     <out>-elections.csv   rows from all runs, each carrying its parameters as columns
@@ -20,7 +23,7 @@ import csv
 import itertools
 import time
 
-from run import simulate, PARAMS, out_path, group_size_arg
+from run import simulate, PARAMS, out_path, group_size_arg, check_params
 from methods import select
 
 
@@ -55,6 +58,17 @@ def main():
     ap.add_argument("--out", default="sweep")
     a = ap.parse_args()
     names = select(a.methods, a.exclude)
+    check_params(a, ap.error)
+    # parameters that have no effect in the chosen strategy model give identical conditions
+    conv = set(a.converge) - {0}
+    if not conv and len(a.group_size) > 1:
+        print("note: --group-size only matters with --converge; these conditions will be identical")
+    if conv and set(a.converge) == conv:
+        idle = [f for f, k in (("--rounds", "rounds"), ("--aggressive", "aggressive"), ("--poll-size", "poll_size"),
+                               ("--poll-error", "poll_error"), ("--search", "search")) if len(getattr(a, k)) > 1]
+        if idle:
+            print(f"note: {', '.join(idle)} only matter for poll rounds, not with --converge; "
+                  "these conditions will be identical")
 
     values = {k: getattr(a, k if k != "seed" else "seeds") for k in PARAMS}
     if a.one_at_a_time:

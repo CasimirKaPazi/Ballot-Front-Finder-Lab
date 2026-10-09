@@ -13,8 +13,9 @@ POLL ROUNDS (default; respond): a single election with a few polls before it.
     (default 2: real polls miss results by about twice their stated sampling error, Shirani-Mehr,
     Rothschild, Goel & Gelman 2018). The polls are spread around the true count by that factor.
   - Leaders: the two candidates that win most often over the round's polls, the same for
-    everyone. If one candidate wins every poll, the polls are widened (deviations x 2, 4, ...)
-    until another one wins somewhere: the race that would matter first. (_leaders)
+    everyone. If one candidate wins every poll, the polls are widened (deviations x 2, 4, ...,
+    counts kept on the side of zero of the true count) until another one wins somewhere: the race
+    that would matter first. (_leaders)
   - Groups are whole ranking groups (strategic voters with the same sincere ranking, no cap):
     voters who share a ranking and see the same poll reach the same answer, so they act as a
     bloc. Factions across rankings are not built in; they emerge when groups answer alike.
@@ -167,8 +168,10 @@ def group_value(P, Ug):
 
 
 def learn(method, u, rng, rounds=20, samples=10, group_size=0, strategic=None):
-    """Return learned ballots, whether learning settled, and mean sincerity (all voters).
-    strategic: boolean mask of voters who take part (None = all)."""
+    """Convergent learning (see the module docstring). Return learned ballots, whether learning
+    settled, and mean sincerity (all voters). strategic: boolean mask of voters who take part
+    (None = all). run.py passes --samples, whose default is now 30 (for poll rounds): results up to
+    2026-10-08 used 10, so reproduce them with --converge 20 --samples 10."""
     n, C = u.shape
     sincere = method.sincere(u)
     B = sincere.copy()
@@ -251,6 +254,8 @@ def respond(method, u, rng, rounds=1, samples=30, poll_size=0, search=10, strate
     in sequence), so one run serves a sweep over the number of rounds."""
     if report is not None:
         want = sorted(set(int(r) for r in report))
+        if want[0] < 0:
+            raise ValueError("poll rounds must be 0 or more")
         snaps = {}
         _respond(method, u, rng, max(want), samples, poll_size, search, strategic, poll_error, aggressive,
                  lambda r, res: snaps.__setitem__(r, res) if r in want else None)
@@ -281,6 +286,7 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
     groups = [np.array(x) for x in groups.values()]
     m = min(n, poll_size if poll_size > 0 else default_poll_size(n))
     # methods without feature sums can't scale counts: a smaller poll has about poll_error times the error
+    # (only approximates poll_error >= 1; smaller values give polls of poll_size voters)
     m_full = max(1, min(m, int(round(m / poll_error ** 2)))) if poll_error > 0 else m
     ref = [SINCERE[method.ballot](u[g].mean(axis=0, keepdims=True))[0] for g in groups]
     Ug = [u[g].sum(axis=0) for g in groups]
@@ -295,7 +301,7 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
             W[np.arange(samples)[:, None], polls] = n / m
             tot = F.sum(axis=0)
             dev = poll_error * (W @ F - tot)       # poll deviations from the true count, poll_error x sampling error
-            a, b = _leaders(lambda j: method.decide_many(tot + (2 ** j) * dev, C), C)
+            a, b = _leaders(lambda j: method.decide_many(_widened(tot, dev, j), C), C)
         else:
             a, b = _leaders(lambda j: poll_tallies(method.tally, B, _smaller(polls, j, rng, n)), C)
         answers = []
@@ -306,16 +312,25 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
                 gain = _gain_full(method, B, mem, sincere[mem], polls, Ug[g])
             cands = ([shared[g]] if shared[g] is not None else []) + exaggerations(method.ballot, Ug[g], a, b)
             answers.append(_answer(gain, method.ballot, ref[g], cands, search, rng, eager[g]))
-        settled = all((x is None and y is None) or (x is not None and y is not None and np.array_equal(x, y))
-                      for x, y in zip(answers, shared))
-        shared = answers
+        shared, B_prev = answers, B
         B = sincere.copy()
         for mem, x in zip(groups, shared):        # everyone switches at once
             if x is not None:
                 B[mem] = x
+        settled = np.array_equal(B, B_prev)       # the ballots repeat the round before
         if snapshot:
             snapshot(r, (B, settled, float(sincerity(B, u).mean())))
     return B, settled, float(sincerity(B, u).mean())
+
+
+def _widened(tot, dev, j):
+    """Polls with deviations x 2**j. For j > 0 each count is kept on the same side of zero as the
+    true count (counts are >= 0, veto counts <= 0): far-widened polls can otherwise produce
+    impossible negative counts and pick a runner-up from a meaningless tally."""
+    T = tot + (2 ** j) * dev
+    if j > 0:
+        T = np.where(tot >= 0, np.maximum(T, 0), np.minimum(T, 0))
+    return T
 
 
 def _smaller(polls, j, rng, n):
@@ -365,12 +380,16 @@ def _gain_full(method, B, mem, sincere_rows, polls, Ug):
     """Methods without feature sums: the group's sampled members changed in each poll."""
     B0 = B.copy()
     B0[mem] = sincere_rows
-    u_sin = np.array([method.tally(B0[idx]) for idx in polls]) @ Ug
+    u_sin = poll_tallies(method.tally, B0, polls) @ Ug
+    cache = {}
 
     def gain(ballot):
-        B2 = B.copy()
-        B2[mem] = ballot
-        return float(np.mean(np.array([method.tally(B2[idx]) for idx in polls]) @ Ug - u_sin))
+        key = ballot.tobytes()
+        if key not in cache:
+            B2 = B.copy()
+            B2[mem] = ballot
+            cache[key] = float(np.mean(poll_tallies(method.tally, B2, polls) @ Ug - u_sin))
+        return cache[key]
     return gain
 
 
@@ -392,7 +411,7 @@ def exaggerations(ballot, Ug, a, b):
         return r
 
     comp = [A] + [c for c in order if c != A]                       # A moved to the top
-    bury = [c for c in order if c != Bo] + ([Bo] if Bo is not None else [])
+    bury = [c for c in order if c != Bo] + [Bo]
     both = [A] + [c for c in bury if c != A]
     if ballot == "fav":
         out = [np.eye(C)[A]]
@@ -401,7 +420,7 @@ def exaggerations(ballot, Ug, a, b):
             out = [up.astype(float)]
     elif ballot in ("score", "grade3"):
         S = methods.MAXS if ballot == "score" else 2
-        lo = Ug[Bo] if Bo is not None else Ug.min()
+        lo = Ug[Bo]
         x = np.clip((Ug - lo) / max(Ug[A] - lo, 1e-12), 0, 1)       # top at A and above, 0 at B and below
         out = [np.rint(S * x), S * up.astype(float)]
     elif ballot == "rank":
@@ -412,7 +431,7 @@ def exaggerations(ballot, Ug, a, b):
         rest = [c for c in order if not up[c]]
         tied[rest] = np.arange(C - 2, C - 2 - len(rest), -1)
         tb = tied.copy()
-        if Bo is not None and not up[Bo]:
+        if not up[Bo]:
             tb[Bo] = tb[rest].min() - 1 if len(rest) > 1 else tb[Bo]
         out = [tb - tb.min(), tied - tied.min(), rank_points(both), rank_points(bury)]
     elif ballot == "trunc":                                          # rank only down to A
@@ -426,9 +445,8 @@ def exaggerations(ballot, Ug, a, b):
                 o2 = [c for c in o if up[c]] + [c for c in o if not up[c]]   # the approved on top
                 out.append(rank_points(o2) + C * up)
     elif ballot == "veto":
-        if Bo is not None:
-            v = np.zeros(C); v[Bo] = -1
-            out = [v]
+        v = np.zeros(C); v[Bo] = -1
+        out = [v]
     return out
 
 

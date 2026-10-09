@@ -1,19 +1,19 @@
 # Voting Pareto Lab
 
-Python 3 + NumPy; the analysis also needs matplotlib. Honest and learned-strategy elections, evaluated on a Pareto front.
+Python 3 + NumPy; the analysis also needs matplotlib. Honest and strategic elections (voters answering polls), evaluated on a Pareto front.
 
 This file describes the software: the model, its parameters, the methods and the analysis. What the simulations have shown so far, with the commands that produced it, is in [FINDINGS.md](FINDINGS.md).
 
 ```
 python test_methods.py                                   # hand-built checks
 python run.py                                            # one condition at the defaults, prints a table
-python sweep.py --group-size 10 1 0 --seeds 1 2          # grid of conditions -> sweep-elections.csv
+python sweep.py --rounds 1 2 3 --aggressive 0 0.5 1    # grid of conditions -> sweep-elections.csv
 python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> output/analysis/
 ```
 
 All outputs go into the folder `output/` (created when needed): an `--out` name without a directory is placed there, and `analyze.py` looks there for CSVs given without a directory. An `--out` with a directory (`--out runs/test`) is used as given.
 
-200 elections with all 42 methods at the default settings take about 14 minutes on 2 cores; time scales linearly with cores. More candidates, more voters and smaller groups take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
+200 elections with all 42 methods at the default settings (one poll round) take about 11 minutes on 2 cores; time scales linearly with cores and with the number of poll rounds. More candidates and more voters take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
 
 ## Files
 
@@ -44,7 +44,7 @@ One election, with a few polls before it. Voters see only published poll results
 - **What a poll shows:** the method's own counts, the summed ballot features it decides from (first preferences for Plurality, approvals for Approval, the pairwise matrix for Condorcet methods, score totals and head-to-heads for STAR, …), from a random sample of `--poll-size` voters (default half the electorate, rounded to an odd number: 99 → 49, 100 → 51, 200 → 101), scaled up to the electorate. `--samples` independent polls (30) stand for the uncertainty. For some methods these counts say more than a real poll would (IRV's counts include every elimination order); methods with richer counts may profit from that.
 - **Uncertainty:** voters treat a poll as `--poll-error` times (2) less precise than its sampling error: the polls are spread around the true count by that factor. Real polls miss results by about twice their stated sampling error (Shirani-Mehr, Rothschild, Goel & Gelman 2018). With the sampling error alone, the leader's supporters almost never see a poll in which they are behind, so they never protect their lead, while the runner-up's supporters attack it.
 - **Groups:** whole ranking groups (strategic voters with the same sincere ranking, no cap). Voters who share a ranking and see the same poll reach the same answer, so they act as a bloc. Factions across rankings are not built in; they emerge when groups answer the same poll alike (all who prefer the runner-up to the leader, say).
-- **Leaders:** the two candidates that win most often over the round's polls, the same for everyone. If one candidate wins every poll, the polls are widened (deviations × 2, 4, …) until another one wins somewhere: the race that would matter first.
+- **Leaders:** the two candidates that win most often over the round's polls, the same for everyone. If one candidate wins every poll, the polls are widened (deviations × 2, 4, …; counts that would cross zero are clipped there) until another one wins somewhere: the race that would matter first.
 - **Answer:** a group estimates the count for a ballot b as poll count − its own previous ballots + its size × b, and judges b by its expected utility gain over its sincere ballots, over the polls. It first tries a few candidate ballots: its previous answer, and the naive exaggerations of its ballot type around the two leaders (A = the one it prefers, B = the other):
 
   | Ballot | Naive exaggerations |
@@ -155,8 +155,8 @@ Each election draws a fresh electorate (`scenario.py`):
 To see how much a model assumption matters, vary each parameter on its own around a base condition and check whether the methods keep their order:
 
 ```
-python sweep.py --one-at-a-time --clusters 3 5 --spread 0.5 0.75 --width 1.5 1.0 \
-    --group-size 10 1 0 --strategic 0.5 1 --seeds 1 2 --elections 400 --out model
+python sweep.py --one-at-a-time --clusters 5 3 10 --spread 0.5 0.25 1.0 --width 1.0 1.5 \
+    --rounds 1 3 --aggressive 0.5 0 1 --strategic 0.5 1 --seeds 1 2 --elections 400 --out model
 python analyze.py model-elections.csv --out model-analysis
 ```
 
@@ -350,7 +350,7 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 **How to interpret:**
 - The values are the result. Whether a method lies on the Pareto front is already interpretation: it depends on which axes count and on which methods are included. "Dominated by" is only a pointer to where to look.
 - The axes are kept separate on purpose. Each carries its own value judgement (utilitarian or majoritarian, honest or strategic); no weighting into a single score.
-- Read results **per condition first**. The strategic axes depend strongly on the group size (see Coordination).
+- Read results **per condition first**. The strategic axes depend on how voters strategise: the number of poll rounds, the aggressive and strategic shares (and, with `--converge`, the group size; see Coordination).
 - An ordering between two methods only counts if their paired difference is not a tie.
 
 **Plots** (in `--out`):
@@ -361,7 +361,7 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | `shift-<c>.png` | the same shifts as one row per method, VSE and WME panels; easier to read per method |
 | `sincerity-<c>.png` | VSE* and WME* against sincerity |
 | `axes-heatmap.png` | the four axes, methods × conditions (when there are several) |
-| `chain-<parameter>.png` | sweeps: for each parameter varied around the base (the first condition), each method's learned values as a chain of arrows through the parameter's values, light to dark; one panel per method group, all on the same scale. If the parameter only affects learning (strategic share, group size, rounds, poll samples), the electorates are the same and each chain starts at the method's honest point; otherwise the honest values form their own dashed chain |
+| `chain-<parameter>.png` | sweeps: for each parameter varied around the base (the first condition), each method's learned values as a chain of arrows through the parameter's values, light to dark; one panel per method group, all on the same scale. If the parameter only affects voters' strategy (strategic and aggressive shares, poll rounds, polls, group size), the electorates are the same and each chain starts at the method's honest point; otherwise the honest values form their own dashed chain |
 
 Sweep plots appear automatically for every parameter that has at least two conditions differing from the base only in that parameter: a one-at-a-time sweep (`sweep.py --one-at-a-time`) or a grid over a single parameter. They show point estimates only; with few elections the zigzags in a chain are mostly noise. One far-off method (often Plurality) sets the shared scale for all panels; `--hide` or `--show` zooms in.
 
