@@ -20,7 +20,7 @@ for every method); the rest always vote sincerely.
 Outputs (prefix set by --out; a name without a directory goes into output/):
     <out>-elections.csv   one row per (election, method, ballots), with the run's parameters
                           as columns, so several runs can be combined (see analyze.py)
-    <out>-summary.csv     one row per method, with on_front for the VSE/WME/VSE*/WME* front
+    <out>-summary.csv     one row per method, with on_front for the VSE*/WME*/sincerity front
 """
 import argparse
 import csv
@@ -34,11 +34,12 @@ from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, select, set_max_score
 from strategy import learn, respond, strategy_types, default_poll_size
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats
+import participation as part
 
 
 def one_election(args):
     (sc, seed, e, rounds, samples, group_size, share, max_score, exits, clones, poll_size, poll_error, search,
-     converge, aggr, names) = args
+     converge, aggr, names, participation) = args
     set_max_score(max_score)                        # per process: workers do not share module state
     rng = np.random.default_rng([seed, e])
     u, voters, cands = electorate_positions(sc, rng)
@@ -73,8 +74,9 @@ def one_election(args):
         P_h = back(m.honest(uf))
         if nominating:
             nstats = {**st, "nom_changed": int(np.abs(P_h - m.honest(u)).sum() > 1e-9)}
+        check = (lambda B: part.no_show(m, B, uf, u, back)) if participation else (lambda B: part.NAN)
         sincere_row = {**election_row(u, P_h, m_cand), **estats, "sincerity": 1.0, "settled": 1,
-                       "compromise": 0.0, "pushover": 0.0, "burial": 0.0, **nstats}
+                       "compromise": 0.0, "pushover": 0.0, "burial": 0.0, **nstats, **check(m.sincere(uf))}
         # Each method learns with a fresh copy of the same stream (common random numbers: the same
         # polls for every method as long as they draw alike), so results stay the same when methods
         # are added or reordered, and paired comparisons are not blurred by different poll draws.
@@ -88,7 +90,7 @@ def one_election(args):
             out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row})
             out.append({"rounds": r, "election": e, "method": name, "ballots": "learned",
                         **election_row(u, back(m.tally(B)), m_cand), **estats, "sincerity": sin,
-                        "settled": int(settled), **strategy_types(B, uf), **nstats})
+                        "settled": int(settled), **strategy_types(B, uf), **nstats, **check(B)})
     return out
 
 
@@ -151,8 +153,9 @@ PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rou
           "seed"]
 
 
-def simulate(p, elections, workers=None, names=None):
-    """Run one condition. p: dict with the keys in PARAMS; names: methods (default all).
+def simulate(p, elections, workers=None, names=None, participation=False):
+    """Run one condition. p: dict with the keys in PARAMS; names: methods (default all);
+    participation: also run the no-show check (participation.py) on sincere and learned ballots.
     p["rounds"] may be a list of numbers of poll rounds: they all come from one run (the rounds
     up to the highest are computed once), one condition per value, in that order.
     Returns rows with p as columns."""
@@ -161,7 +164,7 @@ def simulate(p, elections, workers=None, names=None):
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"])
     jobs = [(sc, p["seed"], e, rounds, p["samples"], p["group_size"], p["strategic"], p["max_score"],
              p["exits"], p["clones"], p["poll_size"], p["poll_error"], p["search"], p["converge"], p["aggressive"],
-             names) for e in range(elections)]
+             names, participation) for e in range(elections)]
     with Pool(workers) as pool:
         rows = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
     meta = {k: p[k] for k in PARAMS if k != "rounds"}
@@ -216,13 +219,15 @@ def main():
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--methods", nargs="+", default=None, help="run only these methods (start from none)")
     ap.add_argument("--exclude", nargs="+", default=None, help="run all methods except these")
+    ap.add_argument("--participation", action="store_true",
+                    help="also check participation (no-show paradox) on sincere and learned ballots; slower")
     ap.add_argument("--out", default="results")
     a = ap.parse_args()
 
     check_params(a, ap.error)
     p = {k: getattr(a, k) for k in PARAMS}
     names = select(a.methods, a.exclude)
-    results = simulate(p, a.elections, a.workers, names)
+    results = simulate(p, a.elections, a.workers, names, a.participation)
 
     out = out_path(a.out)
     with open(f"{out}-elections.csv", "w", newline="") as f:
@@ -239,7 +244,7 @@ def main():
                    "CE": s["CE"], "CE_learned": l["CE"],
                    "sincerity": float(np.mean([r["sincerity"] for r in lrn])),
                    "settled": float(np.mean([r["settled"] for r in lrn]))}
-    axes = ["VSE", "WME", "VSE_learned", "WME_learned"]
+    axes = ["VSE_learned", "WME_learned", "sincerity"]
     front = set(pareto([[summ[m][x] for x in axes] for m in names]))
 
     cols = ["VSE", "WME", "VSE_learned", "WME_learned", "CE", "CE_learned", "sincerity", "settled"]
@@ -255,13 +260,13 @@ def main():
           f"strategic share {a.strategic}, scores 0..{a.max_score}"
           f"{f', nomination: exits {a.exits}, clones {a.clones}' if a.exits or a.clones else ''}; seed {a.seed}")
     print(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
-    for m in sorted(names, key=lambda m: -summ[m]["VSE"]):
+    for m in sorted(names, key=lambda m: -summ[m]["VSE_learned"]):
         s = summ[m]
         print(f"{m:<26}{s['VSE']*100:7.1f}{s['WME']*100:7.1f}{s['VSE_learned']*100:7.1f}{s['WME_learned']*100:7.1f}"
               f"{s['CE']*100:7.1f}{s['CE_learned']*100:7.1f}"
               f"{s['sincerity']*100:10.1f}%{s['settled']*100:8.0f}%"
               f"  {'*' if names.index(m) in front else ''}")
-    print("0 = random ballot, 100 = best candidate; *: with learned ballots; front on VSE, WME, VSE*, WME*")
+    print("0 = random ballot, 100 = best candidate; *: with learned ballots; front on VSE*, WME*, sincerity")
 
 
 if __name__ == "__main__":

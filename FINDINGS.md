@@ -4,13 +4,15 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Units.** Up to 2026-10-06 the axes were PE (zero = utility-proportional lottery) and WM (the winner's worst margin in % of voters); the sections below keep those units. Since then they are VSE and WME, both with 0 = random ballot and 100 = best candidate (README, Axes). Within one condition the change is a fixed rescaling of each axis (the sums over elections that set the zero and the 100 are the same for all methods), so method order, dominance and rank stability are unaffected; only the numbers differ.
 
+**Front.** From 2026-10-09 the analysis judges dominance on VSE*, WME* and sincerity: the result with strategic voters and how honest they can afford to be. Honest VSE and WME depend more on modelling assumptions and are context only. Earlier sections used other axes.
+
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
 
 ## Current picture: all methods, poll rounds 5, with nomination (2026-10-09)
 
 Run (user): all 59 methods, 400 elections, 99 voters, 6 candidates, defaults (strategic share 0.5, aggressive share 0.5, poll error 2.0x, max score 5), `--rounds 5 --exits 1 --clones 2`. First run with separate runoffs and shared random streams (section below). Replaces the picture of 2026-10-06 further down, which used convergent learning and other axes. Only one round count, so differences between methods not in the "Dominated by" column are point estimates; the frontier's most balanced point is VSE 95.3 / WME 96.7.
 
-Undominated on all four axes: **STAR, ARA, MARS, Condorcet-random-drop, Minimax, Schulze, Ranked pairs.** Beaten on a single axis only:
+Undominated on all four axes (VSE, WME, VSE*, WME*; the analysis since judges dominance on VSE*, WME* and sincerity only, see the note at the top): **STAR, ARA, MARS, Condorcet-random-drop, Minimax, Schulze, Ranked pairs.** Beaten on a single axis only:
 
 | Method | VSE | WME | VSE* | WME* | beaten by (axis) |
 |---|---|---|---|---|---|

@@ -15,10 +15,12 @@ Axes (higher is better):
     VSE, WME     voter satisfaction and worst-margin efficiency with sincere ballots (see metrics.py);
                  0 = random ballot, 100 = best candidate, as ratios of sums over elections
     VSE*, WME*   the same with learned ballots
-CE, CE* (Condorcet efficiency) are reported alongside, not used for dominance.
-Sincerity of the learned ballots (higher is more honest) is reported alongside, not used for the front.
+    sincerity    of the learned ballots (higher is more honest)
+The front is VSE*, WME* and sincerity: what happens with real (strategic) voters, and how honest
+they can afford to be. Honest VSE and WME depend more on modelling assumptions; they are reported
+alongside, as are CE, CE* (Condorcet efficiency), not used for dominance.
 
-Dominated by: for each method, the methods that are clearly better on at least one axis and
+Dominated by: for each method, the methods that are clearly better on at least one front axis and
 clearly worse on none. Clearly: the paired 95% bootstrap interval of the difference excludes 0;
 smaller differences count as ties (otherwise methods equal on one axis, like all Condorcet methods
 with honest ballots, would be separated by noise-sized differences). Each is followed by the
@@ -45,10 +47,12 @@ from run import out_path, group_text, strategy_text, OUTPUT_DIR, PARAMS as RUN_P
 from methods import GROUPS
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
+FRONT = ["VSE*", "WME*", "sincerity"]   # the axes dominance is judged on
 EXTRA = ["CE", "CE*"]           # reported, not used for dominance
 TYPES = ["compromise", "burial", "pushover"]
 PARAMS = [k for k in RUN_PARAMS if k != "seed"]      # condition parameters, as run.py writes them
 NOM = ["nom_changed", "nom_exits", "nom_clones", "nom_settled"]     # per method and election (sincere rows)
+PART = ["noshow", "noshow_voters", "noshow_gain"]   # participation check (run.py --participation), both ballot sets
 OLD_DEFAULTS = {"zipf": "0", "max_score": "5", "aggressive": "1.0"}   # parameters missing from older CSVs
 
 
@@ -97,6 +101,7 @@ def arrays(rows):
     mi = {m: j for j, m in enumerate(methods)}
     E, M = len(eids), len(methods)
     A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "wm_s", "wm_l", "sin"] + TYPES + NOM}
+    A.update({k + sfx: np.full((E, M), np.nan) for k in PART for sfx in ("_s", "_l")})
     den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
     dwm = np.zeros(E)          # per election: WM_best - WM_rb (WME denominator)
     has = np.zeros(E)
@@ -111,6 +116,8 @@ def arrays(rows):
             A["num_s"][i, j], A["cw_s"][i, j], A["wm_s"][i, j] = num, pcw, nwm
             for k in NOM:
                 A[k][i, j] = float(r.get(k) or (1 if k == "nom_settled" else 0))   # older CSVs: no nomination
+            for k in PART:
+                A[k + "_s"][i, j] = float(r.get(k) or "nan")    # NaN: participation not checked
             den[i] = float(r["U_best"]) - float(r["U_rb"])
             dwm[i] = float(r["WM_best"]) - float(r["WM_rb"])
             has[i] = float(r["has_cw"])
@@ -123,6 +130,8 @@ def arrays(rows):
             A["sin"][i, j] = float(r["sincerity"])
             for t in TYPES:
                 A[t][i, j] = float(r.get(t) or "nan")      # older CSVs have no strategy types
+            for k in PART:
+                A[k + "_l"][i, j] = float(r.get(k) or "nan")
     return methods, A, (den, dwm), has, ele, cands
 
 
@@ -212,18 +221,38 @@ def analyse_condition(rows, boot, rng):
     point = axis_values(np.ones((1, E)), A, dens, has)
     halves = axis_values(np.stack([np.arange(E) % 2 == 0, np.arange(E) % 2 == 1]).astype(float), A, dens, has)
     bs = axis_values(W, A, dens, has)
-    P_b = np.stack([bs[a] for a in AXES], axis=2)            # B x M x 4
+    P_b = np.stack([bs[a] for a in FRONT], axis=2)           # B x M x 3
     dom, better = dominance(P_b)
     # each dominating method with the axes on which it is clearly better, most axes first
-    dominated_by = [[(methods[j], [AXES[k] for k in np.flatnonzero(better[i, j])]) for j in np.flatnonzero(dom[i])]
+    dominated_by = [[(methods[j], [FRONT[k] for k in np.flatnonzero(better[i, j])]) for j in np.flatnonzero(dom[i])]
                     for i in range(len(methods))]
     res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs, "halves": halves, "frontier": frontier(cands, dens, ele),
            "electorate": electorate_summary(dens, has, ele),
-           "nomination": {k: A[k].mean(axis=0) for k in NOM}}
+           "nomination": {k: A[k].mean(axis=0) for k in NOM},
+           "participation": participation_summary(A, W)}
     for a in AXES + EXTRA + ["sincerity"] + TYPES:
         res[a] = point[a][0]
         res[a + "_lo"], res[a + "_hi"] = np.nanpercentile(bs[a], [2.5, 97.5], axis=0)
     return res
+
+
+def participation_summary(A, W):
+    """Per method, sincere (_s) and learned (_l) ballots: share of elections with a no-show failure
+    (with a bootstrap 95% interval), share of voters in failing groups, mean largest gain where it
+    fails. None when the condition was run without --participation."""
+    if np.isnan(A["noshow_s"]).all():
+        return None
+    out = {}
+    for sfx in ("_s", "_l"):
+        x = A["noshow" + sfx]
+        out["noshow" + sfx] = x.mean(axis=0)
+        bs = (W @ x) / W.sum(axis=1)[:, None]
+        out["noshow" + sfx + "_lo"], out["noshow" + sfx + "_hi"] = np.percentile(bs, [2.5, 97.5], axis=0)
+        out["noshow_voters" + sfx] = A["noshow_voters" + sfx].mean(axis=0)
+        g = np.where(x > 0, A["noshow_gain" + sfx], 0.0)
+        k = (x > 0).sum(axis=0)
+        out["noshow_gain" + sfx] = np.where(k > 0, g.sum(axis=0) / np.maximum(k, 1), np.nan)
+    return out
 
 
 def label(key, varying, first):
@@ -374,9 +403,11 @@ def main():
     L += [f"Input: {', '.join(os.path.basename(p) for p in a.csv)}. Bootstrap: {a.boot} paired replicates "
           "over elections. Brackets are 95% intervals.", ""]
     L += ["How to read this:", "",
-          "- The values are the result. **Dominated by** lists the methods that are clearly better on at least one "
-          "of the four axes (VSE, WME, VSE*, WME*) and clearly worse on none, with the axes on which they are better in "
-          "brackets. Clearly means the paired 95% interval of the difference excludes 0; smaller differences count "
+          "- The values are the result. The **front** is VSE*, WME* and sincerity: the result with strategic voters, "
+          "and how honest they can afford to be. Honest VSE and WME depend more on modelling assumptions and are "
+          "shown for context. **Dominated by** lists the methods that are clearly better on at least one of the three "
+          "front axes and clearly worse on none, with the axes on which they are better in brackets. Sincerity "
+          "differences are measured very precisely, so at equal VSE* and WME* the more honest method dominates. Clearly means the paired 95% interval of the difference excludes 0; smaller differences count "
           "as ties. It is a pointer for interpretation, relative to the methods included, not a verdict.",
           "- The intervals in the tables are for each value on its own. They are wide because elections differ "
           "a lot from each other. Comparisons between methods are much more precise, because all methods face the "
@@ -463,11 +494,15 @@ def main():
               + "." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")
               + frontier_text(r["frontier"]),
               "",
-              "| Method | VSE | WME | VSE* | WME* | CE | CE* | Sincerity | Compromise | Burial | Push-over | Dominated by |",
+              "**Front** (dominated by none on VSE*, WME*, sincerity): "
+              + ", ".join(r["methods"][j] for j in np.argsort(-r["VSE*"], kind="stable") if not r["dominated_by"][j])
+              + ".", "",
+              "| Method | VSE* | WME* | Sincerity | VSE | WME | CE | CE* | Compromise | Burial | Push-over | Dominated by |",
               "|---|---|---|---|---|---|---|---|---|---|---|---|"]
-        for j in np.argsort(-r["VSE"], kind="stable"):
+        for j in np.argsort(-r["VSE*"], kind="stable"):
             L.append(f"| {r['methods'][j]} | "
-                     + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in AXES + EXTRA + ["sincerity"])
+                     + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j])
+                                  for x in ["VSE*", "WME*", "sincerity", "VSE", "WME"] + EXTRA)
                      + " | " + " | ".join(f"{r[t][j] * 100:.1f}%" for t in TYPES)
                      + f" | {dom_text(r['dominated_by'][j], limit=3)} |")
         L += [""]
@@ -481,6 +516,22 @@ def main():
             for j in np.argsort(-nm["nom_changed"], kind="stable"):
                 L.append(f"| {r['methods'][j]} | {nm['nom_changed'][j]:.1%} | {nm['nom_exits'][j]:.2f} "
                          f"| {nm['nom_clones'][j]:.2f} | {nm['nom_settled'][j]:.0%} |")
+            L += [""]
+        pt = r["participation"]
+        if pt is not None:
+            L += ["**Participation** (no-show paradox, see participation.py): share of elections in which some "
+                  "voters (1, half or all of a group with the same ranking and the same ballot) get a better "
+                  "result by staying home while everyone else votes as before; the share of voters in such groups; "
+                  "and, where it happens, the largest gain per absent voter in % of that voter's utility range. "
+                  "Honest: everyone votes sincerely. Strategic: with the learned ballots.", "",
+                  "| Method | Elections (honest) | Voters | Gain | Elections (strategic) | Voters | Gain |",
+                  "|---|---|---|---|---|---|---|"]
+            g = lambda x: "—" if np.isnan(x) else f"{x:.1%}"
+            for j in np.argsort(-pt["noshow_s"], kind="stable"):
+                L.append(f"| {r['methods'][j]} | {fmt(pt['noshow_s'][j], pt['noshow_s_lo'][j], pt['noshow_s_hi'][j])}% "
+                         f"| {pt['noshow_voters_s'][j]:.1%} | {g(pt['noshow_gain_s'][j])} "
+                         f"| {fmt(pt['noshow_l'][j], pt['noshow_l_lo'][j], pt['noshow_l_hi'][j])}% "
+                         f"| {pt['noshow_voters_l'][j]:.1%} | {g(pt['noshow_gain_l'][j])} |")
             L += [""]
         L += [f"![strategy arrows](arrows-{r['tag']}.png)", "", f"![strategy shifts](shift-{r['tag']}.png)", "",
               f"![sincerity](sincerity-{r['tag']}.png)", ""]

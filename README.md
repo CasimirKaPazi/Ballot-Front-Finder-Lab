@@ -23,6 +23,7 @@ All outputs go into the folder `output/` (created when needed): an `--out` name 
 | `methods.py` | Ballot types, sincere ballots, exact tallies on ballot matrices (ties shared), method groups |
 | `strategy.py` | Learning engine, sincerity and strategy types |
 | `nomination.py` | Strategic nomination: exits, re-entry and clones from the initial field |
+| `participation.py` | Participation check (no-show paradox) |
 | `metrics.py` | Efficiencies for three baselines, winner's worst margin, Condorcet efficiency, electorate properties, Pareto front |
 | `run.py` | Tallies every electorate with sincere and learned ballots, runs in parallel, writes CSV with the run's parameters as columns |
 | `sweep.py` | Runs a grid of conditions (or one parameter at a time) and seeds into one CSV |
@@ -133,6 +134,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--max-score` | 5 | score ballots range over 0–max (see Score range) |
 | `--exits` | 0 | 1: candidates may withdraw and re-enter strategically (see Strategic nomination) |
 | `--clones` | 0 | most clones in the race at once, fielded strategically; 0 = none (see Strategic nomination) |
+| `--participation` | off | also check participation (no-show paradox) on sincere and learned ballots (see Participation); slower |
 | `--workers` | all cores | parallel processes |
 | `--methods` | all | run only these methods (start from none); method or group names (see Methods), case ignored |
 | `--exclude` | none | run all methods except these |
@@ -211,6 +213,18 @@ Rules that refer to the range scale with it: ARA approves ratings above the midd
 
 Cost: each candidate move is checked with one sincere tally on the changed field, a few hundred tallies per method and election; learning remains the larger part.
 
+## Participation
+
+`--participation` checks the no-show paradox (`participation.py`): could some voters get a better result by staying home? It is a diagnostic; nobody actually abstains, and the strategic results do not change (staying home is not among the strategic voters' options).
+
+- **Who stays home.** Voters with the same sincere ranking and the same ballot form a group. For each group, 1, half (rounded up) or all of its members leave out their ballots, while everyone else votes as before. A single voter is rarely pivotal among 99, so the larger shares matter.
+- **Failure.** The resulting winner lottery is better for those who stayed home (expected utility, summed over them) than the one with their ballots. Leaving out a ballot means the whole ballot, in a two-round election both rounds.
+- **Both ballot sets.** Honest: everyone votes sincerely (the classical participation criterion, for groups). Strategic: everyone keeps the learned ballots and the group drops its learned ballot; a strategic ballot that backfires shows up here.
+- **Report** (when the CSV has the columns): per method, the share of elections with a failure (with a 95% interval), the share of voters in failing groups, and where it fails, the mean of the largest gain per absent voter as a share of that voter's utility range (favourite minus least liked).
+- Score, Approval and Borda satisfy participation with sincere ballots, so they fail only with learned ones; IRV, TTR and the Condorcet methods (with 4 or more candidates) can fail with sincere ballots too.
+
+Cost: one tally per group and share (feature sums minus the absent ballots), a few hundred per method and election; with all methods at the defaults the run takes about 5% longer.
+
 ## Axes and other outputs
 
 Both axes are **efficiencies with the same two reference points**, as ratios of sums over all elections:
@@ -247,7 +261,7 @@ Earlier versions (before 2026-10-06) used PE, with a utility-proportional lotter
 | sincerity | mean sincerity of the learned ballots, over all voters (below) |
 | settled | poll rounds: share of elections where the last round gave the same ballots as the round before (a fixed point); convergent learning: no group changed its ballot in the last round. Cycles never settle |
 
-`on_front` in the summary is a quick check on point estimates (VSE, WME, VSE_learned, WME_learned, no uncertainty). The analysis uses the tie-aware "Dominated by" instead (see Analysis).
+`on_front` in the summary is a quick check on point estimates (VSE_learned, WME_learned, sincerity; no uncertainty). The analysis uses the tie-aware "Dominated by" instead (see Analysis).
 
 **Strategy types** (`strategy.strategy_types`), among voters whose learned ballot reverses at least one real preference:
 - *compromise*: the favourite is not at the top, and the best-liked top candidate is liked above the voter's mean (a viable second choice raised);
@@ -362,12 +376,14 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 
 **Uncertainty: paired bootstrap.** All methods face the same electorates, so each bootstrap replicate redraws whole elections with replacement and recomputes every method on that same draw (1000 replicates by default). This keeps comparisons paired: two methods can differ clearly even when the interval of each value on its own is wide, because elections differ much more from each other than methods differ within an election.
 
+**The front: VSE\*, WME\* and sincerity.** What counts is the result with strategic voters and how honest they can afford to be. Honest VSE and WME depend more on modelling assumptions (who votes how sincerely is itself a model) and are reported for context, not for dominance. The report lists the front (methods dominated by none) above each condition's table, which is sorted by VSE\*.
+
 **What is reported per condition and method:**
 
 | Output | Meaning |
 |---|---|
 | VSE, WME, VSE*, WME*, CE, CE*, sincerity | point estimate and 95% interval of each value on its own |
-| dominated by | methods clearly better on at least one of the four axes and clearly worse on none, each with the axes on which it is better; the report shows at most three, the CSV all. Clearly: the paired 95% interval of the difference excludes 0, smaller differences count as ties. Without this, methods level on one axis (e.g. Condorcet methods, which mostly elect the same candidate with honest ballots) would be kept apart by noise-sized differences, and VSE* and WME* would never get to decide between them |
+| dominated by | methods clearly better on at least one of the three front axes (VSE*, WME*, sincerity) and clearly worse on none, each with the axes on which it is better; the report shows at most three, the CSV all. Clearly: the paired 95% interval of the difference excludes 0, smaller differences count as ties. Without this, methods level on one axis would be kept apart by noise-sized differences. Sincerity is measured very precisely, so at equal VSE* and WME* the more honest method dominates |
 | paired differences (`--compare "A:B"`) | difference A − B per axis with a 95% interval; marked as a tie when the interval includes 0 |
 
 **How to interpret:**

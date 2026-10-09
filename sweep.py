@@ -55,6 +55,8 @@ def main():
     ap.add_argument("--exclude", nargs="+", default=None, help="run all methods except these")
     ap.add_argument("--one-at-a-time", action="store_true",
                     help="vary one parameter at a time around the base (the first value of every flag)")
+    ap.add_argument("--participation", action="store_true",
+                    help="also check participation (no-show paradox) on sincere and learned ballots; slower")
     ap.add_argument("--out", default="sweep")
     a = ap.parse_args()
     names = select(a.methods, a.exclude)
@@ -95,7 +97,7 @@ def main():
         w = None
         for i, p in enumerate(grid, 1):
             t = time.time()
-            rows = simulate(p, a.elections, a.workers, names)
+            rows = simulate(p, a.elections, a.workers, names, a.participation)
             if w is None:
                 w = csv.DictWriter(f, fieldnames=list(rows[0]))
                 w.writeheader()

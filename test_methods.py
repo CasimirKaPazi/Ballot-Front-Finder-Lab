@@ -381,7 +381,7 @@ from run import one_election
 rows = []
 for e in range(6):
     rows += one_election((Scenario(n_voters=31, n_cands=5), 3, e, [1], 5, 10, 0.5, 5, 1, 2, 0, 2.0, 2, 0, 0.5,
-                          ["Contingent vote", "Contingent-ER", "IRV", "ER-IRV"]))
+                          ["Contingent vote", "Contingent-ER", "IRV", "ER-IRV"], False))
 hon = {}
 for row in rows:
     if row["ballots"] == "sincere":
@@ -415,3 +415,28 @@ for _ in range(50):
     nb = _mut(METHODS["TTR"].sincere(r.random((1, 5)))[0], "fav_run", r)
     assert (nb >= 5).sum() == 1
 print("two-round elections: strategy changes only round-1 marks ok")
+
+# Participation (participation.py). Feature subtraction equals tallying without the absent ballots;
+# Score and Approval never fail participation with sincere ballots; IRV and Minimax sometimes do.
+import participation as part
+ident = lambda P: P
+def brute(m, B, u):
+    P0 = m.tally(B)
+    for g in part._groups(B, u):
+        for k in sorted({1, (len(g) + 1) // 2, len(g)}):
+            keep = np.ones(len(B), bool); keep[g[:k]] = False
+            if ((m.tally(B[keep]) - P0) @ u[g[:k]].T).sum() > part.TOL:
+                return 1
+    return 0
+r = np.random.default_rng(5)
+fails = {k: 0 for k in ("Score", "Approval", "IRV", "Minimax", "TTR", "Borda")}
+for _ in range(150):
+    uu = r.random((int(r.integers(7, 25)), 4)) ** 2
+    for name in fails:
+        m = METHODS[name]
+        B = m.sincere(uu)
+        x = part.no_show(m, B, uu, uu, ident)
+        assert x["noshow"] == brute(m, B, uu), name
+        fails[name] += x["noshow"]
+assert fails["Score"] == 0 and fails["Approval"] == 0 and fails["IRV"] > 0, fails
+print("participation check ok; no-show cases in 150 small elections:", fails)
