@@ -117,7 +117,7 @@ Each election draws a fresh electorate (`scenario.py`):
 - cluster centres: `--clusters` points, normal in `--dims` dimensions;
 - cluster sizes: random weights from a flat Dirichlet distribution, so some elections have one dominant cluster and others are balanced;
 - voters: each assigned to a cluster by these weights, placed normally around its centre with standard deviation `--spread` (per dimension, before the Zipf scaling);
-- candidates: drawn from the same distribution as voters (cluster by the same weights, same spread);
+- candidates: drawn from the same distribution as voters (cluster by the same weights, same spread), unless moved by the two candidate parameters below;
 - utilities: `u = exp(-distance / width)`, absolute and not normalised: 1 at zero distance, towards 0 far away. A smaller `--width` makes voters care only about nearby candidates.
 
 **Zipf dimensions** (the default, `--zipf 1`), after Clay Smith's Mixture of Zipf Gaussians ([article](https://cdsmithus.medium.com/simulating-elections-with-spatial-voter-models-1ff50892390), [code](https://github.com/cdsmith/spatial-voting), `src/Model.hs`): dimension i (1, 2, 3, ...) has standard deviation 1/i — for cluster centres, voters and candidates alike — so one issue dominates and the others matter less and less, without being absent.
@@ -125,7 +125,13 @@ Each election draws a fresh electorate (`scenario.py`):
 - Scaling follows Smith's code: the standard deviation is 1/i, so the variance is 1/i². (The article's wording "proportional to 1/n" could also be read as variance 1/n; the code is unambiguous.) The total variance then converges (to π²/6), so beyond about 4 dimensions their number hardly matters. The default of 10 dimensions is well past that.
 - Each cluster applies the 1/i scaling to its own slightly shuffled order of dimensions (each rank perturbed by normal noise with standard deviation 0.1 × dims, Smith's ratio of 10 for 100 dimensions), so camps differ in which issues they vary on most. Cluster centres keep the global order.
 - Taken over from Smith: the 1/i scaling and the per-cluster shuffle. Not taken over: his other settings (10 clusters with uniform random weights, cluster centres uniform in ±3/i, a random spread factor per cluster, utility = −distance); our Dirichlet weights, normal centres, one spread and `exp(-distance / width)` stay.
-- `--zipf 0` gives the earlier model: all dimensions with standard deviation 1 (then use few dimensions, e.g. 2). Distances are longer there, so the same width gives steeper preferences.
+- `--zipf 0` gives the alternative model: all dimensions with standard deviation 1 (then use few dimensions, e.g. 2). Distances are longer there, so the same width gives steeper preferences.
+
+**Candidates unlike the electorate.** Two parameters move the candidates relative to the voters; both act after all random draws, so the voters (and the candidates' own draws) are the same for every value and a sweep compares the same electorates with different fields.
+
+- `--cand-dispersion s` (default 1): each candidate's distance from the voters' mean position is multiplied by s. Below 1 the candidates cluster toward the centre of the electorate; above 1 they are more extreme than the voters. This is the relative candidate dispersion of Merrill (1984), "A comparison of efficiency of multicandidate electoral systems", *American Journal of Political Science* 28, whose Condorcet efficiency of plurality and IRV falls as candidates cluster (centre squeeze: the central candidate is squeezed out of the first choices).
+- `--cand-shift d` (default 0): all candidates move along the first, most important dimension by d standard deviations of the voters on it: a systematic bias, e.g. candidates more often from one social group.
+- Both change how far the best candidate is from the random ballot, the zero of VSE and WME. With a strong shift, one candidate is nearly everyone's favourite, the random ballot is almost as good as the best candidate, and the efficiencies' denominators become small; compare methods within a condition, and use CE or raw rates across conditions.
 
 ## Parameters
 
@@ -141,6 +147,8 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--clusters` | 5 | voter clusters |
 | `--spread` | 0.5 | standard deviation of voters around their cluster centre (centres have 1), before the Zipf scaling |
 | `--width` | 1.0 | distance scale of the utility fall-off |
+| `--cand-dispersion` | 1.0 | candidates' distance from the electorate's centre × this (< 1 clustered, > 1 spread out); see Electorates |
+| `--cand-shift` | 0.0 | candidates moved along the main dimension by this many voter SDs; see Electorates |
 | `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |
 | `--rounds` | 1 | poll rounds before the vote (0 = everyone sincere); see Strategy engine |
 | `--samples` | 30 | polls per round (they stand for the uncertainty); with `--converge`, bootstrap resamples per round |

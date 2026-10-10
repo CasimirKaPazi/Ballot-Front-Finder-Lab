@@ -37,6 +37,8 @@ def main():
     ap.add_argument("--clusters", type=int, nargs="+", default=[5])
     ap.add_argument("--spread", type=float, nargs="+", default=[0.5])
     ap.add_argument("--width", type=float, nargs="+", default=[1.0])
+    ap.add_argument("--cand-dispersion", type=float, nargs="+", default=[1.0])
+    ap.add_argument("--cand-shift", type=float, nargs="+", default=[0.0])
     ap.add_argument("--rounds", type=int, nargs="+", default=[1])
     ap.add_argument("--samples", type=int, nargs="+", default=[30])
     ap.add_argument("--group-size", type=group_size_arg, nargs="+", default=[10])

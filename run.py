@@ -128,6 +128,12 @@ def check_params(a, error):
         error("--start previous is for poll rounds, not --converge")
 
 
+def cand_text(disp, shift):
+    """', candidates: ...' when they are not drawn like the voters, else ''."""
+    parts = ([f"dispersion {disp}"] if float(disp) != 1.0 else []) + ([f"shift {shift}"] if float(shift) != 0.0 else [])
+    return f", candidates: {', '.join(parts)}" if parts else ""
+
+
 def strategy_text(p, n):
     """One-line description of the strategy model of a run (p: namespace or dict of parameters)."""
     g = (lambda k: p[k]) if isinstance(p, dict) else (lambda k: getattr(p, k))
@@ -160,7 +166,7 @@ def group_text(g):
 
 
 # Run parameters written into every row of the elections CSV
-PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size",
+PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
           "strategic", "aggressive", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
           "start", "seed"]
 
@@ -189,7 +195,8 @@ def simulate(p, elections, workers=None, names=None, participation=False):
     Returns rows with p as columns."""
     names = names or list(METHODS)
     rounds = list(p["rounds"]) if isinstance(p["rounds"], (list, tuple)) else [p["rounds"]]
-    sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"])
+    sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"],
+                  p["cand_dispersion"], p["cand_shift"])
     jobs = [(sc, p["seed"], e, rounds, p["samples"], p["group_size"], p["strategic"], p["max_score"],
              p["exits"], p["clones"], p["poll_size"], p["poll_error"], p["search"], p["converge"], p["aggressive"],
              names, participation) for e in range(elections)]
@@ -216,6 +223,11 @@ def main():
     ap.add_argument("--clusters", type=int, default=5)
     ap.add_argument("--spread", type=float, default=0.5)
     ap.add_argument("--width", type=float, default=1.0)
+    ap.add_argument("--cand-dispersion", type=float, default=1.0,
+                    help="candidates' distance from the electorate's centre x this (< 1: clustered in the centre, "
+                         "> 1: spread out; Merrill 1984); voters unchanged")
+    ap.add_argument("--cand-shift", type=float, default=0.0,
+                    help="candidates moved along the first (main) dimension by this many voter SDs; voters unchanged")
     ap.add_argument("--rounds", type=int, default=1,
                     help="poll rounds before the vote (0 = everyone votes sincerely); see strategy.py")
     ap.add_argument("--samples", type=int, default=30,
@@ -291,7 +303,7 @@ def main():
 
     print(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.dims} dimensions"
           f"{' (Zipf)' if a.zipf else ''}, {a.clusters} clusters, "
-          f"spread {a.spread}, width {a.width}; {strategy_text(a, a.voters)}, "
+          f"spread {a.spread}, width {a.width}{cand_text(a.cand_dispersion, a.cand_shift)}; {strategy_text(a, a.voters)}, "
           f"strategic share {a.strategic}, scores 0..{a.max_score}"
           f"{f', nomination: exits {a.exits}, clones {a.clones}' if a.exits or a.clones else ''}; seed {a.seed}")
     print(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")

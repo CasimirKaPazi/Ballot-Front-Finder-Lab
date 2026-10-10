@@ -439,3 +439,13 @@ for _ in range(50):
     Bt = METHODS["Inverse-TTR"].sincere(uu) % C + C * METHODS["Plurality"].sincere(uu)
     assert np.allclose(METHODS["Inverse-TTR"].tally(Bt), METHODS["TTR"].honest(uu))
 print("inverse methods ok")
+
+# Candidate dispersion and shift change only the candidates; voters are the same draws
+from scenario import electorate_positions as _ep
+a = _ep(Scenario(n_voters=31, n_cands=5), np.random.default_rng(9))
+b = _ep(Scenario(n_voters=31, n_cands=5, cand_dispersion=0.5, cand_shift=1.0), np.random.default_rng(9))
+assert np.array_equal(a[1], b[1])
+c0 = a[1].mean(axis=0)
+want = c0 + 0.5 * (a[2] - c0); want[:, 0] += 1.0 * a[1][:, 0].std()
+assert np.allclose(b[2], want)
+print("candidate dispersion and shift ok")

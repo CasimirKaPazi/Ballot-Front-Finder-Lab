@@ -12,6 +12,13 @@ few dimensions their number hardly matters). Each cluster applies the 1/i scalin
 slightly shuffled order of dimensions (each rank perturbed by normal noise with standard
 deviation 0.1 x dims, Smith's ratio of 10 for 100 dimensions), so camps differ in which issues
 they vary on most. Cluster centres keep the global order.
+
+Candidates are drawn like voters (same clusters and weights), then optionally transformed relative to
+the electorate: cand_dispersion scales their distances from the voters' mean position (Merrill 1984's
+relative candidate dispersion: < 1 clusters them toward the centre, > 1 spreads them out), and
+cand_shift moves them all along the first, most important dimension by that many standard deviations
+of the voters on it (a systematic bias, e.g. candidates more often from one social group). Both act
+after all random draws, so the voters (and the candidates' draws) are the same for every setting.
 """
 from dataclasses import dataclass
 import numpy as np
@@ -26,6 +33,8 @@ class Scenario:
     spread: float = 0.5     # standard deviation of voters around their cluster centre
     width: float = 1.0      # distance scale of the utility fall-off
     zipf: int = 1           # 1: dimension i has scale 1/i (see module docstring); 0: all dimensions equal
+    cand_dispersion: float = 1.0   # candidates' distance from the electorate's centre, x this (< 1: clustered)
+    cand_shift: float = 0.0        # candidates moved along the first dimension, in voter SDs on it
 
 
 def electorate(sc: Scenario, rng: np.random.Generator):
@@ -52,5 +61,9 @@ def electorate_positions(sc: Scenario, rng: np.random.Generator):
         centres_z = centres / rank                                  # centres: global order
         voters = centres_z[vc] + (voters - centres[vc]) * own[vc]
         cands = centres_z[cc] + (cands - centres[cc]) * own[cc]
+    if sc.cand_dispersion != 1.0 or sc.cand_shift != 0.0:
+        centre = voters.mean(axis=0)
+        cands = centre + sc.cand_dispersion * (cands - centre)
+        cands[:, 0] += sc.cand_shift * voters[:, 0].std()
     d = np.linalg.norm(voters[:, None, :] - cands[None, :, :], axis=2)
     return np.exp(-d / sc.width), voters, cands

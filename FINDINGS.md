@@ -10,6 +10,62 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
 
+## Candidates unlike the electorate (2026-10-10)
+
+Run (user): `sweep.py --one-at-a-time --cand-dispersion 1 0.25 0.5 0.75 1.5 --cand-shift 0 0.5 1`, 200 elections, one poll round, defaults otherwise (strategic share 0.5, aggressive share 0.5), most methods. Voters are the same in every condition; only the candidates are moved (README, Electorates). Condorcet efficiency with honest ballots, which keeps its meaning across conditions (Condorcet methods: 100 by construction):
+
+| Method | dispersion 0.25 | 0.5 | 0.75 | 1 (base) | 1.5 | shift 0.5 | shift 1 |
+|---|---|---|---|---|---|---|---|
+| STAR | 66 | 74 | 75 | 86 | 96 | 90 | 90 |
+| MARS | 67 | 72 | 75 | 86 | 94 | 90 | 89 |
+| Score | 55 | 64 | 65 | 77 | 88 | 80 | 86 |
+| Approval | 52 | 57 | 67 | 78 | 85 | 75 | 67 |
+| MJ | 47 | 51 | 60 | 69 | 83 | 73 | 77 |
+| Borda | 87 | 83 | 86 | 89 | 89 | 81 | 76 |
+| IRV | 33 | 36 | 49 | 65 | 87 | 73 | 83 |
+| TTR | 33 | 31 | 46 | 68 | 87 | 75 | 89 |
+| Plurality | 22 | 21 | 30 | 45 | 67 | 54 | 69 |
+| Coombs | 90 | 94 | 97 | 99 | 99 | 98 | 99 |
+| Condorcet winner exists | 82% | 93% | 97% | 96% | 99% | 97% | 99% |
+| … with the highest total utility | 51% | 52% | 58% | 66% | 83% | 75% | 79% |
+
+With strategy (VSE* / WME*), selected:
+
+| Method | dispersion 0.25 | 0.5 | 1 (base) | 1.5 | shift 1 |
+|---|---|---|---|---|---|
+| STAR | 86 / 80 | 85 / 85 | 92 / 94 | 95 / 98 | 93 / 96 |
+| Score | 87 / 74 | 89 / 84 | 91 / 92 | 94 / 97 | 95 / 95 |
+| Approval | 77 / 72 | 80 / 78 | 90 / 89 | 93 / 94 | 87 / 85 |
+| IRV | 75 / 47 | 79 / 62 | 87 / 84 | 93 / 94 | 91 / 96 |
+| TTR | 72 / 49 | 78 / 63 | 87 / 86 | 93 / 97 | 91 / 98 |
+| Minimax | 83 / 91 | 80 / 97 | 87 / 99 | 94 / 100 | 91 / 99 |
+| Borda | 76 / 82 | 78 / 88 | 81 / 90 | 87 / 91 | 82 / 84 |
+
+- **Clustered candidates hurt every method that is not a Condorcet method,** not only plurality and IRV as in Merrill (1984): from dispersion 1 to 0.25, Condorcet efficiency falls by about 20 points for STAR, MARS, Score, MJ and Approval and by 23–35 for IRV, TTR and Plurality. The order of the methods stays: hybrids, then rated and approval methods, then the IRV family, then plurality. Borda is nearly unaffected (89 → 87), Coombs almost so (99 → 90).
+- **The electorates themselves get harder:** with clustered candidates a Condorcet winner exists less often (82% at 0.25), it is less often also the candidate with the highest total utility (51% against 66%), and choosing between the two costs more VSE (16–19% against 13%). Candidates who differ little give voters flat preferences (favourite ÷ least liked 1.5 against 4.3), so small differences decide, which plurality-type first choices and range-stretched scores both handle badly.
+- **Under strategy the plurality-based methods suffer most:** IRV and TTR fall to WME* 47–49 at dispersion 0.25 (base 84–86); the rated methods hold 72–80 and the Condorcet methods about 90. Minimax's WME* dips most at 0.25 (91) and recovers at 0.5 (97).
+- **Spread-out candidates (1.5) make every method better,** and the differences between methods shrink (CE 84–99 except plurality).
+- **A shift of 0.5–1 voter SD makes elections slightly easier** (a Condorcet winner more often, and more often also the utilitarian best) and changes the order little; plurality-type methods gain. Approval loses at shift 1 (CE 78 → 67, VSE* 90 → 87), where many voters approve the same nearest candidates and ties split the win; Borda loses too (89 → 76), for a reason not yet clear.
+
+## First look: candidates unlike the electorate (2026-10-10)
+
+Run (Claude, small): `sweep.py --one-at-a-time --elections 40 --cand-dispersion 1 0.25 0.5 1.5 --cand-shift 0 0.5 1 2`, ten methods, defaults otherwise (one poll round). 40 elections: point estimates, noisy. Condorcet efficiency with honest ballots (CE), which keeps its meaning across conditions:
+
+| Method | base | dispersion 0.25 | 0.5 | 1.5 | shift 0.5 | 1 | 2 |
+|---|---|---|---|---|---|---|---|
+| Plurality | 42 | 29 | 28 | 50 | 62 | 70 | 91 |
+| TTR | 55 | 47 | 33 | 82 | 72 | 91 | 98 |
+| IRV | 52 | 40 | 40 | 78 | 71 | 88 | 96 |
+| Approval | 80 | 41 | 53 | 82 | 72 | 64 | 50 |
+| Score | 73 | 50 | 58 | 83 | 75 | 88 | 95 |
+| STAR | 80 | 53 | 69 | 95 | 88 | 90 | 98 |
+| Borda | 81 | 82 | 83 | 86 | 82 | 82 | 92 |
+| Condorcet winner exists | 93% | 85% | 90% | 95% | 100% | 100% | 100% |
+
+- **Clustered candidates (dispersion < 1) hurt as Merrill (1984) found** for plurality, TTR and IRV, and in this model just as much for the rated methods: Approval, Score and STAR lose 20–40 points of CE at dispersion 0.25. Preferences become flat (favourite ÷ least liked 1.5 instead of 4.1), and ballots stretched to each voter's own range (scores, above-mean approval) then exaggerate small differences. Borda is unaffected. Spread-out candidates (1.5) help every method.
+- **A shifted field makes elections easier,** not harder: there is always a Condorcet winner, and the candidate nearest the electorate is most voters' favourite, so plurality-type methods find it (CE 91–98 at shift 2). Approval is the exception: nearly everyone approves the same two nearest candidates, and the resulting ties split the win.
+- **Caution with VSE and WME across shift values:** when one candidate is nearly everyone's favourite, the random ballot is almost as good as the best candidate, the efficiencies' denominators become small, and every miss looks large (Approval's honest VSE falls to 0 at shift 2 from ties alone). Within one condition the order of methods stays meaningful; across conditions, CE and the raw rates are safer.
+
 ## Lock-in: starting from a previous election's result, full strategy (2026-10-10)
 
 Run (user): `--start honest previous --rounds 1 2 3 4 5 6 7 8 --strategic 1 --aggressive 1`, 200 elections, defaults otherwise; Score, Approval, IC-MARS, Minimax, IRV, IRV-3, ER-IRV, TTR, Borda. The first poll shows either the honest ballots or the final ballots of one previous (dummy) election under the same method, its candidates relabelled at random (README, Starting information). Same elections in both; VSE* / WME*:

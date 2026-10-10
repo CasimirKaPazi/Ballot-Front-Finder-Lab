@@ -43,7 +43,7 @@ from collections import OrderedDict
 import numpy as np
 
 import plots
-from run import out_path, group_text, strategy_text, OUTPUT_DIR, PARAMS as RUN_PARAMS
+from run import out_path, group_text, strategy_text, cand_text, OUTPUT_DIR, PARAMS as RUN_PARAMS
 from methods import GROUPS, METHODS, select, group_of
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
@@ -251,7 +251,8 @@ def label(key, varying, first):
 
 PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error", "converge": "convergent rounds",
-               "aggressive": "aggressive share", "start": "first poll"}
+               "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion",
+               "cand_shift": "candidate shift"}
 LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "poll_size", "poll_error", "search", "converge",
                  "aggressive", "start"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones"}  # same electorates (honest results may differ)
@@ -474,7 +475,7 @@ def main():
               f"{r['elections']} elections (seeds {', '.join(r['seeds'])}), {r['with_cw']} with a Condorcet winner. "
               f"{p['voters']} voters, {p['cands']} candidates, {p['dims']} dimensions"
               f"{' (Zipf)' if p['zipf'] == '1' else ''}, {p['clusters']} clusters, spread {p['spread']}, "
-              f"width {p['width']}; {strategy_text(p, p['voters'])}, "
+              f"width {p['width']}{cand_text(p['cand_dispersion'], p['cand_shift'])}; {strategy_text(p, p['voters'])}, "
               f"strategic share {p['strategic']}, scores 0..{p['max_score']}"
               + (f"; nomination: exits {p['exits']}, clones {p['clones']}" if p['exits'] != '0' or p['clones'] != '0' else "")
               + "." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")
