@@ -303,18 +303,6 @@ def _dowdall(B):
     return _lcm_upto(C) // (pos.astype(int) + 1)
 
 
-def _dowdall_sub(B):
-    """For every subset K of candidates: each candidate's Dowdall points among K (1, 1/2, 1/3, ... by
-    its place within K on a strict ranking, times lcm(1..C) so they are integers), 0 outside K.
-    Used to recount Dowdall points among the remaining candidates (Baldwin-, Nanson-Dowdall)."""
-    n, C = B.shape
-    m = masks(C).astype(float)                                 # (2^C, C)
-    above = (B[:, None, :] > B[:, :, None]).astype(float)      # above[v, c, k]: k ranked above c
-    rank = np.einsum("vck,sk->vsc", above, m)                  # candidates of K above c
-    out = np.where(m[None] > 0, _lcm_upto(C) // (rank.astype(int) + 1), 0)
-    return out.reshape(n, -1)
-
-
 def _firstsecond(B):
     """One-hot of the (first, second) pair of a strict ranking, as a C x C matrix."""
     n, C = B.shape
@@ -365,7 +353,6 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "keepnorm": (_keepnorm, lambda C: (2 ** C, C)),
     "firsts_eq": (_firsts_eq, lambda C: (2 ** C, C)),
     "dowdall": (_dowdall, lambda C: (C,)),
-    "dowdall_sub": (_dowdall_sub, lambda C: (2 ** C, C)),
     "firsts_ex": (_firsts_ex, lambda C: (2 ** C, C)),
     "lasts": (_lasts, lambda C: (2 ** C, C)),
     "firstsecond": (_firstsecond, lambda C: (C, C)),
@@ -780,7 +767,7 @@ def d_score_plus(s):
     return P
 
 
-# ---------- batch 4 ----------
+# ---------- decisions (continued) ----------
 def d_er_irv(s):
     """IRV on rankings with ties: every candidate tied at the top of a ballot (among the remaining)
     gets a whole vote, as in approval. Sincere ballots are strict; ties are learned."""
@@ -826,71 +813,13 @@ def d_nanson(s):
     return P
 
 
-# ---------- batch 5: Dowdall variants, equal-ranking variants, MARS variants ----------
-def d_black_dowdall(s):
-    """Condorcet winner if there is one, otherwise the Dowdall winner."""
-    M = margins_of(s)
-    cw = (M > 0).sum(axis=1) == len(M) - 1
-    return cw.astype(float) if cw.any() else uniform_max(s["dowdall"])
-
-
-def d_btr_dowdall(s):
-    """Order by Dowdall points, bottom-two pairwise runoffs climbing up."""
-    M = margins_of(s)
-    return bottom_two_runoff(s["dowdall"], lambda a, b: M[a, b])
-
-
-def _subset_points(s, alive):
-    """Dowdall points among the alive candidates (from the dowdall_sub feature)."""
-    return s["dowdall_sub"][int(sum(1 << c for c in alive))][alive]
-
-
-def d_baldwin_dowdall(s):
-    """Baldwin with Dowdall points: repeatedly eliminate the lowest Dowdall score, recounted among
-    the remaining candidates; ties for last are split."""
-    C = len(s["dowdall_sub"][0])
-    P = np.zeros(C)
-
-    def go(alive, w):
-        if len(alive) == 1:
-            P[alive[0]] += w
-            return
-        pts = _subset_points(s, alive)
-        low = np.flatnonzero(pts <= pts.min() + EPS)
-        for i in low:
-            go([c for j, c in enumerate(alive) if j != i], w / len(low))
-
-    go(list(range(C)), 1.0)
-    return P
-
-
-def d_nanson_dowdall(s):
-    """Nanson with Dowdall points: repeatedly eliminate every candidate at or below the average Dowdall
-    score among the remaining; if that would eliminate all, they tie."""
-    C = len(s["dowdall_sub"][0])
-    alive = list(range(C))
-    while len(alive) > 1:
-        pts = _subset_points(s, alive).astype(float)
-        out = pts <= pts.mean() + EPS
-        if out.all():
-            break
-        alive = [c for c, o in zip(alive, out) if not o]
-    P = np.zeros(C)
-    P[alive] = 1 / len(alive)
-    return P
-
-
 def d_borda_er(s):
     """Borda on rankings with ties: a point for every candidate ranked strictly below (ties score
     nothing). On strict rankings the same as Borda."""
     return uniform_max(s["gt"].sum(axis=1).astype(float))
 
 
-def d_top_two_er(s):
-    """Contingent vote on rankings with ties: every candidate tied at the top counts as a first
-    choice (as in ER-IRV); then a majority runoff between the top two, read from the same ballot
-    (an automated runoff with the top tier approved)."""
-    return d_top_two({"first": s["top"], "gt": s["gt"]})
+
 
 
 def _worst_wv(s):
@@ -1123,98 +1052,104 @@ class Method:
 
 M_ = Method
 METHODS = {
-    "Random pair runoff": M_("rank", d_random_pair, ("n", "first", "gt")),
+    # condorcet
+    "Ranked pairs": M_("rank", d_ranked_pairs, ("gt",)),
+    "Schulze": M_("rank", d_schulze, ("gt",)),
+    "Schulze-ER": M_("weak", d_schulze, ("gt",)),
+    "Kemeny-Young": M_("rank", d_kemeny, ("gt",)),
+    "Copeland": M_("rank", d_copeland, ("gt",)),
+    "Ranked Robin": M_("weak", d_ranked_robin, ("gt",)),
+    "Ranked Robin-SR": M_("rank", d_ranked_robin, ("gt",)),
+    "SICT": M_("weak", d_sict, ("gt", "top", "eqtop", "eqbot")),
+    "Condorcet-random-drop": M_("rank", full=t_condorcet_drop),
+    # minimax
+    "Minimax": M_("rank", d_minimax, ("gt",)),
+    "Minimax-ER": M_("weak", d_minimax, ("gt",)),
+    "MMWV": M_("weak", d_minimax_wv, ("gt",)),
+    "MMPO": M_("weak", d_mmpo, ("gt",)),
+    "MMPOWV": M_("weak", d_mmpowv, ("n", "gt")),
+    # condorcet-hybrid
+    "Black": M_("rank", d_black, ("sum", "gt")),
+    "Baldwin": M_("rank", d_baldwin, ("gt",)),
+    "Baldwin-ER": M_("weak", d_baldwin, ("gt",)),
+    "Nanson": M_("rank", d_nanson, ("gt",)),
+    "BTR-Borda": M_("rank", d_btr, ("sum", "gt")),
+    "BTR-IRV": M_("rank", d_btr_irv, ("firsts", "gt")),
+    "Benham": M_("rank", d_benham, ("firsts", "gt")),
+    "Smith//Score": M_("score", d_smith_score, ("sum", "gt")),
+    # plurality-based
     "Plurality": M_("fav", d_sum, ("sum",)),
     "TTR": M_("fav_run", d_two_round, ("n", "app", "runoff_gt")),
-    "Contingent vote": M_("rank", d_top_two, ("first", "gt")),
+    "Supplementary vote": M_("rank", d_supplementary, ("first", "firstsecond")),
     "IRV": M_("rank", d_irv, ("firsts",)),
-    "Borda": M_("rank", d_sum, ("sum",)),
-    "Baldwin": M_("rank", d_baldwin, ("gt",)),
-    "BTR-Borda": M_("rank", d_btr, ("sum", "gt")),
-    "Copeland": M_("rank", d_copeland, ("gt",)),
-    "Minimax": M_("rank", d_minimax, ("gt",)),
+    "ER-IRV": M_("weak", d_er_irv, ("firsts_eq",)),
+    "IRV-3": M_("trunc3", lambda s: d_irv(s, "firsts_ex"), ("firsts_ex",)),
+    "Coombs": M_("rank", d_coombs, ("firsts", "lasts")),
+    # approval-based
     "Approval": M_("approval", d_sum, ("sum",)),
     "Approval runoff": M_("app_run", d_approval_two_round, ("app", "runoff_gt")),
+    "Approval cond. runoff": M_("app_run", d_approval_two_round_if_needed, ("n", "app", "runoff_gt")),
+    "MDDA": M_("trunc", d_mdda, ("n", "gt", "pos")),
+    # rated
     "Score": M_("score", d_sum, ("sum",)),
     "MJ": M_("score", d_mj, ("grades",)),
+    "MCA": M_("grade3", d_mca, ("n", "ge2", "ge1")),
+    "Reciprocal score": M_("score", d_reciprocal_score, ("fset", "fsetB")),
+    # hybrid
     "STAR": M_("score", d_star, ("sum", "gt")),
     "BTR-score": M_("score", d_btr, ("sum", "gt")),
     "MARS": M_("score", d_mars, ("sum", "gt")),
+    "IC-MARS": M_("score", d_ic_mars, ("sum", "gt", "eqtop")),
     "ARA": M_("score", ara("upper"), ("upper", "gt")),          # ratings above the middle (0..5: 3-5) count as approval
     "ARA-Top": M_("score", ara("maxs"), ("maxs", "gt")),        # only the top score counts as approval
-    "Anti-plurality": M_("veto", d_sum, ("sum",)),
-    "TRASH": M_("rank", d_trash, ("first", "last", "gt")),
-    "Ranked pairs": M_("rank", d_ranked_pairs, ("gt",)),
-    "Schulze": M_("rank", d_schulze, ("gt",)),
-    "Approval cond. runoff": M_("app_run", d_approval_two_round_if_needed, ("n", "app", "runoff_gt")),
-    "Reciprocal score": M_("score", d_reciprocal_score, ("fset", "fsetB")),
     "Score+": M_("score", d_score_plus, ("sum", "excess", "keepnorm")),
-    "Condorcet-random-drop": M_("rank", full=t_condorcet_drop),
-    "SICT": M_("weak", d_sict, ("gt", "top", "eqtop", "eqbot")),
-    "MDDA": M_("trunc", d_mdda, ("n", "gt", "pos")),
-    "BTR-IRV": M_("rank", d_btr_irv, ("firsts", "gt")),
-    "Benham": M_("rank", d_benham, ("firsts", "gt")),
-    "Black": M_("rank", d_black, ("sum", "gt")),
-    "Ranked Robin": M_("weak", d_ranked_robin, ("gt",)),
-    "Nanson": M_("rank", d_nanson, ("gt",)),
     "321": M_("grade3", d_321, ("n", "ge2", "eq0", "sum", "gt")),
-    "ER-IRV": M_("weak", d_er_irv, ("firsts_eq",)),
-    "Dowdall": M_("rank", d_dowdall, ("dowdall",)),
-    "Smith//Score": M_("score", d_smith_score, ("sum", "gt")),
-    "Supplementary vote": M_("rank", d_supplementary, ("first", "firstsecond")),
-    "MCA": M_("grade3", d_mca, ("n", "ge2", "ge1")),
-    "MMPO": M_("weak", d_mmpo, ("gt",)),
-    "MMWV": M_("weak", d_minimax_wv, ("gt",)),
-    "MMPOWV": M_("weak", d_mmpowv, ("n", "gt")),
-    # batch 5
-    "Black-Dowdall": M_("rank", d_black_dowdall, ("dowdall", "gt")),
-    "BTR-Dowdall": M_("rank", d_btr_dowdall, ("dowdall", "gt")),
-    "Baldwin-Dowdall": M_("rank", d_baldwin_dowdall, ("dowdall_sub",)),
-    "Nanson-Dowdall": M_("rank", d_nanson_dowdall, ("dowdall_sub",)),
-    "Borda-ER": M_("weak", d_borda_er, ("gt",)),
-    "Baldwin-ER": M_("weak", d_baldwin, ("gt",)),
-    "Contingent-ER": M_("weak", d_top_two_er, ("top", "gt")),
-    "Minimax-ER": M_("weak", d_minimax, ("gt",)),
-    "Schulze-ER": M_("weak", d_schulze, ("gt",)),
-    "Ranked Robin-SR": M_("rank", d_ranked_robin, ("gt",)),
     "MMWV+Score": M_("score", d_mmwv_plus_score, ("n", "sum", "gt")),
     "MMWVxScore": M_("score", d_mmwv_times_score, ("n", "sum", "gt")),
-    "IC-MARS": M_("score", d_ic_mars, ("sum", "gt", "eqtop")),
-    "Coombs": M_("rank", d_coombs, ("firsts", "lasts")),
-    "Kemeny-Young": M_("rank", d_kemeny, ("gt",)),
-    "IRV-3": M_("trunc3", lambda s: d_irv(s, "firsts_ex"), ("firsts_ex",)),
+    # positional
+    "Borda": M_("rank", d_sum, ("sum",)),
+    "Borda-ER": M_("weak", d_borda_er, ("gt",)),
+    "Dowdall": M_("rank", d_dowdall, ("dowdall",)),
+    # references
+    "Random pair runoff": M_("rank", d_random_pair, ("n", "first", "gt")),
+    "Anti-plurality": M_("veto", d_sum, ("sum",)),
+    "TRASH": M_("rank", d_trash, ("first", "last", "gt")),
 }
 
 
-# Method groups for --methods / --exclude (tags: a method can be in several groups)
+# Method groups: every method belongs to exactly one (checked below). They are the panels of the
+# chain plots and can be used as names wherever methods are selected (--methods, --exclude, --show,
+# --hide, --track).
 GROUPS = {
-    "condorcet": ["Baldwin", "Nanson", "Copeland", "Ranked Robin", "Black", "Minimax", "MMWV", "Ranked pairs",
-                  "Schulze", "SICT", "Condorcet-random-drop", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score",
-                  "Black-Dowdall", "BTR-Dowdall", "Baldwin-Dowdall", "Nanson-Dowdall", "Baldwin-ER",
-                  "Minimax-ER", "Schulze-ER", "Ranked Robin-SR", "Kemeny-Young"],
-    "plurality-based": ["Plurality", "TTR", "Contingent vote", "Contingent-ER", "Supplementary vote", "IRV", "ER-IRV",
-                        "BTR-IRV", "Benham",
-                        "IRV-3", "Coombs"],
-    "rated": ["Score", "MJ", "MCA", "Reciprocal score"],
-    "hybrid": ["STAR", "BTR-score", "MARS", "ARA", "ARA-Top", "Score+", "Smith//Score", "321", "MMWV+Score",
-               "MMWVxScore", "IC-MARS"],
+    "condorcet": ["Ranked pairs", "Schulze", "Schulze-ER", "Kemeny-Young", "Copeland", "Ranked Robin",
+                  "Ranked Robin-SR", "SICT", "Condorcet-random-drop"],
+    "minimax": ["Minimax", "Minimax-ER", "MMWV", "MMPO", "MMPOWV"],
+    "condorcet-hybrid": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
+    "plurality-based": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs"],
     "approval-based": ["Approval", "Approval runoff", "Approval cond. runoff", "MDDA"],
-    "positional": ["Borda", "Dowdall", "Borda-ER"],
+    "rated": ["Score", "MJ", "MCA", "Reciprocal score"],
+    "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore"],
+    "positional": ["Borda", "Borda-ER", "Dowdall"],
     "references": ["Random pair runoff", "Anti-plurality", "TRASH"],
 }
+_grouped = [m for ms in GROUPS.values() for m in ms]
+assert sorted(_grouped) == sorted(METHODS), "every method must be in exactly one group"
 
-# Comparison sets for --methods / --exclude only (not plot panels; their methods sit in GROUPS too)
+# Comparison sets: selection names like the groups, across groups (not plot panels)
 COMPARISONS = {
-    "borda-family": ["Borda", "Black", "BTR-Borda", "Baldwin", "Nanson",
-                     "Dowdall", "Black-Dowdall", "BTR-Dowdall", "Baldwin-Dowdall", "Nanson-Dowdall"],
     "er-pairs": ["IRV", "ER-IRV", "Borda", "Borda-ER", "Baldwin", "Baldwin-ER", "Minimax",
                  "Minimax-ER", "MMWV", "Schulze", "Schulze-ER", "Ranked Robin-SR", "Ranked Robin"],
 }
 
 
+def group_of(method):
+    """The group a method belongs to ("other" for names not in METHODS, e.g. from older CSVs)."""
+    return next((g for g, ms in GROUPS.items() if method in ms), "other")
+
+
 def select(include=None, exclude=None):
-    """Method names to run: `include` starts from none, `exclude` from all. Names are methods or
-    groups (see GROUPS); matching ignores case."""
+    """Method names: `include` starts from none, `exclude` from all. Names are methods, groups (see
+    GROUPS) or comparison sets (COMPARISONS); matching ignores case."""
     lookup = {k.lower(): [k] for k in METHODS}
     lookup.update({g: ms for g, ms in {**GROUPS, **COMPARISONS}.items()})
 

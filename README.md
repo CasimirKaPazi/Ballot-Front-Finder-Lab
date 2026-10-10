@@ -13,7 +13,7 @@ python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> output/a
 
 All outputs go into the folder `output/` (created when needed): an `--out` name without a directory is placed there, and `analyze.py` looks there for CSVs given without a directory. An `--out` with a directory (`--out runs/test`) is used as given.
 
-200 elections with all 59 methods at the default settings (one poll round) take about 14 minutes on 2 cores; time scales linearly with cores and with the number of poll rounds. More candidates and more voters take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
+200 elections with all 53 methods at the default settings (one poll round) take about 14 minutes on 2 cores; time scales linearly with cores and with the number of poll rounds. More candidates and more voters take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
 
 ## Files
 
@@ -34,7 +34,7 @@ All outputs go into the folder `output/` (created when needed): an `--out` name 
 
 ## Strategy engine
 
-Two models of strategic voting (`strategy.py`). **Poll rounds** is the default; **convergent learning** (the model used for all strategic results up to 2026-10-08) is available with `--converge N`.
+Two models of strategic voting (`strategy.py`). **Poll rounds** is the default; **convergent learning**, a long-run model kept for comparison, is available with `--converge N`.
 
 ### Poll rounds (default)
 
@@ -123,12 +123,12 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--width` | 1.0 | distance scale of the utility fall-off |
 | `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |
 | `--rounds` | 1 | poll rounds before the vote (0 = everyone sincere); see Strategy engine |
-| `--samples` | 30 | polls per round (they stand for the uncertainty); convergent learning used 10, so `--converge 20 --samples 10` reproduces earlier results |
+| `--samples` | 30 | polls per round (they stand for the uncertainty); with `--converge`, bootstrap resamples per round |
 | `--poll-error` | 2 | voters treat polls as this many times less precise than their sampling error |
 | `--aggressive` | 0.5 | share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) only when the polls show a gain (poll rounds only) |
 | `--poll-size` | 0 | voters per poll; 0 = half the electorate, rounded to an odd number |
 | `--search` | 10 | random ballot changes a group tries per poll round, after the naive exaggerations |
-| `--converge` | 0 | N > 0: convergent learning with N rounds instead of poll rounds (the earlier model; N = 20 before 2026-10-08) |
+| `--converge` | 0 | N > 0: convergent learning with N rounds instead of poll rounds (e.g. `--converge 20 --samples 10`) |
 | `--group-size` | 10 | convergent learning only: most voters that coordinate as one group: a number of voters (1 = every voter alone), a share of the electorate between 0 and 1 (0.05 = 5% of the voters, rounded, at least 1), or 0 = whole ranking group |
 | `--strategic` | 0.5 | share of voters who vote strategically (see Partial strategy) |
 | `--max-score` | 5 | score ballots range over 0–max (see Score range) |
@@ -150,7 +150,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--out` | `analysis` | output directory (`output/analysis`) |
 | `--boot` | 1000 | bootstrap replicates |
 | `--compare` | none | pairs `"A:B"` for paired differences |
-| `--hide` | Random pair runoff, Anti-plurality, TRASH | methods left out of the scatter and sweep plots; `--hide` alone shows all |
+| `--hide` | `references` | methods or groups left out of the scatter and chain plots; `--hide` alone shows all |
 | `--show` | all | only these methods or groups in the scatter and sweep plots (overrides `--hide`), e.g. `--show condorcet STAR` |
 | `--errorbars` | off | arrow plots: 95% intervals of each method relative to the average of the methods shown (per bootstrap replicate, the value minus the mean over the shown methods), which removes the variation all methods share; clearly separated bars suggest a real difference, an approximation of the paired comparison. Track plots: each point's own interval |
 | `--track` | none | methods or groups to follow across all conditions: `track-<method>.png` each (see below) |
@@ -288,83 +288,125 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | ranking of at most 3 | up to 3 ranked, the rest unranked (tied last) | the 3 best-liked (all, with 3 or fewer candidates) |
 | three grades | good / OK / bad per candidate | stretched to the voter's own utility range, rounded to 0–2 (as the score ballot, with three levels; not affected by `--max-score`) |
 
-**Two-round elections** (TTR, Approval runoff, Approval cond. runoff) have a real, separate runoff: voters come back and vote between the two finalists, independently of their first vote. With two candidates, voting for the preferred one is always best, so the runoff is decided by everyone's sincere preference between the finalists (turnout changes between the rounds are not modelled). The ballot carries that sincere ranking as a fixed part; strategy changes only the round-1 marks. Methods that read the runoff from the same ballot (Contingent vote, Contingent-ER, Supplementary vote, STAR, the BTR methods) are automated runoffs, where strategic voters can also misrank the finalists.
+**Two-round elections** (TTR, Approval runoff, Approval cond. runoff) have a real, separate runoff: voters come back and vote between the two finalists, independently of their first vote. With two candidates, voting for the preferred one is always best, so the runoff is decided by everyone's sincere preference between the finalists (turnout changes between the rounds are not modelled). The ballot carries that sincere ranking as a fixed part; strategy changes only the round-1 marks. Methods that read the runoff from the same ballot (Supplementary vote, STAR, the BTR methods) are automated runoffs, where strategic voters can also misrank the finalists.
 
 ## Methods
 
-"0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
+53 methods, listed by group (see Groups below). "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
+
+**condorcet**
+
+| Method | Ballot | Rule |
+|---|---|---|
+| Ranked pairs | ranking | lock pairwise wins from the largest margin down, skipping any that would close a cycle; the candidate with no locked defeat wins. Equal margins are locked in every order and averaged (at most 240 orders, otherwise 240 fixed random ones) |
+| Schulze | ranking | strongest path by margins; a candidate whose path to every rival is at least as strong as the rival's path back wins |
+| Schulze-ER | ranking, ties allowed | Schulze on rankings with ties (equal-ranked candidates count as neither above the other) |
+| Kemeny-Young | ranking | the ranking agreeing with the most pairwise preferences; its top candidate wins (exact, by dynamic programming over subsets); candidates heading different optimal rankings split |
+| Copeland | ranking | most pairwise wins (ties count half) |
+| Ranked Robin | ranking, ties allowed | Equal Vote's Condorcet method: most pairwise wins; ties go to the greatest sum of margins against the other tied candidates, then against all candidates; remaining ties (its 3rd and 4th tiebreakers) are split. Sincere ballots are strict; ties are learned |
+| Ranked Robin-SR | ranking | Ranked Robin on strict rankings (Ranked Robin itself allows ties) |
+| SICT | ranking, ties allowed | Symmetrical ICT: p(X,Y) if (X>Y) + (X=Y at bottom) > (Y>X) + (X=Y at top); X beats Y if p(X,Y) and not p(Y,X), or both and (X>Y) > (Y>X). One unbeaten candidate wins; none or all unbeaten: most first places; otherwise most first places among the unbeaten. Sincere ballots are strict; ties are learned |
+| Condorcet-random-drop | ranking | Condorcet winner if there is one; otherwise voters are dropped one at a time in random order until the rest have one. Averaged over 32 fixed random orders (the same on every call), so probabilities come in steps of 1/32 |
+
+**minimax**
+
+| Method | Ballot | Rule |
+|---|---|---|
+| Minimax | ranking | smallest worst pairwise defeat (by margin) |
+| Minimax-ER | ranking, ties allowed | Minimax on rankings with ties (equal-ranked candidates count as neither above the other) |
+| MMWV | ranking, ties allowed | Minimax by winning votes: the worst defeat is measured by the votes for the winner of that pair. On strict rankings identical to Minimax (margins); differs only once equal rankings are learned |
+| MMPO | ranking, ties allowed | minimax pairwise opposition: the smallest largest number of voters ranking some rival above the candidate, whether or not that rival wins the pair. Not a Condorcet method; on strict rankings identical to Minimax |
+| MMPOWV | ranking, ties allowed | proposed in this lab: (1 − largest pairwise opposition / n) × (1 − worst defeat in winning votes / n); the highest product wins. Multiplying makes a weakness on either costly and is smooth, without thresholds for strategy to aim at. On strict rankings it orders candidates like Minimax, so it equals Minimax with honest ballots and differs only once equal rankings are learned. Not Condorcet-consistent once ties are used |
+
+**condorcet-hybrid**
+
+| Method | Ballot | Rule |
+|---|---|---|
+| Black | ranking | Condorcet winner if there is one, otherwise the Borda winner |
+| Baldwin | ranking | eliminate lowest Borda score, recounted among remaining |
+| Baldwin-ER | ranking, ties allowed | Baldwin on rankings with ties (equal-ranked candidates count as neither above the other) |
+| Nanson | ranking | repeatedly eliminate every candidate whose Borda score among the remaining is at or below the average (Baldwin eliminates only the lowest) |
+| BTR-Borda | ranking | order by Borda score, bottom-two pairwise runoffs climbing up |
+| BTR-IRV | ranking | each round the two with the fewest first choices meet pairwise; the loser is eliminated |
+| Benham | ranking | IRV, but a Condorcet winner among the remaining candidates wins at once |
+| Smith//Score | 0–5 | highest score total among the Smith set (pairwise from the ratings, equal ratings no preference). With a Condorcet winner by the ballots the same as BTR-score; they differ only in cycles |
+
+**plurality-based**
+
+| Method | Ballot | Rule |
+|---|---|---|
+| Plurality | one name | most first choices |
+| TTR | two-round, plurality first round | a candidate marked by more than half the voters wins; otherwise the top two go to a separate runoff, decided by sincere preferences |
+| Supplementary vote | ranking (first two used) | top two by first preferences; a ballot whose first preference is out counts for its second preference if that is a finalist, otherwise it is exhausted |
+| IRV | ranking | eliminate fewest first choices among remaining |
+| ER-IRV | ranking, ties allowed | IRV where every candidate tied at the top of a ballot (among the remaining) gets a whole vote, as in approval. Sincere ballots are strict, so it equals IRV with honest ballots; ties are learned |
+| IRV-3 | ranking of at most 3 | IRV as used in practice with a limited ballot: at most 3 candidates ranked; a ballot whose ranked candidates are all out is exhausted and counts for nobody. Equals IRV with 3 candidates |
+| Coombs | ranking | a candidate with more than half of the first choices among the remaining wins; otherwise the one with the most last places among the remaining is eliminated |
+
+**approval-based**
+
+| Method | Ballot | Rule |
+|---|---|---|
+| Approval | approval | most approvals; sincere: above the voter's mean |
+| Approval runoff | two-round, approval first round | top two by approvals go to a separate runoff, decided by sincere preferences; a runoff tie goes to more approvals |
+| Approval cond. runoff | two-round, approval first round | as Approval runoff, but a candidate approved by more than half the voters wins outright |
+| MDDA | truncated ranking (ranked = approved) | disqualify every candidate that more than half the voters rank some other candidate above (unless all would be); most approved remaining wins. Sincere: rank everyone above the mean |
+
+**rated**
+
+| Method | Ballot | Rule |
+|---|---|---|
+| Score | 0–5 | highest total; sincere: stretched to the voter's range |
+| MJ | 0–5 | majority judgment: highest median grade; ties broken by repeatedly removing the median |
+| MCA | three grades | majority choice approval, MCA-A variant: the first grade level (good, then good or OK, then all) at which some candidate is rated that high by more than half the voters decides; one such candidate wins, among several the most approved (good or OK) |
+| Reciprocal score | 0–5 | interpretation of [electowiki](https://electowiki.org/wiki/Reciprocal_Score_Voting): a voter's faction is their top-rated candidate(s). R(X→Y) is the mean rating supporters of X give Y, as a share of the top score. A score for c is multiplied by min(1, R(c→F)/R(F→c)), F the voter's faction: support that c's supporters do not return is cut. Scores for the voter's own top and for candidates nobody top-rates stay unchanged; highest total wins |
+
+**hybrid**
+
+| Method | Ballot | Rule |
+|---|---|---|
+| STAR | 0–5 | top two by total, majority runoff; a runoff tie goes to the higher total |
+| BTR-score | 0–5 | order by total score, bottom-two pairwise runoffs climbing up |
+| MARS | 0–5 | as BTR-score; each match adds share preferring to score as share of maximum |
+| IC-MARS | 0–5 | MARS where a pairwise margin counts only beyond the votes rating both candidates at the top (tied at the top, as in [Improved Condorcet Approval](https://electowiki.org/wiki/Improved_Condorcet_Approval)): a margin those votes could reverse counts 0, so score weighs more |
+| ARA | 0–5 | ratings above the middle of the range are approvals (0–5: 3–5; 0–10: 6–10); order by approvals; each match adds voters preferring to approvals (formerly MARA) |
+| ARA-Top | 0–5 | as ARA, but only the top score counts as approval |
+| Score+ | 0–5 | simplified variant from the [votingtheory.org thread](https://www.votingtheory.org/forum/topic/138/score-interval-score-with-additional-protection-against-the-chicken-dilemma): A defeats B robustly if A's total minus the scores both share (per voter the lower of the two) still exceeds B's total. Robustly defeated candidates are eliminated, each voter's scores among the rest are stretched again to the full range, highest total wins |
+| 321 | three grades | 3-2-1 voting: 3 semifinalists with the most "good" (the third only with at least half as many as the first), of them 2 finalists with the fewest "bad", then the finalist rated above the other on more ballots. Ties: higher score (good 2, OK 1), then split. The party rule for semifinalists does not apply |
+| MMWV+Score | 0–5 | score share (total ÷ (voters × top score)) minus the worst defeat in winning votes as a share of voters; the highest wins (proposed in this lab; pairwise from the ratings) |
+| MMWVxScore | 0–5 | score share × (1 − worst winning-votes defeat share), as in MMPOWV |
+
+**positional**
+
+| Method | Ballot | Rule |
+|---|---|---|
+| Borda | ranking | points by position |
+| Borda-ER | ranking, ties allowed | a point for every candidate ranked strictly below; ties score nothing. Equals Borda on strict rankings |
+| Dowdall | ranking | positional, 1, 1/2, 1/3, … points by rank (Nauru) |
+
+**references**
 
 | Method | Ballot | Rule |
 |---|---|---|
 | Random pair runoff | ranking | two random ballots; same first choice wins, else majority runoff between the two |
-| Plurality | one name | most first choices |
-| TTR | two-round, plurality first round | a candidate marked by more than half the voters wins; otherwise the top two go to a separate runoff, decided by sincere preferences |
-| Contingent vote | ranking | top two by first choices, then a majority runoff read from the same ranking (an automated TTR) |
-| IRV | ranking | eliminate fewest first choices among remaining |
-| Borda | ranking | points by position |
-| Baldwin | ranking | eliminate lowest Borda score, recounted among remaining |
-| BTR-Borda | ranking | order by Borda score, bottom-two pairwise runoffs climbing up |
-| Copeland | ranking | most pairwise wins (ties count half) |
-| Minimax | ranking | smallest worst pairwise defeat (by margin) |
-| Approval | approval | most approvals; sincere: above the voter's mean |
-| Approval runoff | two-round, approval first round | top two by approvals go to a separate runoff, decided by sincere preferences; a runoff tie goes to more approvals |
-| Score | 0–5 | highest total; sincere: stretched to the voter's range |
-| MJ | 0–5 | majority judgment: highest median grade; ties broken by repeatedly removing the median |
-| STAR | 0–5 | top two by total, majority runoff; a runoff tie goes to the higher total |
-| BTR-score | 0–5 | order by total score, bottom-two pairwise runoffs climbing up |
-| MARS | 0–5 | as BTR-score; each match adds share preferring to score as share of maximum |
-| ARA | 0–5 | ratings above the middle of the range are approvals (0–5: 3–5; 0–10: 6–10); order by approvals; each match adds voters preferring to approvals (formerly MARA) |
-| ARA-Top | 0–5 | as ARA, but only the top score counts as approval |
 | Anti-plurality | veto (one name against) | fewest vetoes wins; sincere: against the least liked |
 | TRASH | ranking | "This Random Acronym Sounds Honest": the plurality runner-up and the anti-plurality runner-up (second fewest last places) meet in a runoff, and the one ranked lower by more voters wins; if both are the same candidate, it wins. A deliberately bad reference |
-| Ranked pairs | ranking | lock pairwise wins from the largest margin down, skipping any that would close a cycle; the candidate with no locked defeat wins. Equal margins are locked in every order and averaged (at most 240 orders, otherwise 240 fixed random ones) |
-| Schulze | ranking | strongest path by margins; a candidate whose path to every rival is at least as strong as the rival's path back wins |
-| Approval cond. runoff | two-round, approval first round | as Approval runoff, but a candidate approved by more than half the voters wins outright |
-| Reciprocal score | 0–5 | interpretation of [electowiki](https://electowiki.org/wiki/Reciprocal_Score_Voting): a voter's faction is their top-rated candidate(s). R(X→Y) is the mean rating supporters of X give Y, as a share of the top score. A score for c is multiplied by min(1, R(c→F)/R(F→c)), F the voter's faction: support that c's supporters do not return is cut. Scores for the voter's own top and for candidates nobody top-rates stay unchanged; highest total wins |
-| Score+ | 0–5 | simplified variant from the [votingtheory.org thread](https://www.votingtheory.org/forum/topic/138/score-interval-score-with-additional-protection-against-the-chicken-dilemma): A defeats B robustly if A's total minus the scores both share (per voter the lower of the two) still exceeds B's total. Robustly defeated candidates are eliminated, each voter's scores among the rest are stretched again to the full range, highest total wins |
-| Condorcet-random-drop | ranking | Condorcet winner if there is one; otherwise voters are dropped one at a time in random order until the rest have one. Averaged over 32 fixed random orders (the same on every call), so probabilities come in steps of 1/32 |
-| SICT | ranking, ties allowed | Symmetrical ICT: p(X,Y) if (X>Y) + (X=Y at bottom) > (Y>X) + (X=Y at top); X beats Y if p(X,Y) and not p(Y,X), or both and (X>Y) > (Y>X). One unbeaten candidate wins; none or all unbeaten: most first places; otherwise most first places among the unbeaten. Sincere ballots are strict; ties are learned |
-| MDDA | truncated ranking (ranked = approved) | disqualify every candidate that more than half the voters rank some other candidate above (unless all would be); most approved remaining wins. Sincere: rank everyone above the mean |
-| BTR-IRV | ranking | each round the two with the fewest first choices meet pairwise; the loser is eliminated |
-| Benham | ranking | IRV, but a Condorcet winner among the remaining candidates wins at once |
-| Black | ranking | Condorcet winner if there is one, otherwise the Borda winner |
-| Ranked Robin | ranking, ties allowed | Equal Vote's Condorcet method: most pairwise wins; ties go to the greatest sum of margins against the other tied candidates, then against all candidates; remaining ties (its 3rd and 4th tiebreakers) are split. Sincere ballots are strict; ties are learned |
-| Nanson | ranking | repeatedly eliminate every candidate whose Borda score among the remaining is at or below the average (Baldwin eliminates only the lowest) |
-| MMWV | ranking, ties allowed | Minimax by winning votes: the worst defeat is measured by the votes for the winner of that pair. On strict rankings identical to Minimax (margins); differs only once equal rankings are learned |
-| MMPO | ranking, ties allowed | minimax pairwise opposition: the smallest largest number of voters ranking some rival above the candidate, whether or not that rival wins the pair. Not a Condorcet method; on strict rankings identical to Minimax |
-| MMPOWV | ranking, ties allowed | proposed in this lab: (1 − largest pairwise opposition / n) × (1 − worst defeat in winning votes / n); the highest product wins. Multiplying makes a weakness on either costly and is smooth, without thresholds for strategy to aim at. On strict rankings it orders candidates like Minimax, so it equals Minimax with honest ballots and differs only once equal rankings are learned. Not Condorcet-consistent once ties are used, so in no group |
-| Smith//Score | 0–5 | highest score total among the Smith set (pairwise from the ratings, equal ratings no preference). With a Condorcet winner by the ballots the same as BTR-score; they differ only in cycles |
-| ER-IRV | ranking, ties allowed | IRV where every candidate tied at the top of a ballot (among the remaining) gets a whole vote, as in approval. Sincere ballots are strict, so it equals IRV with honest ballots; ties are learned |
-| Supplementary vote | ranking (first two used) | top two by first preferences; a ballot whose first preference is out counts for its second preference if that is a finalist, otherwise it is exhausted |
-| Dowdall | ranking | positional, 1, 1/2, 1/3, … points by rank (Nauru) |
-| MCA | three grades | majority choice approval, MCA-A variant: the first grade level (good, then good or OK, then all) at which some candidate is rated that high by more than half the voters decides; one such candidate wins, among several the most approved (good or OK) |
-| 321 | three grades | 3-2-1 voting: 3 semifinalists with the most "good" (the third only with at least half as many as the first), of them 2 finalists with the fewest "bad", then the finalist rated above the other on more ballots. Ties: higher score (good 2, OK 1), then split. The party rule for semifinalists does not apply |
-| Black-Dowdall, BTR-Dowdall | ranking | Black and BTR-Borda with Dowdall points instead of Borda points |
-| Baldwin-Dowdall, Nanson-Dowdall | ranking | Baldwin and Nanson with Dowdall points recounted among the remaining candidates (each voter's places among them) |
-| Borda-ER | ranking, ties allowed | a point for every candidate ranked strictly below; ties score nothing. Equals Borda on strict rankings |
-| Baldwin-ER, Minimax-ER, Schulze-ER | ranking, ties allowed | the same rules with equal rankings allowed (equal = no preference); equal their strict versions with honest ballots |
-| Contingent-ER | ranking, ties allowed | every candidate tied at the top counts as a first choice (as in ER-IRV), then a majority runoff read from the same ballot: an automated runoff with the top tier approved. The equal-ranking version of a real two-round election is Approval runoff |
-| Ranked Robin-SR | ranking | Ranked Robin on strict rankings (Ranked Robin itself allows ties) |
-| MMWV+Score | 0–5 | score share (total ÷ (voters × top score)) minus the worst defeat in winning votes as a share of voters; the highest wins (proposed in this lab; pairwise from the ratings) |
-| MMWVxScore | 0–5 | score share × (1 − worst winning-votes defeat share), as in MMPOWV |
-| Coombs | ranking | a candidate with more than half of the first choices among the remaining wins; otherwise the one with the most last places among the remaining is eliminated |
-| Kemeny-Young | ranking | the ranking agreeing with the most pairwise preferences; its top candidate wins (exact, by dynamic programming over subsets); candidates heading different optimal rankings split |
-| IRV-3 | ranking of at most 3 | IRV as used in practice with a limited ballot: at most 3 candidates ranked; a ballot whose ranked candidates are all out is exhausted and counts for nobody. Equals IRV with 3 candidates |
-| IC-MARS | 0–5 | MARS where a pairwise margin counts only beyond the votes rating both candidates at the top (tied at the top, as in [Improved Condorcet Approval](https://electowiki.org/wiki/Improved_Condorcet_Approval)): a margin those votes could reverse counts 0, so score weighs more |
 
-**Groups** for `--methods` and `--exclude` (a method can be in several):
+**Groups.** Every method belongs to exactly one group. Groups can be used wherever methods are named (`--methods`, `--exclude` in run.py and sweep.py; `--show`, `--hide`, `--track` in analyze.py), they are the panels of the chain plots, and the report and summary.csv show each method's group.
 
 | Group | Methods |
 |---|---|
-| `condorcet` | Baldwin, Nanson, Copeland, Ranked Robin, Black, Minimax, MMWV, Ranked pairs, Schulze, SICT, Condorcet-random-drop, BTR-Borda, BTR-IRV, Benham, Smith//Score, Black-Dowdall, BTR-Dowdall, Baldwin-Dowdall, Nanson-Dowdall, Baldwin-ER, Minimax-ER, Schulze-ER, Ranked Robin-SR, Kemeny-Young |
-| `plurality-based` | Plurality, TTR, Contingent vote, Contingent-ER, Supplementary vote, IRV, ER-IRV, BTR-IRV, Benham, IRV-3, Coombs |
-| `rated` | Score, MJ, MCA, Reciprocal score |
-| `hybrid` | STAR, BTR-score, MARS, ARA, ARA-Top, Score+, Smith//Score, 321, MMWV+Score, MMWVxScore, IC-MARS (ratings combined with pairwise comparisons or eliminations) |
+| `condorcet` | Ranked pairs, Schulze, Schulze-ER, Kemeny-Young, Copeland, Ranked Robin, Ranked Robin-SR, SICT, Condorcet-random-drop (Condorcet methods decided by the pairwise counts alone) |
+| `minimax` | Minimax, Minimax-ER, MMWV, MMPO, MMPOWV (the minimax family; MMPO and MMPOWV are not Condorcet methods) |
+| `condorcet-hybrid` | Black, Baldwin, Baldwin-ER, Nanson, BTR-Borda, BTR-IRV, Benham, Smith//Score (Condorcet methods built on a Borda, IRV or score count) |
+| `plurality-based` | Plurality, TTR, Supplementary vote, IRV, ER-IRV, IRV-3, Coombs (first choices and eliminations; Coombs eliminates by last places) |
 | `approval-based` | Approval, Approval runoff, Approval cond. runoff, MDDA |
-| `positional` | Borda, Dowdall, Borda-ER |
-| `references` | Random pair runoff, Anti-plurality, TRASH |
+| `rated` | Score, MJ, MCA, Reciprocal score |
+| `hybrid` | STAR, BTR-score, MARS, IC-MARS, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore (ratings combined with pairwise comparisons or runoffs) |
+| `positional` | Borda, Borda-ER, Dowdall |
+| `references` | Random pair runoff, Anti-plurality, TRASH (benchmarks, not proposals; hidden in the plots by default) |
 
-**Comparisons**, selection names only (not plot panels): `borda-family` (Borda, Black, BTR-Borda, Baldwin, Nanson and their Dowdall variants, with Dowdall) and `er-pairs` (each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Ranked Robin-SR/Ranked Robin). Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.
+**Comparison sets**, selection names across groups (not plot panels): `er-pairs`, each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Ranked Robin-SR/Ranked Robin. Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.
 
 Example: `--methods condorcet STAR`, `--methods er-pairs` or `--exclude references`.
 
@@ -399,7 +441,7 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | `arrows-<c>.png` | VSE/WME plane (the region beyond the reachable frontier greyed out), every method's shift from honest (open) to learned ballots (filled, labelled) in one picture; filled points coloured by sincerity (red ramp, darker = less honest, capped at the 10th percentile of the plotted methods) |
 | `shift-<c>.png` | the same shifts as one row per method, VSE and WME panels; easier to read per method |
 | `sincerity-<c>.png` | VSE* and WME* against sincerity |
-| `axes-heatmap.png` | the four axes, methods × conditions (when there are several) |
+| `axes-heatmap.png` | VSE\*, WME\*, sincerity, VSE and WME, methods × conditions (when there are several; methods present in every condition, sorted by VSE\*) |
 | `track-<method>.png` | with `--track`: one method across all conditions in the VSE*/WME* plane (learned ballots filled, honest open). One varied parameter: a chain in its order; two (a grid, e.g. `--aggressive` × `--rounds`): lines along the parameter with more values, colour for the other; more: points with condition tags |
 | `chain-<parameter>.png` | sweeps: for each parameter varied around the base (the first condition), each method's learned values as a chain of arrows through the parameter's values, light to dark; one panel per method group, all on the same scale. If the parameter only affects voters' strategy (strategic and aggressive shares, poll rounds, polls, group size), the electorates are the same and each chain starts at the method's honest point; otherwise the honest values form their own dashed chain |
 

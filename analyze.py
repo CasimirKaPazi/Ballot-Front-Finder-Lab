@@ -33,7 +33,7 @@ Outputs in --out (a directory; a bare name goes into output/):
     arrows-<c>.png             per condition: honest -> strategic in the VSE/WME plane, all methods together
     shift-<c>.png              per condition: the same shifts as one row per method (VSE and WME panels)
     sincerity-<c>.png          per condition: VSE* and WME* against sincerity
-    axes-heatmap.png           all four axes, methods x conditions (if several conditions)
+    axes-heatmap.png           VSE*, WME*, sincerity, VSE, WME: methods x conditions (if several conditions)
     chain-<param>.png          per parameter varied around the base: each method's chain of results
 """
 import argparse
@@ -44,7 +44,7 @@ import numpy as np
 
 import plots
 from run import out_path, group_text, strategy_text, OUTPUT_DIR, PARAMS as RUN_PARAMS
-from methods import GROUPS
+from methods import GROUPS, METHODS, select, group_of
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
 FRONT = ["VSE*", "WME*", "sincerity"]   # the axes dominance is judged on
@@ -53,29 +53,12 @@ TYPES = ["compromise", "burial", "pushover"]
 PARAMS = [k for k in RUN_PARAMS if k != "seed"]      # condition parameters, as run.py writes them
 NOM = ["nom_changed", "nom_exits", "nom_clones", "nom_settled"]     # per method and election (sincere rows)
 PART = ["noshow", "noshow_voters", "noshow_gain"]   # participation check (run.py --participation), both ballot sets
-OLD_DEFAULTS = {"zipf": "0", "max_score": "5", "aggressive": "1.0"}   # parameters missing from older CSVs
-
-
-def param_value(r, k):
-    """A row's parameter value; older CSVs lack some. CSVs from before poll rounds (2026-10-08)
-    used convergent learning, with its rounds in the rounds column: they count as converge, and
-    as 0 poll rounds."""
-    old = "converge" not in r
-    if k == "converge" and old:
-        return r.get("rounds", "20")
-    if k == "rounds" and old:
-        return "0"
-    if k in r:
-        return r[k]
-    return OLD_DEFAULTS.get(k, "0")
-
-
 def load(paths):
     rows = []
     for p in paths:
         with open(p, newline="") as f:
             reader = csv.DictReader(f)
-            missing = [k for k in ["seed", "strategic", "WM_best", "U_rb", "sincerity"]
+            missing = [k for k in RUN_PARAMS + ["WM_best", "U_rb", "sincerity", "U_cands", "nom_changed", "noshow"]
                        if k not in (reader.fieldnames or [])]
             if missing:
                 raise SystemExit(f"{p} lacks {', '.join(missing)}; regenerate it with the current run.py or sweep.py")
@@ -89,7 +72,7 @@ def conditions(rows):
     """Group rows by parameters (seed excluded). Returns {key: rows} in first-seen order."""
     out = OrderedDict()
     for r in rows:
-        out.setdefault(tuple(param_value(r, k) for k in PARAMS), []).append(r)
+        out.setdefault(tuple(r[k] for k in PARAMS), []).append(r)
     return out
 
 
@@ -115,23 +98,23 @@ def arrays(rows):
         if r["ballots"] == "sincere":
             A["num_s"][i, j], A["cw_s"][i, j], A["wm_s"][i, j] = num, pcw, nwm
             for k in NOM:
-                A[k][i, j] = float(r.get(k) or (1 if k == "nom_settled" else 0))   # older CSVs: no nomination
+                A[k][i, j] = float(r[k])
             for k in PART:
-                A[k + "_s"][i, j] = float(r.get(k) or "nan")    # NaN: participation not checked
+                A[k + "_s"][i, j] = float(r[k])               # nan: participation not checked
             den[i] = float(r["U_best"]) - float(r["U_rb"])
             dwm[i] = float(r["WM_best"]) - float(r["WM_rb"])
             has[i] = float(r["has_cw"])
             for k in ele:
-                ele[k][i] = float(r.get(k) or "nan")         # older CSVs lack the electorate columns
-            if r.get("U_cands"):
+                ele[k][i] = float(r[k] or "nan")              # empty without a Condorcet winner
+            if r["U_cands"]:
                 cands[i] = (np.array(r["U_cands"].split(";"), float), np.array(r["WM_cands"].split(";"), float))
         else:
             A["num_l"][i, j], A["cw_l"][i, j], A["wm_l"][i, j] = num, pcw, nwm
             A["sin"][i, j] = float(r["sincerity"])
             for t in TYPES:
-                A[t][i, j] = float(r.get(t) or "nan")      # older CSVs have no strategy types
+                A[t][i, j] = float(r[t])
             for k in PART:
-                A[k + "_l"][i, j] = float(r.get(k) or "nan")
+                A[k + "_l"][i, j] = float(r[k])
     return methods, A, (den, dwm), has, ele, cands
 
 
@@ -329,9 +312,9 @@ def main():
     ap.add_argument("--out", default="analysis")
     ap.add_argument("--boot", type=int, default=1000, help="bootstrap replicates")
     ap.add_argument("--compare", nargs="*", default=[], help='pairs "A:B" for paired differences')
-    ap.add_argument("--hide", nargs="*", default=["Random pair runoff", "Anti-plurality", "TRASH"],
-                    help="methods left out of the scatter plots (they stay in tables and heatmaps); "
-                         "give --hide with no names to show all")
+    ap.add_argument("--hide", nargs="*", default=["references"],
+                    help="methods or groups left out of the scatter plots (they stay in tables and heatmaps); "
+                         "default: the references group; give --hide with no names to show all")
     ap.add_argument("--show", nargs="+", default=None,
                     help="only these methods or groups in the scatter and chain plots (overrides --hide)")
     ap.add_argument("--errorbars", action="store_true",
@@ -348,9 +331,10 @@ def main():
     rng = np.random.default_rng(a.seed)
 
     if a.show:
-        from methods import select, METHODS
         keep = set(select(a.show))
         a.hide = [m for m in METHODS if m not in keep]
+    elif a.hide:
+        a.hide = select(a.hide)
     conds = conditions(load(a.csv))
     keys = list(conds)
     varying = [k for i, k in enumerate(PARAMS) if len({key[i] for key in keys}) > 1]
@@ -368,10 +352,10 @@ def main():
         cols = []
         for x in AXES + EXTRA + ["sincerity"] + TYPES:
             cols += [x, x + "_lo", x + "_hi"]
-        w.writerow(PARAMS + ["condition", "elections", "method"] + cols + ["dominated_by"])
+        w.writerow(PARAMS + ["condition", "elections", "method", "group"] + cols + ["dominated_by"])
         for key, r in results.items():
             for j, m in enumerate(r["methods"]):
-                w.writerow(list(key) + [r["tag"], r["elections"], m]
+                w.writerow(list(key) + [r["tag"], r["elections"], m, group_of(m)]
                            + [f"{r[x][j]:.5f}" for x in cols] + [dom_text(r["dominated_by"][j], "; ")])
 
     # plots
@@ -380,7 +364,8 @@ def main():
         plots.shift(r, os.path.join(a.out, f"shift-{r['tag']}.png"), a.hide)
         plots.sincerity(r, os.path.join(a.out, f"sincerity-{r['tag']}.png"), a.hide)
     if len(results) > 1:
-        plots.axes_heatmap(list(results.values()), AXES, os.path.join(a.out, "axes-heatmap.png"))
+        plots.axes_heatmap(list(results.values()), ["VSE*", "WME*", "sincerity", "VSE", "WME"],
+                           os.path.join(a.out, "axes-heatmap.png"))
     chains = sweep_chains(keys, varying)
     for k, chain_keys in chains.items():
         vals = [dict(zip(PARAMS, key))[k] for key in chain_keys]
@@ -390,7 +375,6 @@ def main():
                     k in SAME_ELECTORATES)
     tracked = []
     if a.track and len(results) > 1:
-        from methods import select
         conds_p = [(results[key], dict(zip(PARAMS, key))) for key in keys]
         same = all(k in SAME_ELECTORATES for k in varying)
         for m in select(a.track):
@@ -497,10 +481,10 @@ def main():
               "**Front** (dominated by none on VSE*, WME*, sincerity): "
               + ", ".join(r["methods"][j] for j in np.argsort(-r["VSE*"], kind="stable") if not r["dominated_by"][j])
               + ".", "",
-              "| Method | VSE* | WME* | Sincerity | VSE | WME | CE | CE* | Compromise | Burial | Push-over | Dominated by |",
-              "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+              "| Method | Group | VSE* | WME* | Sincerity | VSE | WME | CE | CE* | Compromise | Burial | Push-over | Dominated by |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for j in np.argsort(-r["VSE*"], kind="stable"):
-            L.append(f"| {r['methods'][j]} | "
+            L.append(f"| {r['methods'][j]} | {group_of(r['methods'][j])} | "
                      + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j])
                                   for x in ["VSE*", "WME*", "sincerity", "VSE", "WME"] + EXTRA)
                      + " | " + " | ".join(f"{r[t][j] * 100:.1f}%" for t in TYPES)
@@ -552,9 +536,10 @@ def main():
                     cells.append(f"{pt:+.1f} [{lo:+.1f}, {hi:+.1f}]{tie}")
                 L.append(f"| {m1} − {m2} | " + " | ".join(cells) + " |")
             L.append("")
-    if a.hide:
-        L += [f"Scatter plots leave out {', '.join(a.hide)} (far from the rest, they compress the scale); "
-              "they are included in all tables and heatmaps.", ""]
+    if a.show:
+        L += [f"Scatter and chain plots show only {', '.join(a.show)}; all methods are in the tables and heatmaps.", ""]
+    elif a.hide:
+        L += [f"Scatter and chain plots leave out {', '.join(a.hide)}; they are in all tables and heatmaps.", ""]
     with open(os.path.join(a.out, "report.md"), "w") as f:
         f.write("\n".join(L))
     print(f"{len(results)} condition(s); wrote {a.out}/summary.csv, report.md and plots")

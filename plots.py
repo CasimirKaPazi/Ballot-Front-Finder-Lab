@@ -417,10 +417,10 @@ def track(conds, method, varying, names, path, same_electorates, errorbars=False
 
 
 def _row_order(results):
-    """Methods sorted by honest VSE, averaged over conditions."""
-    methods = results[0]["methods"]
-    mean_pe = np.mean([[r["VSE"][r["methods"].index(m)] for m in methods] for r in results], axis=0)
-    return [methods[j] for j in np.argsort(-mean_pe, kind="stable")]
+    """Methods present in every condition, sorted by VSE*, averaged over conditions."""
+    methods = [m for m in results[0]["methods"] if all(m in r["methods"] for r in results)]
+    mean = np.mean([[r["VSE*"][r["methods"].index(m)] for m in methods] for r in results], axis=0)
+    return [methods[j] for j in np.argsort(-mean, kind="stable")]
 
 
 def _heat(ax, data, rows, cols, fmt, vmin, vmax, cmap):

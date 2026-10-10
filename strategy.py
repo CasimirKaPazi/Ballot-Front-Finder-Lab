@@ -178,8 +178,7 @@ def group_value(P, Ug):
 def learn(method, u, rng, rounds=20, samples=10, group_size=0, strategic=None):
     """Convergent learning (see the module docstring). Return learned ballots, whether learning
     settled, and mean sincerity (all voters). strategic: boolean mask of voters who take part
-    (None = all). run.py passes --samples, whose default is now 30 (for poll rounds): results up to
-    2026-10-08 used 10, so reproduce them with --converge 20 --samples 10."""
+    (None = all). run.py passes --samples (default 30, chosen for poll rounds)."""
     n, C = u.shape
     sincere = method.sincere(u)
     B = sincere.copy()

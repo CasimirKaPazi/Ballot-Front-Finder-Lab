@@ -33,7 +33,7 @@ check("Baldwin (K out, B out, G beats R)", METHODS["Baldwin"].honest(u), [0, 1, 
 check("MJ (R and G median 3, R wins on removal)", METHODS["MJ"].honest(u), [1, 0, 0, 0])
 check("ARA-Top", METHODS["ARA-Top"].honest(u), [1, 0, 0, 0])
 
-# Methods added later, same 4-3-2 profile (G is the Condorcet winner)
+# More methods on the same 4-3-2 profile (G is the Condorcet winner)
 check("Anti-plurality (everyone vetoes K: R, G, B tie)", METHODS["Anti-plurality"].honest(u), [1 / 3, 1 / 3, 1 / 3, 0])
 check("Condorcet-random-drop", METHODS["Condorcet-random-drop"].honest(u), [0, 1, 0, 0])
 check("SICT", METHODS["SICT"].honest(u), [0, 1, 0, 0])
@@ -42,7 +42,7 @@ check("BTR-IRV (K out vs G, B out vs G, G beats R)", METHODS["BTR-IRV"].honest(u
 check("Benham (Condorcet winner at once)", METHODS["Benham"].honest(u), [0, 1, 0, 0])
 
 
-# Methods added in the third batch, same 4-3-2 profile
+# More methods on the same 4-3-2 profile
 check("Ranked pairs", METHODS["Ranked pairs"].honest(u), [0, 1, 0, 0])
 check("Schulze", METHODS["Schulze"].honest(u), [0, 1, 0, 0])
 check("Approval cond. runoff (G approved by all 9)", METHODS["Approval cond. runoff"].honest(u), [0, 1, 0, 0])
@@ -51,7 +51,7 @@ check("Score+ (only K eliminated, G wins after renormalising)", METHODS["Score+"
 p = METHODS["Reciprocal score"].honest(u)   # printed for inspection (no hand-computed expectation)
 print("Reciprocal score on 4-3-2:", np.round(p, 3)); assert abs(p.sum() - 1) < 1e-9
 
-# Batch 4 on the 4-3-2 profile: G is the Condorcet winner; R has most first choices and the best Dowdall
+# On the 4-3-2 profile: G is the Condorcet winner; R has most first choices and the best Dowdall
 # score (6 against 5.5); in the supplementary vote the G voters' second choice R beats B 6:3. With three
 # grades (good/OK/bad) G has most approvals (MCA) and, in 3-2-1, the fewest 'bad' ratings, then beats R 5:4.
 for m, want in [("Black", [0, 1, 0, 0]), ("Ranked Robin", [0, 1, 0, 0]), ("Nanson", [0, 1, 0, 0]),
@@ -113,11 +113,11 @@ w = np.array([[3, 3, 1, 0]] * 4 + [[1, 2, 3, 0]] * 3 + [[2, 3, 1, 0]] * 2, dtype
 check("SICT with R and G ranked equal first by 4 voters (G stays the winner)", METHODS["SICT"].tally(w), [0, 1, 0, 0])
 
 from methods import select
-assert select(["star", "SICT"]) == ["STAR", "SICT"]
+assert select(["star", "SICT"]) == ["SICT", "STAR"]            # in the order of METHODS
 assert "Plurality" not in select(None, ["plurality"]) and len(select()) == len(METHODS)
 from methods import GROUPS
 assert all(m in METHODS for ms in GROUPS.values() for m in ms)
-assert "Benham" in select(["Condorcet", "STAR"]) and "STAR" in select(["condorcet", "star"])
+assert "Schulze" in select(["Condorcet", "STAR"]) and "Benham" in select(["condorcet-hybrid"]) and "STAR" in select(["condorcet", "star"])
 assert "TRASH" not in select(None, ["references"]) and "IRV" in select(["plurality-based"])
 print("method selection ok")
 
@@ -132,18 +132,6 @@ check("Schulze on a cycle", METHODS["Schulze"].honest(cy), [1, 0, 0, 0])
 sp = np.array([[5, 4, 0, 0]] * 4 + [[4, 5, 0, 0]] * 3 + [[0, 0, 5, 0]] * 2, dtype=float)
 print("Score+ chicken example:", np.round(METHODS["Score+"].tally(sp), 3))
 
-# On one ranked ballot, the contingent vote needs no "no runoff after a first-round majority" rule: a
-# majority of first choices also wins every runoff, because the runoff reuses the same rankings.
-# Checked on random rankings:
-r = np.random.default_rng(3)
-for _ in range(500):
-    n, C = int(r.integers(3, 30)), int(r.integers(3, 7))
-    B = np.array([r.permutation(C) for _ in range(n)], dtype=float)
-    first = np.bincount(B.argmax(axis=1), minlength=C)
-    if first.max() > n / 2:
-        assert METHODS["Contingent vote"].tally(B)[first.argmax()] == 1
-print("contingent vote: first-round majority wins anyway ok")
-
 # Feature sums give the same winners as the ballots they come from, also when built incrementally
 for name, m in METHODS.items():
     if m.full is None:
@@ -157,6 +145,7 @@ print("incremental feature sums ok")
 
 # Winner's worst margin: a 70:29 Condorcet winner has +41 points, the loser -41;
 # in a 2:1 cycle every candidate's worst margin is -33 points
+from metrics import worst_margins
 clear = profile([(70, [0.9, 0.5, 0.1]), (29, [0.1, 0.5, 0.9])])
 check("worst margins, clear winner", worst_margins(clear), [41 / 99, -41 / 99, -41 / 99])
 cyc3 = profile([(33, [0.9, 0.5, 0.1]), (33, [0.1, 0.9, 0.5]), (33, [0.5, 0.1, 0.9])])
@@ -241,7 +230,6 @@ print("learning on 2 candidates ok")
 from strategy import respond, default_poll_size
 assert (default_poll_size(100), default_poll_size(99), default_poll_size(200)) == (51, 49, 101)
 P_ = METHODS["Plurality"]
-# (With an exact poll there is no runner-up, so no naive exaggerations: this tests the random search.)
 # 4 voters A>C>B, 3 voters B>A>C, 5 voters C>A>B: C wins honestly. With an exact poll (poll size = all
 # voters), only B's voters can do better: they compromise on A, and A wins. A's voters gain nothing
 # by moving (B is their last choice), C's voters are winning.
@@ -277,58 +265,37 @@ for aggr, expect_buried in ((True, True), (False, False)):
     assert Bo.tally(B)[0] == 1
 print("aggressive vs kind ok")
 
-
-# Poll rounds on fields of 2 candidates (strategic exits can leave only two), every method
+# Poll rounds on 2 candidates (strategic exits can leave only two): every ballot type runs
+u2 = r.random((21, 2))
 for name, m in METHODS.items():
-    B, _, _ = respond(m, np.random.default_rng(1).random((15, 2)), np.random.default_rng(2), rounds=2, samples=3)
+    B, _, _ = respond(m, u2, np.random.default_rng(1), rounds=2)
     assert abs(m.tally(B).sum() - 1) < 1e-9, name
 print("poll rounds on 2 candidates ok")
 
-# Reusing rounds: round r of a longer run is exactly what rounds = r gives (run.py and sweep.py rely on it)
-from scenario import Scenario, electorate
-ue = electorate(Scenario(), np.random.default_rng([3, 0]))
-for name in ["Approval", "Borda", "STAR", "Condorcet-random-drop"]:
+# Several round counts from one run (report=...) equal separate runs with the same random stream
+ur = r.random((31, 4))
+for name in ["Approval", "IRV", "Borda", "STAR", "TTR"]:
     m = METHODS[name]
-    rep = respond(m, ue, np.random.default_rng(4), samples=5, report=[0, 1, 2])
-    for r, (Br, sr, cr) in zip([0, 1, 2], rep):
-        Bs, ss, cs = respond(m, ue, np.random.default_rng(4), rounds=r, samples=5)
-        assert np.array_equal(Br, Bs) and sr == ss and abs(cr - cs) < 1e-12, (name, r)
-print("reused rounds equal separate runs ok")
+    rep = respond(m, ur, np.random.default_rng(4), report=[1, 2, 3])
+    for k, (B, st, sn) in zip([1, 2, 3], rep):
+        B1, st1, sn1 = respond(m, ur, np.random.default_rng(4), rounds=k)
+        assert np.array_equal(B, B1) and st == st1 and abs(sn - sn1) < 1e-12, (name, k)
+print("reused rounds = separate runs ok")
 
-# Settled means the ballots repeat the round before: Plurality voters whose favourite is a poll
-# leader "exaggerate" to their own sincere ballot; nothing changes, so the round is settled
 u = profile([(6, [0.9, 0.3, 0.1]), (5, [0.3, 0.9, 0.1])]) + 0.01
 B, st, _ = respond(METHODS["Plurality"], u, np.random.default_rng(0), rounds=1)
 assert np.array_equal(B, METHODS["Plurality"].sincere(u)) and st
 print("settled ok")
 
-# Batch 5. Equal-ranking variants equal their strict versions on sincere (strict) ballots
+# Equal-ranking variants equal their strict versions on sincere (strict) ballots
 r = np.random.default_rng(11)
-pairs = [("Borda", "Borda-ER"), ("Baldwin", "Baldwin-ER"), ("Contingent vote", "Contingent-ER"), ("Minimax", "Minimax-ER"),
+pairs = [("Borda", "Borda-ER"), ("Baldwin", "Baldwin-ER"), ("Minimax", "Minimax-ER"),
          ("Schulze", "Schulze-ER"), ("Ranked Robin", "Ranked Robin-SR"), ("Minimax", "MMWV")]
 for _ in range(100):
     uu = r.random((int(r.integers(5, 40)), int(r.integers(3, 7))))
     for a_, b_ in pairs:
         assert np.allclose(METHODS[a_].honest(uu), METHODS[b_].honest(uu)), (a_, b_)
 print("ER variants = strict versions on strict ballots ok")
-
-# Dowdall among a subset: on the full field it is the plain Dowdall count; within a pair, 1 and 1/2
-from methods import FEATURES, _lcm_upto
-Bt = METHODS["Borda"].sincere(r.random((7, 5)))
-ds = FEATURES["dowdall_sub"][0](Bt).reshape(7, 32, 5)
-assert np.array_equal(ds[:, 31], FEATURES["dowdall"][0](Bt))
-pair = (1 << 1) | (1 << 3)
-L = _lcm_upto(5)
-assert all(sorted(ds[v, pair, [1, 3]]) == [L // 2, L] for v in range(7))
-print("Dowdall among subsets ok")
-
-# Dowdall variants: with a Condorcet winner, Black-Dowdall, BTR-Dowdall, Baldwin-Dowdall elect it here;
-# without one, Black-Dowdall is the Dowdall winner
-cyc = profile([(4, [0.6, 0.3, 0.1, 0.0]), (3, [0.1, 0.6, 0.3, 0.0]), (2, [0.3, 0.1, 0.6, 0.0])])
-check("Black-Dowdall on a cycle = Dowdall", METHODS["Black-Dowdall"].honest(cyc), METHODS["Dowdall"].honest(cyc))
-cw = profile([(4, [0.6, 0.5, 0.0, 0.1]), (3, [0.5, 0.6, 0.1, 0.0]), (2, [0.5, 0.0, 0.6, 0.1])])
-for name in ["Black-Dowdall", "BTR-Dowdall", "Baldwin-Dowdall", "Nanson-Dowdall"]:
-    check(f"{name} elects the Condorcet winner", METHODS[name].honest(cw), [1, 0, 0, 0])
 
 # IC-MARS: 3 voters A5 B4, 2 voters A3 B5, 4 voters A5 B5 (C 0). A beats B 3:2, but the 4 voters
 # rating both at the top could reverse that, so the margin counts 0 and B's higher score (42 > 41)
@@ -381,19 +348,22 @@ from run import one_election
 rows = []
 for e in range(6):
     rows += one_election((Scenario(n_voters=31, n_cands=5), 3, e, [1], 5, 10, 0.5, 5, 1, 2, 0, 2.0, 2, 0, 0.5,
-                          ["Contingent vote", "Contingent-ER", "IRV", "ER-IRV"], False))
+                          ["Borda", "Borda-ER", "IRV", "ER-IRV"], False))
 hon = {}
 for row in rows:
     if row["ballots"] == "sincere":
         hon.setdefault(row["method"], []).append(row["U_method"])
-assert np.allclose(hon["Contingent vote"], hon["Contingent-ER"]) and np.allclose(hon["IRV"], hon["ER-IRV"]), hon
+assert np.allclose(hon["Borda"], hon["Borda-ER"]) and np.allclose(hon["IRV"], hon["ER-IRV"]), hon
 print("ER pairs: same honest result with nomination ok")
 
 # Two-round elections: the runoff is a separate vote, read from the fixed sincere ranking, so
-# strategy changes only the round-1 marks. Honestly TTR = contingent vote (on one ballot).
+# strategy changes only the round-1 marks. Honestly TTR = top two by first choices, then the majority
+# runoff on the same rankings (the contingent vote).
+from methods import Method, d_top_two
+contingent = Method("rank", d_top_two, ("first", "gt"))
 for _ in range(100):
     uu = r.random((int(r.integers(5, 40)), int(r.integers(3, 7))))
-    assert np.allclose(METHODS["TTR"].honest(uu), METHODS["Contingent vote"].honest(uu))
+    assert np.allclose(METHODS["TTR"].honest(uu), contingent.honest(uu))
 # 4 A>B>C, 3 B>A>C, 2 C>B>A. Honestly A 4, B 3, C 2: A and B go on, B wins the runoff 5:4.
 tr = profile([(4, [0.9, 0.5, 0.1]), (3, [0.5, 0.9, 0.1]), (2, [0.1, 0.5, 0.9])])
 Bt = METHODS["TTR"].sincere(tr)
@@ -440,3 +410,8 @@ for _ in range(150):
         fails[name] += x["noshow"]
 assert fails["Score"] == 0 and fails["Approval"] == 0 and fails["IRV"] > 0, fails
 print("participation check ok; no-show cases in 150 small elections:", fails)
+
+# Every method is in exactly one group (asserted in methods.py as well)
+from methods import GROUPS, group_of
+assert all(group_of(m) != "other" for m in METHODS) and sum(map(len, GROUPS.values())) == len(METHODS)
+print("groups: every method in exactly one ok")

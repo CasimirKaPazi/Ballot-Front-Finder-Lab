@@ -4,6 +4,8 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Units.** Up to 2026-10-06 the axes were PE (zero = utility-proportional lottery) and WM (the winner's worst margin in % of voters); the sections below keep those units. Since then they are VSE and WME, both with 0 = random ballot and 100 = best candidate (README, Axes). Within one condition the change is a fixed rescaling of each axis (the sums over elections that set the zero and the 100 are the same for all methods), so method order, dominance and rank stability are unaffected; only the numbers differ.
 
+**Removed methods.** On 2026-10-09 the Dowdall variants (Black-, BTR-, Baldwin-, Nanson-Dowdall; plain Dowdall stays) and the contingent vote (Contingent vote, Contingent-ER) were removed: the Dowdall test had answered its question (see the current picture below), and the contingent vote only served to separate the automated from the real runoff. Sections below still report them.
+
 **Front.** From 2026-10-09 the analysis judges dominance on VSE*, WME* and sincerity: the result with strategic voters and how honest they can afford to be. Honest VSE and WME depend more on modelling assumptions and are context only. Earlier sections used other axes.
 
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
