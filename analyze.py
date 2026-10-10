@@ -251,14 +251,16 @@ def label(key, varying, first):
 
 PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error", "converge": "convergent rounds",
-               "aggressive": "aggressive share"}
+               "aggressive": "aggressive share", "start": "first poll"}
 LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "poll_size", "poll_error", "search", "converge",
-                 "aggressive"}   # same electorates
+                 "aggressive", "start"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones"}  # same electorates (honest results may differ)
 
 
 def param_order(k, v):
     """Sort key for a parameter value; group size 0 (whole ranking groups) counts as the largest."""
+    if k == "start":
+        return ["honest", "previous"].index(v)
     x = float(v)
     return float("inf") if k == "group_size" and x == 0 else x
 

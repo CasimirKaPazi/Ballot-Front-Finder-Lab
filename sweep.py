@@ -46,6 +46,7 @@ def main():
     ap.add_argument("--clones", type=int, nargs="+", default=[0])
     ap.add_argument("--poll-size", type=int, nargs="+", default=[0])
     ap.add_argument("--search", type=int, nargs="+", default=[10])
+    ap.add_argument("--start", nargs="+", default=["honest"], choices=["honest", "previous"])
     ap.add_argument("--poll-error", type=float, nargs="+", default=[2.0])
     ap.add_argument("--aggressive", type=float, nargs="+", default=[0.5])
     ap.add_argument("--converge", type=int, nargs="+", default=[0])

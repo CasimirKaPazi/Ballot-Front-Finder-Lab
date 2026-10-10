@@ -10,6 +10,81 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
 
+## Lock-in: starting from a previous election's result, full strategy (2026-10-10)
+
+Run (user): `--start honest previous --rounds 1 2 3 4 5 6 7 8 --strategic 1 --aggressive 1`, 200 elections, defaults otherwise; Score, Approval, IC-MARS, Minimax, IRV, IRV-3, ER-IRV, TTR, Borda. The first poll shows either the honest ballots or the final ballots of one previous (dummy) election under the same method, its candidates relabelled at random (README, Starting information). Same elections in both; VSE* / WME*:
+
+| Method | start | round 1 | round 2 | round 3 | round 5 | round 8 |
+|---|---|---|---|---|---|---|
+| TTR | honest | 86 / 84 | 89 / 89 | 89 / 90 | 90 / 93 | 89 / 94 |
+| | previous | 40 / 30 | 46 / 34 | 47 / 36 | 47 / 35 | 47 / 35 |
+| IRV | honest | 85 / 84 | 85 / 81 | 89 / 84 | 89 / 87 | 89 / 88 |
+| | previous | 43 / 33 | 50 / 40 | 54 / 44 | 55 / 44 | 54 / 45 |
+| IRV-3 | honest | 88 / 83 | 88 / 84 | 87 / 83 | 87 / 86 | 90 / 90 |
+| | previous | 64 / 50 | 72 / 63 | 77 / 68 | 80 / 74 | 80 / 77 |
+| ER-IRV | honest | 87 / 85 | 86 / 87 | 88 / 89 | 86 / 88 | 87 / 91 |
+| | previous | 75 / 67 | 86 / 82 | 87 / 87 | 88 / 89 | 87 / 91 |
+| Approval | honest | 84 / 89 | 88 / 89 | 90 / 89 | 85 / 91 | 90 / 91 |
+| | previous | 59 / 44 | 82 / 80 | 84 / 87 | 87 / 86 | 90 / 88 |
+| Score | honest | 88 / 92 | 89 / 91 | 91 / 92 | 88 / 90 | 90 / 90 |
+| | previous | 82 / 74 | 89 / 81 | 89 / 86 | 88 / 87 | 89 / 90 |
+| IC-MARS | honest | 86 / 93 | 89 / 94 | 88 / 93 | 90 / 93 | 90 / 93 |
+| | previous | 79 / 72 | 87 / 84 | 86 / 90 | 88 / 91 | 87 / 92 |
+| Minimax | honest | 83 / 91 | 83 / 84 | 85 / 91 | 88 / 92 | 85 / 91 |
+| | previous | 58 / 44 | 79 / 73 | 79 / 82 | 84 / 88 | 83 / 89 |
+| Borda | honest | 50 / 42 | 70 / 65 | 61 / 59 | 68 / 68 | 75 / 70 |
+| | previous | 72 / 62 | 63 / 61 | 65 / 60 | 69 / 67 | 67 / 59 |
+
+Second run, same settings (user), more methods; VSE* / WME*:
+
+| Method | start | round 1 | round 2 | round 3 | round 5 | round 8 |
+|---|---|---|---|---|---|---|
+| Plurality | honest | 78 / 69 | 80 / 72 | 84 / 73 | 85 / 74 | 85 / 74 |
+| | previous | 34 / 26 | 36 / 28 | 36 / 29 | 37 / 30 | 37 / 30 |
+| Coombs | honest | 80 / 90 | 83 / 88 | 83 / 89 | 81 / 91 | 83 / 91 |
+| | previous | 69 / 56 | 76 / 79 | 78 / 84 | 80 / 86 | 84 / 89 |
+| BTR-IRV | honest | 77 / 84 | 80 / 83 | 82 / 87 | 86 / 86 | 87 / 87 |
+| | previous | 75 / 69 | 82 / 79 | 85 / 81 | 84 / 81 | 88 / 88 |
+| MJ | honest | 87 / 90 | 88 / 89 | 87 / 91 | 87 / 94 | 85 / 93 |
+| | previous | 69 / 54 | 84 / 83 | 88 / 88 | 86 / 89 | 83 / 92 |
+| MCA | honest | 82 / 91 | 88 / 94 | 83 / 91 | 89 / 89 | 88 / 89 |
+| | previous | 73 / 62 | 81 / 82 | 85 / 86 | 89 / 89 | 89 / 93 |
+| SICT | honest | 80 / 84 | 84 / 84 | 89 / 89 | 86 / 88 | 86 / 90 |
+| | previous | 68 / 54 | 83 / 84 | 88 / 84 | 86 / 91 | 84 / 90 |
+| STAR | honest | 85 / 87 | 90 / 94 | 87 / 93 | 86 / 92 | 89 / 93 |
+| | previous | 80 / 70 | 86 / 86 | 88 / 91 | 88 / 90 | 88 / 93 |
+| ARA, Score+, MMPO, MMWV, Minimax-ER, Baldwin-ER | previous, round 1 | 78–86 / 69–81, back within 2–4 rounds | | | | |
+| Condorcet-random-drop | both | 81–87 / 77–86 in every round, no difference between the starts | | | | |
+
+- **TTR and IRV stay locked in.** TTR freezes from round 3 on at about 47 / 35, IRV at about 54 / 44, against 89 / 90 with an honest start. The outdated front-runners keep the first choices: everyone marks or ranks first the preferred of the two old leaders, which keeps them in front, and no single group gains by moving to a candidate the polls show as hopeless. TTR's honest runoff only picks the better of the two old leaders.
+- **Plurality locks in completely** (34 / 26 → 37 / 30 by round 8, against 85 / 74 with an honest start) and freezes from round 3 on, like TTR. Together with TTR and IRV it forms the group of methods that count first choices only.
+- **Every method that reads the whole ballot recovers.** BTR-IRV and Coombs eliminate like IRV, but BTR-IRV decides each elimination head to head between the bottom two, and Coombs eliminates by last places: the strategic ballots still rank the other candidates below the old leaders, and those full rankings carry the information back. Both are back by round 3–8. The same holds for the rated, approval and pairwise methods, the grade methods (MJ, MCA) and SICT; several (ARA, Score+, MMPO, MMWV, Minimax-ER, Baldwin-ER) are hardly affected even in round 1.
+- **ER-IRV recovers by round 2–3,** the same split as in the Inverse test: equal first ranks let voters support several candidates at once, so no coordination on one new front-runner is needed.
+- **Approval, Score, IC-MARS and Minimax recover** within 2–5 rounds (Approval 59 / 44 → 84 / 87 by round 3; Minimax 58 / 44 → 84 / 88 by round 5). Score and IC-MARS start least damaged (round 1: 82 / 74 and 79 / 72).
+- **IRV-3 recovers partly** (64 / 50 → 80 / 77), clearly better than full IRV, for a reason not yet clear. A guess: ballots that rank at most 3 candidates and leave the other old front-runner unranked exhaust in the later eliminations, which weakens the old leaders' transfers.
+- **Borda** is unstable under all-aggressive voters whatever the start (honest 50–75 VSE* across rounds), so this test says little about it.
+- **The honest start flatters the plurality-based methods.** With honest first polls the popular candidates lead, and TTR and IRV look as good as the rated methods (VSE* about 89). Start them from a different picture and they keep it: their good results depend on the starting information being right. In an electorate whose opinions have moved since the last election, or in which the media picture is wrong, that is the case that matters.
+
+## First look: starting from a previous election's result (2026-10-10)
+
+Run (Claude, small): `sweep.py --start honest previous --rounds 1 3 8 --elections 30 --methods Plurality IRV ER-IRV TTR Approval Score STAR Minimax Borda`, defaults otherwise (strategic share 0.5, aggressive share 0.5). 30 elections: point estimates only, a few points are noise. VSE* / WME*:
+
+| Method | honest start, round 1 | previous, round 1 | honest, round 3 | previous, round 3 | honest, round 8 | previous, round 8 |
+|---|---|---|---|---|---|---|
+| Plurality | 70 / 54 | 49 / 36 | 63 / 47 | 67 / 51 | 74 / 62 | 66 / 59 |
+| IRV | 87 / 73 | 68 / 65 | 90 / 88 | 92 / 85 | 87 / 85 | 90 / 86 |
+| TTR | 86 / 85 | 75 / 67 | 88 / 81 | 93 / 85 | 84 / 87 | 87 / 80 |
+| ER-IRV | 92 / 73 | 87 / 82 | 87 / 74 | 92 / 85 | 93 / 89 | 95 / 88 |
+| Approval | 89 / 91 | 87 / 74 | 92 / 87 | 85 / 82 | 94 / 88 | 94 / 91 |
+| Score | 96 / 92 | 93 / 86 | 93 / 91 | 89 / 82 | 90 / 92 | 91 / 90 |
+| STAR | 95 / 97 | 95 / 91 | 91 / 92 | 95 / 95 | 91 / 93 | 91 / 96 |
+| Minimax | 86 / 97 | 89 / 92 | 88 / 100 | 86 / 99 | 89 / 99 | 89 / 99 |
+| Borda | 84 / 90 | 84 / 84 | 83 / 93 | 82 / 83 | 88 / 91 | 84 / 92 |
+
+- **Round 1 pays for the outdated picture,** most under Plurality, IRV and TTR (VSE* 11–21 points lower), less under ER-IRV and the rated, approval and Condorcet methods.
+- **By round 3–8 most methods are back,** within the noise of this run; Plurality possibly stays lower (round 8: 66 / 59 against 74 / 62).
+- The lock-in is much weaker than with the Inverse-* methods. Two reasons: the relabelled front-runners are random candidates, not the most disliked ones, and kind voters start from their sincere ballots and keep them unless the polls show a gain, which pulls the polls toward the real electorate. A run at full size, and with `--aggressive 1` and `--strategic 1`, would show whether a lasting lock-in remains for the plurality-based methods.
+
 ## Model test: Inverse-* methods (2026-10-10)
 
 Run (Claude, small): `sweep.py --strategic 1 --rounds 1 3 8 15 --methods inverse Plurality Approval Minimax --elections 40`, with `--aggressive 0.5` (default) and `--aggressive 1`; defaults otherwise. 40 elections: point estimates only, differences of a few points are noise.

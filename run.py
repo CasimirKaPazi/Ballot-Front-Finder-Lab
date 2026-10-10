@@ -39,7 +39,7 @@ import participation as part
 
 def one_election(args):
     (sc, seed, e, rounds, samples, group_size, share, max_score, exits, clones, poll_size, poll_error, search,
-     converge, aggr, names, participation) = args
+     converge, aggr, names, participation, start, dummy) = args
     set_max_score(max_score)                        # per process: workers do not share module state
     rng = np.random.default_rng([seed, e])
     u, voters, cands = electorate_positions(sc, rng)
@@ -81,11 +81,18 @@ def one_election(args):
         # polls for every method as long as they draw alike), so results stay the same when methods
         # are added or reordered, and paired comparisons are not blurred by different poll draws.
         mrng = np.random.default_rng([seed, e, zlib.crc32(b"learning")])
+        # --start previous: the first poll shows the previous election's result (the same dummy
+        # election for every election), its candidates relabelled at random as this election's
+        B0 = None
+        if start == "previous":
+            perm = np.random.default_rng([seed, e, zlib.crc32(b"relabel")]).permutation(C)
+            B0 = np.empty_like(dummy[name])
+            B0[:, perm] = dummy[name]
         if converge > 0:     # convergent learning does not use rounds: one result for every rounds value
             res = [learn(m, uf, mrng, converge, samples, group_cap(group_size, len(u)), strategic)] * len(rounds)
         else:                # all requested numbers of poll rounds from one run (see strategy.respond)
             res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
-                          poll_error=poll_error, report=rounds, aggressive=aggressive)
+                          poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0)
         for r, (B, settled, sin) in zip(rounds, res):
             out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row})
             out.append({"rounds": r, "election": e, "method": name, "ballots": "learned",
@@ -115,6 +122,10 @@ def check_params(a, error):
             error(f"--{k} must be between 0 and 1")
     if any(v < 0 for v in vals("poll_error")):
         error("--poll-error must be 0 or more")
+    if "previous" in vals("start") and (any(vals("exits")) or any(vals("clones"))):
+        error("--start previous needs the original field: not with --exits or --clones")
+    if "previous" in vals("start") and any(vals("converge")):
+        error("--start previous is for poll rounds, not --converge")
 
 
 def strategy_text(p, n):
@@ -125,7 +136,8 @@ def strategy_text(p, n):
                 f"group size {group_text(g('group_size'))}")
     ps = int(g("poll_size")) or default_poll_size(int(n))
     return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
-            f"search {g('search')}, aggressive share {g('aggressive')}")
+            f"search {g('search')}, aggressive share {g('aggressive')}"
+            + ("; first poll from a previous election" if g("start") == "previous" else ""))
 
 
 def group_size_arg(x):
@@ -150,7 +162,23 @@ def group_text(g):
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "rounds", "samples", "group_size",
           "strategic", "aggressive", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
-          "seed"]
+          "start", "seed"]
+
+
+def previous_election(args):
+    """The dummy election for --start previous: an extra electorate (its own random stream) under the
+    same settings, through the same number of poll rounds; returns its final ballots."""
+    sc, p, rounds, name = args
+    set_max_score(p["max_score"])
+    rng = np.random.default_rng([p["seed"], zlib.crc32(b"previous")])
+    u = electorate_positions(sc, rng)[0]
+    strategic = rng.random(len(u)) < p["strategic"]
+    aggressive = rng.random(len(u)) < p["aggressive"]
+    m = METHODS[name]
+    B, _, _ = respond(m, u, np.random.default_rng([p["seed"], zlib.crc32(b"previous-learning")]), rounds=rounds,
+                      samples=p["samples"], poll_size=p["poll_size"], search=p["search"], strategic=strategic,
+                      poll_error=p["poll_error"], aggressive=aggressive)
+    return B
 
 
 def simulate(p, elections, workers=None, names=None, participation=False):
@@ -166,6 +194,10 @@ def simulate(p, elections, workers=None, names=None, participation=False):
              p["exits"], p["clones"], p["poll_size"], p["poll_error"], p["search"], p["converge"], p["aggressive"],
              names, participation) for e in range(elections)]
     with Pool(workers) as pool:
+        dummy = None
+        if p["start"] == "previous":          # one previous election for the whole batch, per method
+            dummy = dict(zip(names, pool.map(previous_election, [(sc, p, max(rounds), n) for n in names])))
+        jobs = [j + (p["start"], dummy) for j in jobs]
         rows = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
     meta = {k: p[k] for k in PARAMS if k != "rounds"}
     rows = [{**meta, **r} for r in rows]
@@ -215,6 +247,9 @@ def main():
                     help="1: candidates may withdraw and re-enter strategically (see nomination.py)")
     ap.add_argument("--clones", type=int, default=0,
                     help="most clones in the race at once, fielded strategically (0 = none; see nomination.py)")
+    ap.add_argument("--start", default="honest", choices=["honest", "previous"],
+                    help="what the first poll shows: honest ballots, or the result of a previous election (one "
+                         "dummy election under the same settings, its candidates relabelled at random)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--methods", nargs="+", default=None, help="run only these methods (start from none)")

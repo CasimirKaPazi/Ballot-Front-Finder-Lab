@@ -348,7 +348,7 @@ from run import one_election
 rows = []
 for e in range(6):
     rows += one_election((Scenario(n_voters=31, n_cands=5), 3, e, [1], 5, 10, 0.5, 5, 1, 2, 0, 2.0, 2, 0, 0.5,
-                          ["Borda", "Borda-ER", "IRV", "ER-IRV"], False))
+                          ["Borda", "Borda-ER", "IRV", "ER-IRV"], False, "honest", None))
 hon = {}
 for row in rows:
     if row["ballots"] == "sincere":

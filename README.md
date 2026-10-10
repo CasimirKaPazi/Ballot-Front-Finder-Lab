@@ -154,6 +154,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--max-score` | 5 | score ballots range over 0–max (see Score range) |
 | `--exits` | 0 | 1: candidates may withdraw and re-enter strategically (see Strategic nomination) |
 | `--clones` | 0 | most clones in the race at once, fielded strategically; 0 = none (see Strategic nomination) |
+| `--start` | honest | what the first poll shows: `honest` ballots, or `previous`: the result of a previous election (see Starting information) |
 | `--participation` | off | also check participation (no-show paradox) on sincere and learned ballots (see Participation); slower |
 | `--workers` | all cores | parallel processes |
 | `--methods` | all | run only these methods (start from none); method or group names (see Methods), case ignored |
@@ -208,6 +209,15 @@ Groups are formed from voters with the same full sincere ranking. With many cand
 A second, smaller asymmetry: learning is myopic. A burying group does not anticipate that the Condorcet winner's supporters may bury back, or that the cycle it creates can elect a candidate it likes even less (the chicken dilemma). This probably makes burial look somewhat more attractive than it would be to far-sighted voters.
 
 Smaller groups mean more groups, and run time grows with their number.
+
+## Starting information
+
+`--start previous` asks whether a method lets the electorate leave a strategic state it no longer agrees with. The first poll does not show the honest ballots but the result of a **previous election**: one extra (dummy) electorate under the same settings, with its own random draw, run through the same number of poll rounds under the same method. Its final ballots are taken as they are and its candidates relabelled at random as the current election's candidates (a new random assignment per election). Everything else is unchanged: the electorate, the honest results and all later polls are those of the current election, and voters start from their sincere ballots; only the information in round 1 differs. So a sweep `--start honest previous` compares the same elections, and the difference is what the outdated picture costs after 1, 3, 8, ... rounds: how strongly a method holds on to a strategic attractor rather than following the real electorate.
+
+- The same previous election is used for every election of a run, so elections stay independent of each other (no drift from one to the next).
+- It needs the original field, so it cannot be combined with strategic nomination, and it is for poll rounds only.
+- Cost: one extra election per method and run.
+- The previous electorate's candidates sit elsewhere in the issue space than the current ones, but only their counts carry over, relabelled; the current candidates and voters are untouched (a shifted opinion spectrum, with the same candidates, would be a different test).
 
 ## Partial strategy
 

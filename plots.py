@@ -376,7 +376,11 @@ def track(conds, method, varying, names, path, same_electorates, errorbars=False
     if not pts:
         return False
     fig, ax = plt.subplots(figsize=(8.6, 6.4))
-    num = float
+    def num(v):                    # sort key: numbers by value, words (e.g. start: honest, previous) by name
+        try:
+            return (0, float(v), "")
+        except ValueError:
+            return (1, 0.0, v)
     lab = lambda k: names.get(k, k)
     texts, anchors = [], []
 

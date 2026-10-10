@@ -251,26 +251,29 @@ def default_poll_size(n):
 
 
 def respond(method, u, rng, rounds=1, samples=30, poll_size=0, search=10, strategic=None, poll_error=2.0,
-            report=None, aggressive=None):
+            report=None, aggressive=None, start=None):
     """Poll rounds (see the module docstring). Returns ballots of the last round, whether it
     settled (same as the round before), and mean sincerity (all voters).
     report: a list of round numbers; then `rounds` is ignored, the rounds run up to the highest,
     and the result is a list of such triples, one per listed round. Round r here is exactly what
     rounds = r gives (each round depends only on the ones before it, and draws its random numbers
-    in sequence), so one run serves a sweep over the number of rounds."""
+    in sequence), so one run serves a sweep over the number of rounds.
+    start: ballots (n x C) the first poll is drawn from instead of the sincere ones (run.py --start
+    previous: a previous election's result); only the information of round 1 changes."""
     if report is not None:
         want = sorted(set(int(r) for r in report))
         if want[0] < 0:
             raise ValueError("poll rounds must be 0 or more")
         snaps = {}
         _respond(method, u, rng, max(want), samples, poll_size, search, strategic, poll_error, aggressive,
-                 lambda r, res: snaps.__setitem__(r, res) if r in want else None)
+                 lambda r, res: snaps.__setitem__(r, res) if r in want else None, start)
         return [snaps[int(r)] for r in report]
-    return _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive)
+    return _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive,
+                    start=start)
 
 
 def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive=None,
-             snapshot=None):
+             snapshot=None, start=None):
     n, C = u.shape
     sincere = method.sincere(u)
     B = sincere.copy()
@@ -297,6 +300,8 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
     ref = [method.sincere(u[g].mean(axis=0, keepdims=True))[0] for g in groups]
     Ug = [u[g].sum(axis=0) for g in groups]
     shared = [None] * len(groups)              # each group's answer in the last round (None = sincere)
+    if start is not None:                      # the first poll shows these ballots (a previous result)
+        B = np.array(start, dtype=float)
     inc = method.full is None
     settled = False
     for r in range(1, rounds + 1):
