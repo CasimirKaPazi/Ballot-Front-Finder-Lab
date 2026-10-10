@@ -1,8 +1,28 @@
 # Voting Pareto Lab
 
-Python 3 + NumPy; the analysis also needs matplotlib. Honest and strategic elections (voters answering polls), evaluated on a Pareto front.
+A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 53 in all, plus eight test methods. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
 
-This file describes the software: the model, its parameters, the methods and the analysis. What the simulations have shown so far, with the commands that produced it, is in [FINDINGS.md](FINDINGS.md).
+**The question.** Every voting method turns ballots into a winner, and every method can be gamed to some degree. Comparisons with honest ballots alone flatter methods that are easy to manipulate; comparisons under fully rational strategy depend on assumptions nobody believes. This lab places voters in between: some of them read polls and adjust their ballots when it pays, the way people vote tactically in real elections, and it measures what the method makes of that.
+
+**How a simulation runs.**
+
+1. **An electorate.** Voters and candidates are points in an issue space (several dimensions of decreasing importance, voters in clusters). A voter likes a candidate less the farther away it is. Each election draws a new electorate (README: Electorates).
+2. **Honest ballots.** Each voter fills in the method's ballot sincerely: a name, a ranking, approvals or scores, depending on the method (Ballots and sincere voting).
+3. **Poll rounds.** Polls show the method's own counts from a sample of the electorate. Strategic voters (by default half the electorate), in groups with the same preferences, change their ballot if that improves the result for them in the polls; all groups answer the same poll at once, and the next poll shows the new ballots (Strategy engine).
+4. **Optionally**, candidates may withdraw or field clones beforehand (Strategic nomination), and a diagnostic checks whether some voters would do better by staying home (Participation).
+
+**What is measured.** Two efficiencies, both 0 for a random ballot and 100 for the best candidate of each election (Axes):
+
+- **VSE**, voter satisfaction efficiency: the winner's total utility (how well the electorate as a whole likes it);
+- **WME**, worst-margin efficiency: the winner's smallest head-to-head margin against any rival (how strongly a majority could object that another candidate should have won).
+
+The two pull apart, so no method can reach 100 on both; the lab computes the boundary that any rule could reach knowing everyone's true preferences (the reachable frontier). Each value comes with sincere ballots (VSE, WME) and after the poll rounds (VSE*, WME*), together with the **sincerity** of the strategic ballots. The main comparison is on VSE*, WME* and sincerity: how good the result is with strategic voters, and how honest they can be.
+
+**What you get.** `run.py` and `sweep.py` produce CSV files with one row per election, method and ballot set; `analyze.py` turns them into a Markdown report with paired bootstrap intervals, the methods no other method beats (the front), paired comparisons and plots: how strategy moves each method in the VSE/WME plane, how methods change across parameter sweeps, and where they stand relative to the frontier.
+
+The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulations) and on Clay Smith's spatial voter model; in the strategy model, rounds of best responses to the previous poll (level-k reasoning), the leader rule of Myerson and Weber (1993) emerges instead of being coded. Its assumptions are spelled out in the sections below, and eight Inverse-* methods (honest voting elects the worst candidate) test whether voters learn their way back.
+
+Python 3 + NumPy; the analysis also needs matplotlib. This file describes the software: the model, its parameters, the methods and the analysis. What the simulations have shown so far, with the commands that produced it, is in [FINDINGS.md](FINDINGS.md).
 
 ```
 python test_methods.py                                   # hand-built checks
@@ -13,7 +33,7 @@ python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> output/a
 
 All outputs go into the folder `output/` (created when needed): an `--out` name without a directory is placed there, and `analyze.py` looks there for CSVs given without a directory. An `--out` with a directory (`--out runs/test`) is used as given.
 
-200 elections with all 53 methods at the default settings (one poll round) take about 14 minutes on 2 cores; time scales linearly with cores and with the number of poll rounds. More candidates and more voters take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
+200 elections with all 61 methods at the default settings (one poll round) take about 14 minutes on 2 cores; time scales linearly with cores and with the number of poll rounds. More candidates and more voters take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
 
 ## Files
 
@@ -243,13 +263,11 @@ Both axes are **efficiencies with the same two reference points**, as ratios of 
 - Every election counts, cycles included, and the value does not depend on the number of voters.
 - With honest ballots Minimax reaches 100 by construction (it elects the candidate with the best worst margin), and all Condorcet methods reach it whenever there is a Condorcet winner, just as they reach 100 on CE. The strategic version WME* is where methods are tested.
 
-**Reachable frontier.** VSE and WME pull apart: the candidate with the highest total utility is often not the one with the best worst margin, so no rule can reach 100 on both. `analyze.py` computes what any rule could reach in the simulated elections if it knew every voter's sincere utilities: for each weight λ between 0 and 1 it elects, in every election, the candidate with the highest λ × (its VSE contribution) + (1 − λ) × (its WME contribution). Since both axes are ratios of sums with denominators that do not depend on the rule, this traces the exact boundary of the reachable region (lotteries fill in between the points). The plots draw it as a curve and grey out the region beyond it; the report gives its two ends and its most balanced point (highest VSE + WME). A method's distance to the curve is what it loses to having only ballots, not utilities, and to strategy. Faint dashed lines mark 1, 2, 4 and 8 points below the boundary (labelled −1 … −8 at the bottom): each is the boundary shifted down and left by that many points on both axes, so a method on the −4 line could gain 4 points of VSE *and* 4 of WME before it reached the frontier. A strategic shift parallel to these lines is a trade between the two measures; one that crosses them inward is a loss on both. Without a frontier (chain and track plots over conditions with different electorates) the lines follow the 100 / 100 corner instead. For this, run.py stores every candidate's total utility and worst margin per election (columns U_cands, WM_cands).
+**Reachable frontier.** VSE and WME pull apart: the candidate with the highest total utility is often not the one with the best worst margin, so no rule can reach 100 on both. `analyze.py` computes what any rule could reach in the simulated elections if it knew every voter's sincere utilities: for each weight λ between 0 and 1 it elects, in every election, the candidate with the highest λ × (its VSE contribution) + (1 − λ) × (its WME contribution). Since both axes are ratios of sums with denominators that do not depend on the rule, this traces the exact boundary of the reachable region (lotteries fill in between the points). The plots draw it as a curve and grey out the region beyond it; the report gives its two ends and its most balanced point (highest VSE + WME). A method's distance to the curve is what it loses to having only ballots, not utilities, and to strategy. Faint dashed lines mark 1, 2, 4 and 8 points below the boundary (labelled −1 … −8 where they leave the plot): each is the boundary shifted down and left by that many points on both axes, so a method on the −4 line could gain 4 points of VSE *and* 4 of WME before it reached the frontier. A strategic shift parallel to these lines is a trade between the two measures; one that crosses them inward is a loss on both. Without a frontier (chain and track plots over conditions with different electorates) the lines follow the 100 / 100 corner instead. For this, run.py stores every candidate's total utility and worst margin per election (columns U_cands, WM_cands).
 
 **Condorcet efficiency (CE)**, reported alongside but not an axis: among elections with a Condorcet winner by sincere utilities, the probability the method elects it. It ignores elections without a Condorcet winner and does not distinguish narrow from clear ones.
 
 VSE, WME and CE use sincere ballots; VSE*, WME* and CE* (in the CSV: VSE_learned, WME_learned, CE_learned) the strategic ballots ("learned": after the poll rounds, or after convergent learning). In all cases the preferences that count are the sincere ones.
-
-Earlier versions (before 2026-10-06) used PE, with a utility-proportional lottery as zero, and WM, the raw worst margin in % of voters; FINDINGS.md says which applies where.
 
 **Output files of `run.py`:** `<out>-elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns; the quantities for the axes: U_method, U_best, U_rb (random ballot), U_rand (random candidate, for the usual VSE), WM (the winner's worst margin, share of voters), WM_best, WM_rb; has_cw and p_cw (probability of electing the Condorcet winner); the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see Robustness); sincerity, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
 
@@ -270,7 +288,7 @@ Earlier versions (before 2026-10-06) used PE, with a utility-proportional lotter
 
 The three are exclusive. For score ballots, "burial" includes small reversals among lower-rated candidates, so a high burial share can go with high sincerity.
 
-**Sincerity** (`strategy.sincerity`), per voter: for every pair the ballot orders (a above b) while the voter likes b more, add `u[b] − u[a]`; divide by the sum of `|u[a] − u[b]|` over all pairs; sincerity is 1 minus this share. 1 (100%) means the ballot never claims a preference the voter does not hold (true for every sincere ballot, since rounding and leaving candidates level never reverse an order). 0 means every preference is reversed. Example, utilities 0.5 / 0.3 / 0.15 / 0.05: voting for the second choice in plurality gives 0.87, voting for the last gives 0.47. (Earlier versions reported the complement as "cognitive dissonance".)
+**Sincerity** (`strategy.sincerity`), per voter: for every pair the ballot orders (a above b) while the voter likes b more, add `u[b] − u[a]`; divide by the sum of `|u[a] − u[b]|` over all pairs; sincerity is 1 minus this share. 1 (100%) means the ballot never claims a preference the voter does not hold (true for every sincere ballot, since rounding and leaving candidates level never reverse an order). 0 means every preference is reversed. Example, utilities 0.5 / 0.3 / 0.15 / 0.05: voting for the second choice in plurality gives 0.87, voting for the last gives 0.47. For the Inverse-* methods the preferences that the honest ballot expresses are the reversed ones, so sincerity and the strategy types are measured against those: there, reversing the ballot back is the insincere move.
 
 ## Ballots and sincere voting
 
@@ -292,7 +310,7 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 
 ## Methods
 
-53 methods, listed by group (see Groups below). "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
+61 methods, listed by group (see Groups below). "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
 
 **condorcet**
 
@@ -308,7 +326,7 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | SICT | ranking, ties allowed | Symmetrical ICT: p(X,Y) if (X>Y) + (X=Y at bottom) > (Y>X) + (X=Y at top); X beats Y if p(X,Y) and not p(Y,X), or both and (X>Y) > (Y>X). One unbeaten candidate wins; none or all unbeaten: most first places; otherwise most first places among the unbeaten. Sincere ballots are strict; ties are learned |
 | Condorcet-random-drop | ranking | Condorcet winner if there is one; otherwise voters are dropped one at a time in random order until the rest have one. Averaged over 32 fixed random orders (the same on every call), so probabilities come in steps of 1/32 |
 
-**minimax**
+**minimax-family**
 
 | Method | Ballot | Rule |
 |---|---|---|
@@ -392,12 +410,25 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | Anti-plurality | veto (one name against) | fewest vetoes wins; sincere: against the least liked |
 | TRASH | ranking | "This Random Acronym Sounds Honest": the plurality runner-up and the anti-plurality runner-up (second fewest last places) meet in a runoff, and the one ranked lower by more voters wins; if both are the same candidate, it wins. A deliberately bad reference |
 
+**inverse**: tests of the strategy model. Each has the ballot and the count of its original, but its sincere ballot expresses reversed preferences, so honest voting elects (nearly) the worst candidate. Voters who learn to reverse their ballot get the original method back; how far the poll rounds get there shows how well the strategy model finds strategies that are not small steps from the honest ballot.
+
+| Method | Ballot | Rule |
+|---|---|---|
+| Inverse-Plurality | one name | most named wins; the sincere ballot names the least liked candidate |
+| Inverse-Approval | approve or not | most approvals win; the sincere ballot approves every candidate below the voter's mean utility |
+| Inverse-Minimax | ranking | Minimax; the sincere ballot ranks upside down, so honestly the Condorcet loser (if any) wins |
+| Inverse-IRV | ranking | IRV; the sincere ballot ranks upside down |
+| Inverse-ER-IRV | ranking, ties allowed | ER-IRV; the sincere ballot ranks upside down (strictly, like every sincere ballot); strategic voters can tie candidates |
+| Inverse-TTR | two-round, plurality first round | round 1 as TTR, the sincere ballot marks the least liked. The runoff is a separate two-candidate vote in which voters vote by their real preference whatever the ballot means: the fixed runoff part of the ballot is the reversed ranking and the count reads it back, so the real majority decides. Only round 1 can be learned, as in TTR |
+| Inverse-Borda | ranking | Borda; the sincere ballot ranks upside down |
+| Inverse-Score | 0–5 | Score; the sincere ballot scores upside down (the least liked gets the top score) |
+
 **Groups.** Every method belongs to exactly one group. Groups can be used wherever methods are named (`--methods`, `--exclude` in run.py and sweep.py; `--show`, `--hide`, `--track` in analyze.py), they are the panels of the chain plots, and the report and summary.csv show each method's group.
 
 | Group | Methods |
 |---|---|
 | `condorcet` | Ranked pairs, Schulze, Schulze-ER, Kemeny-Young, Copeland, Ranked Robin, Ranked Robin-SR, SICT, Condorcet-random-drop (Condorcet methods decided by the pairwise counts alone) |
-| `minimax` | Minimax, Minimax-ER, MMWV, MMPO, MMPOWV (the minimax family; MMPO and MMPOWV are not Condorcet methods) |
+| `minimax-family` | Minimax, Minimax-ER, MMWV, MMPO, MMPOWV (the minimax family; MMPO and MMPOWV are not Condorcet methods) |
 | `condorcet-hybrid` | Black, Baldwin, Baldwin-ER, Nanson, BTR-Borda, BTR-IRV, Benham, Smith//Score (Condorcet methods built on a Borda, IRV or score count) |
 | `plurality-based` | Plurality, TTR, Supplementary vote, IRV, ER-IRV, IRV-3, Coombs (first choices and eliminations; Coombs eliminates by last places) |
 | `approval-based` | Approval, Approval runoff, Approval cond. runoff, MDDA |
@@ -405,6 +436,7 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | `hybrid` | STAR, BTR-score, MARS, IC-MARS, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore (ratings combined with pairwise comparisons or runoffs) |
 | `positional` | Borda, Borda-ER, Dowdall |
 | `references` | Random pair runoff, Anti-plurality, TRASH (benchmarks, not proposals; hidden in the plots by default) |
+| `inverse` | Inverse-Plurality, Inverse-Approval, Inverse-Minimax, Inverse-IRV, Inverse-ER-IRV, Inverse-TTR, Inverse-Borda, Inverse-Score (tests of the strategy model, below; hidden in the plots by default) |
 
 **Comparison sets**, selection names across groups (not plot panels): `er-pairs`, each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Ranked Robin-SR/Ranked Robin. Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.
 
@@ -438,7 +470,7 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 
 | File | Shows |
 |---|---|
-| `arrows-<c>.png` | VSE/WME plane (the region beyond the reachable frontier greyed out), every method's shift from honest (open) to learned ballots (filled, labelled) in one picture; filled points coloured by sincerity (red ramp, darker = less honest, capped at the 10th percentile of the plotted methods) |
+| `arrows-<c>.png` | VSE/WME plane (the region beyond the reachable frontier greyed out), every method's shift from honest (open) to learned ballots (filled, labelled) in one picture; filled points coloured by sincerity (blue = sincere, through purple to dark red = less honest; the scale is capped at the 10th percentile of the plotted methods); faint dashed lines 1, 2, 4 and 8 points inside the frontier |
 | `shift-<c>.png` | the same shifts as one row per method, VSE and WME panels; easier to read per method |
 | `sincerity-<c>.png` | VSE* and WME* against sincerity |
 | `axes-heatmap.png` | VSE\*, WME\*, sincerity, VSE and WME, methods × conditions (when there are several; methods present in every condition, sorted by VSE\*) |

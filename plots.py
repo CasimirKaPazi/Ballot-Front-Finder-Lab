@@ -2,7 +2,7 @@
 
 Method identity is carried by direct labels, never by colour, since there are far more methods
 than distinguishable hues. In the arrow plot, the learned-ballot points are coloured by sincerity
-on a single-hue red ramp (light = honest, dark = much reversed preference). Heatmaps use blue.
+from blue (sincere) through purple to dark red (much reversed preference). Heatmaps use blue.
 """
 import numpy as np
 import matplotlib
@@ -16,8 +16,8 @@ INK2 = "#52514e"
 MUTED = "#8b8a85"
 GRID = "#e6e5e1"
 POINT = "#2a78d6"   # learned-ballot points
-# Sequential red, light to dark; used reversed for sincerity (dark = less honest)
-REDS = LinearSegmentedColormap.from_list("insincerity", ["#f7c4bf", "#ef8f86", "#e34948", "#b8302f", "#7f1d1d"])
+# Sincerity: blue (fully sincere) through purple to dark red (much reversed preference)
+SINC = LinearSegmentedColormap.from_list("sincerity", ["#7f1d1d", "#c0392b", "#9b5aa0", "#4f7cc4", "#2f6db5"])
 HEAT = LinearSegmentedColormap.from_list("heat", ["#f3f7fd", "#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"])
 
 plt.rcParams.update({
@@ -97,6 +97,16 @@ GUIDES = (1, 2, 4, 8)      # distances (points) of the faint lines below the fro
 GUIDE = "#cfcec8"
 
 
+def _crossing(A, B, a):
+    """Value of B where the polyline (A, B) first passes A = a (linear between vertices), or None."""
+    for k in range(len(A) - 1):
+        lo, hi = sorted((A[k], A[k + 1]))
+        if lo <= a <= hi:
+            t = 0.0 if A[k + 1] == A[k] else (a - A[k]) / (A[k + 1] - A[k])
+            return B[k] + t * (B[k + 1] - B[k])
+    return None
+
+
 def _guides(ax, bx, by):
     """Faint copies of the boundary polyline (bx, by) shifted by d points down and left on both axes,
     for d in GUIDES: a method on the line marked -d could gain d points of VSE and of WME at once
@@ -104,10 +114,18 @@ def _guides(ax, bx, by):
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
     for d in GUIDES:
-        ax.plot(bx - d, by - d, color=GUIDE, lw=0.7, ls=(0, (4, 2)), zorder=0.5)
-        if x0 < 100 - d < x1:      # label at the bottom of the vertical part (VSE = 100 - d), away from the methods
-            ax.text(100 - d, y0 + 0.01 * (y1 - y0), f"−{d}", fontsize=6, color=MUTED, ha="center", va="bottom",
-                    zorder=0.6, clip_on=True)
+        X, Y = bx - d, by - d
+        ax.plot(X, Y, color=GUIDE, lw=0.7, ls=(0, (4, 2)), zorder=0.5)
+        # label where the line leaves the plot at the bottom (away from the methods), or else at the left
+        yl = y0 + 0.01 * (y1 - y0)
+        xl = _crossing(Y, X, yl)
+        if xl is not None and x0 < xl < x1:
+            ax.text(xl, yl, f"−{d}", fontsize=6, color=MUTED, ha="center", va="bottom", zorder=0.6, clip_on=True)
+        else:
+            yc = _crossing(X, Y, x0)
+            if yc is not None and y0 < yc < y1:
+                ax.text(x0 + 0.005 * (x1 - x0), yc, f"−{d}", fontsize=6, color=MUTED, ha="left", va="bottom",
+                        zorder=0.6, clip_on=True)
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
 
@@ -166,14 +184,14 @@ def _errorbars(ax, r, idx, xa, ya, color, alpha):
 def arrows(r, path, hide, errorbars=False):
     """Honest (open circle) -> learned ballots (filled) in the VSE / WME plane, all methods together.
     The grey area beyond the curve is out of reach for any rule in these elections (see analyze.frontier).
-    Filled points are coloured by the sincerity of the learned ballots (darker = less honest).
+    Filled points are coloured by the sincerity of the learned ballots (blue = sincere, red = less honest).
     errorbars: relative 95% intervals (see relative_intervals) on both points of every method."""
     idx = _visible(r, hide)
     # cap the colour scale at the 10th percentile, so one extreme method does not wash out the rest
     vals = np.array([r["sincerity"][j] * 100 for j in idx])
     smin = min(99.5, float(np.percentile(vals, 10)))
     norm = Normalize(smin, 100, clip=True)
-    cmap = REDS.reversed()
+    cmap = SINC
     fig, ax = plt.subplots(figsize=(9.2, 6.6))
     texts, anchors = [], []
     for j in idx:

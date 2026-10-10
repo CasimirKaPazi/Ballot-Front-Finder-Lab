@@ -312,9 +312,9 @@ def main():
     ap.add_argument("--out", default="analysis")
     ap.add_argument("--boot", type=int, default=1000, help="bootstrap replicates")
     ap.add_argument("--compare", nargs="*", default=[], help='pairs "A:B" for paired differences')
-    ap.add_argument("--hide", nargs="*", default=["references"],
+    ap.add_argument("--hide", nargs="*", default=["references", "inverse"],
                     help="methods or groups left out of the scatter plots (they stay in tables and heatmaps); "
-                         "default: the references group; give --hide with no names to show all")
+                         "default: the references and inverse groups; give --hide with no names to show all")
     ap.add_argument("--show", nargs="+", default=None,
                     help="only these methods or groups in the scatter and chain plots (overrides --hide)")
     ap.add_argument("--errorbars", action="store_true",

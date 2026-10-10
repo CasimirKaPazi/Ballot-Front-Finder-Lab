@@ -718,6 +718,14 @@ def d_two_round(s):
     return d_top_two({"first": s["app"], "gt": s["runoff_gt"]})
 
 
+def d_inverse_two_round(s):
+    """Inverse-TTR: round 1 as TTR (most marks; the honest ballot marks the least liked). The runoff
+    is a separate two-candidate vote, where voters vote by their real preference whatever the
+    ballot means; the fixed runoff ranking of the Inverse-TTR ballot is reversed, so the count reads
+    it back (transposed pairwise counts): the real majority decides the runoff."""
+    return d_two_round({"n": s["n"], "app": s["app"], "runoff_gt": s["runoff_gt"].T})
+
+
 def d_approval_two_round(s):
     """Approval primary, then a separate runoff of the top two (app_run ballots); a runoff tie goes
     to more approvals."""
@@ -1017,6 +1025,7 @@ class Method:
     decide: Callable = None          # decision from summed features (a dict name -> sum)
     feats: tuple = ()                # features the decision needs
     full: Callable = None            # tally on the full ballot matrix, for methods without features
+    inverse: bool = False            # Inverse-* test methods: the sincere ballot is that of reversed preferences
 
     def features(self, B):
         """Per-voter features, concatenated: (n, d)."""
@@ -1043,8 +1052,13 @@ class Method:
             return self.full(B)
         return self.decide_many(self.features(B).sum(axis=0, keepdims=True), B.shape[1])[0]
 
+    def pref(self, u):
+        """The preferences a sincere ballot expresses: u, or reversed for the Inverse-* methods.
+        Sincerity and strategy types are measured against these."""
+        return -u if self.inverse else u
+
     def sincere(self, u):
-        return SINCERE[self.ballot](u)
+        return SINCERE[self.ballot](self.pref(u))
 
     def honest(self, u):
         return self.tally(self.sincere(u))
@@ -1114,6 +1128,18 @@ METHODS = {
     "Random pair runoff": M_("rank", d_random_pair, ("n", "first", "gt")),
     "Anti-plurality": M_("veto", d_sum, ("sum",)),
     "TRASH": M_("rank", d_trash, ("first", "last", "gt")),
+    # inverse: tests of the strategy model. Same ballot and count as the original, but the sincere
+    # ballot expresses reversed preferences (name the least liked; approve those below the mean; rank
+    # upside down), so honest voting elects (nearly) the worst candidate. Voters who learn to reverse
+    # their ballot get the original method back.
+    "Inverse-Plurality": M_("fav", d_sum, ("sum",), inverse=True),
+    "Inverse-Approval": M_("approval", d_sum, ("sum",), inverse=True),
+    "Inverse-Minimax": M_("rank", d_minimax, ("gt",), inverse=True),
+    "Inverse-IRV": M_("rank", d_irv, ("firsts",), inverse=True),
+    "Inverse-ER-IRV": M_("weak", d_er_irv, ("firsts_eq",), inverse=True),
+    "Inverse-TTR": M_("fav_run", d_inverse_two_round, ("n", "app", "runoff_gt"), inverse=True),
+    "Inverse-Borda": M_("rank", d_sum, ("sum",), inverse=True),
+    "Inverse-Score": M_("score", d_sum, ("sum",), inverse=True),
 }
 
 
@@ -1123,7 +1149,7 @@ METHODS = {
 GROUPS = {
     "condorcet": ["Ranked pairs", "Schulze", "Schulze-ER", "Kemeny-Young", "Copeland", "Ranked Robin",
                   "Ranked Robin-SR", "SICT", "Condorcet-random-drop"],
-    "minimax": ["Minimax", "Minimax-ER", "MMWV", "MMPO", "MMPOWV"],
+    "minimax-family": ["Minimax", "Minimax-ER", "MMWV", "MMPO", "MMPOWV"],
     "condorcet-hybrid": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
     "plurality-based": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs"],
     "approval-based": ["Approval", "Approval runoff", "Approval cond. runoff", "MDDA"],
@@ -1131,9 +1157,12 @@ GROUPS = {
     "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore"],
     "positional": ["Borda", "Borda-ER", "Dowdall"],
     "references": ["Random pair runoff", "Anti-plurality", "TRASH"],
+    "inverse": ["Inverse-Plurality", "Inverse-Approval", "Inverse-Minimax", "Inverse-IRV", "Inverse-ER-IRV", "Inverse-TTR",
+                "Inverse-Borda", "Inverse-Score"],
 }
 _grouped = [m for ms in GROUPS.values() for m in ms]
 assert sorted(_grouped) == sorted(METHODS), "every method must be in exactly one group"
+assert not {g.lower() for g in GROUPS} & {m.lower() for m in METHODS}, "group names must differ from method names"
 
 # Comparison sets: selection names like the groups, across groups (not plot panels)
 COMPARISONS = {

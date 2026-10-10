@@ -90,7 +90,7 @@ def one_election(args):
             out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row})
             out.append({"rounds": r, "election": e, "method": name, "ballots": "learned",
                         **election_row(u, back(m.tally(B)), m_cand), **estats, "sincerity": sin,
-                        "settled": int(settled), **strategy_types(B, uf), **nstats, **check(B)})
+                        "settled": int(settled), **strategy_types(B, m.pref(uf)), **nstats, **check(B)})
     return out
 
 

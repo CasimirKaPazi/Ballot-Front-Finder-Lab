@@ -415,3 +415,27 @@ print("participation check ok; no-show cases in 150 small elections:", fails)
 from methods import GROUPS, group_of
 assert all(group_of(m) != "other" for m in METHODS) and sum(map(len, GROUPS.values())) == len(METHODS)
 print("groups: every method in exactly one ok")
+
+# Inverse-* methods: the sincere ballot expresses reversed preferences; reversing it back gives the
+# original method. On the 4-3-2 profile K is last for everyone (Condorcet loser, least liked by all).
+from strategy import sincerity
+u = profile([(4, [0.50, 0.30, 0.15, 0.05]), (3, [0.15, 0.30, 0.50, 0.05]), (2, [0.30, 0.50, 0.15, 0.05])])
+for inv, orig in [("Inverse-Plurality", "Plurality"), ("Inverse-Approval", "Approval"), ("Inverse-Minimax", "Minimax"),
+                  ("Inverse-IRV", "IRV"), ("Inverse-ER-IRV", "ER-IRV"), ("Inverse-Borda", "Borda"),
+                  ("Inverse-Score", "Score")]:
+    mi, mo = METHODS[inv], METHODS[orig]
+    assert np.allclose(mi.tally(mo.sincere(u)), mo.honest(u))          # original's sincere ballots, same count
+    assert sincerity(mi.sincere(u), mi.pref(u)).min() == 1               # honest = sincere for its own ballot
+check("Inverse-Minimax elects the Condorcet loser", METHODS["Inverse-Minimax"].honest(u), [0, 0, 0, 1])
+check("Inverse-Plurality elects the most often least liked", METHODS["Inverse-Plurality"].honest(u), [0, 0, 0, 1])
+# Inverse-TTR: marking the favourite in round 1 gives TTR (the runoff reads the reversed ranking back)
+Bt = METHODS["Inverse-TTR"].sincere(u)
+assert sincerity(Bt, METHODS["Inverse-TTR"].pref(u)).min() == 1
+Bt = Bt % 4 + 4 * METHODS["Plurality"].sincere(u)                         # marks: favourites
+assert np.allclose(METHODS["Inverse-TTR"].tally(Bt), METHODS["TTR"].honest(u))
+for _ in range(50):
+    uu = r.random((int(r.integers(5, 30)), int(r.integers(3, 6))))
+    C = uu.shape[1]
+    Bt = METHODS["Inverse-TTR"].sincere(uu) % C + C * METHODS["Plurality"].sincere(uu)
+    assert np.allclose(METHODS["Inverse-TTR"].tally(Bt), METHODS["TTR"].honest(uu))
+print("inverse methods ok")

@@ -10,6 +10,37 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
 
+## Model test: Inverse-* methods (2026-10-10)
+
+Run (Claude, small): `sweep.py --strategic 1 --rounds 1 3 8 15 --methods inverse Plurality Approval Minimax --elections 40`, with `--aggressive 0.5` (default) and `--aggressive 1`; defaults otherwise. 40 elections: point estimates only, differences of a few points are noise.
+
+The Inverse-* methods count like their originals, but their sincere ballot expresses reversed preferences, so honest voting elects nearly the worst candidate (VSE about −200). With full strategy and enough rounds, voters should learn to reverse their ballots and get the original's result back.
+
+VSE* / WME* with all strategic voters aggressive (`--aggressive 1`):
+
+| Method | round 1 | round 3 | round 8 | round 15 | original, round 15 |
+|---|---|---|---|---|---|
+| Inverse-Approval | 5 / −1 | 91 / 75 | 87 / 85 | 81 / 88 | Approval 90 / 85 |
+| Inverse-Minimax | −22 / −26 | 76 / 84 | 86 / 83 | 85 / 85 | Minimax 87 / 98 |
+| Inverse-Plurality | −46 / −69 | −44 / −67 | −44 / −67 | −44 / −67 | Plurality 88 / 65 |
+
+Second small run (Claude, 20 elections, `--strategic 1 --aggressive 1 --rounds 1 3 8`), the further inverse methods; VSE* / WME* (Inverse-ER-IRV and ER-IRV from a separate run with the same settings and elections):
+
+| Method | round 1 | round 3 | round 8 | original, round 8 |
+|---|---|---|---|---|
+| Inverse-Score | 51 / 43 | 88 / 93 | 91 / 89 | Score 85 / 91 |
+| Inverse-Borda | 40 / 11 | 75 / 77 | 69 / 57 | Borda 89 / 89 |
+| Inverse-IRV | −29 / −76 | 21 / −29 | 26 / −11 | IRV 87 / 87 |
+| Inverse-ER-IRV | 66 / 16 | 92 / 84 | 91 / 84 | ER-IRV 90 / 83 |
+| Inverse-TTR | −24 / −78 | −10 / −69 | 5 / −49 | TTR 97 / 93 |
+
+- **Approval and Minimax: the voters find their way back.** Within 3–8 rounds Inverse-Approval and Inverse-Minimax reach about the VSE* of their originals; Inverse-Minimax stays below Minimax on WME* (85 against 98 in round 15). Sincerity, measured against the reversed preferences the honest ballot expresses, falls to about 37% and 8%: most ballots are reversed.
+- **With half the strategic voters kind** (default `--aggressive 0.5`) the recovery is slower and partial (round 12: Inverse-Approval 73 / 70, Inverse-Minimax 66 / 74). Kind voters return to the honest ballot whenever reversing does not strictly pay in the polls, and in a large group a single change rarely does; here the honest ballot is the harmful one.
+- **Score recovers like Approval; Borda partly** (20 elections: noisy, and Borda itself is unstable under all-aggressive voters).
+- **Inverse-Plurality does not recover.** Honest voting makes two widely disliked candidates the poll leaders. Voters then do the naive leader-rule thing and name the less bad of the two, which keeps both in front: nobody's favourite is a leader, a switch to it gains nothing in the polls, and the electorate stays at about 72% sincerity in a lesser-evil equilibrium. This is the Duverger trap of plurality with a bad start: the strategy model only finds moves that pay against the current leaders, so it cannot coordinate a jump to a new front-runner. Under the ordinary methods voters start from honest ballots, whose leaders are the popular candidates, so this matters less there; but it shows that the poll rounds model level-k responses to the current polls, not ideal strategy.
+- **ER-IRV escapes where IRV does not.** Inverse-ER-IRV is back at ER-IRV's level by round 3 (92 / 84), while Inverse-IRV is still at 26 / −11 in round 8. Same count, but equal rankings let a voter put many candidates first at once: the naive exaggeration ties everyone liked at least as much as the preferred front-runner at the top, which hands first-choice support to all of them together, so no coordination on one new front-runner is needed.
+- **IRV and TTR lock in too, less completely.** Both decide by first choices first, so the same trap holds: the disliked front-runners of the honest Inverse ballots keep the first-choice votes. TTR's separate runoff, decided by real preferences, picks the less bad of two bad finalists; IRV's eliminations reshuffle a little more. The split is by how the first stage counts: methods that count every candidate on every ballot (scores, approvals, pairwise counts) let voters move many candidates at once and recover; methods that count first choices need coordination on a new front-runner, which poll responses do not produce.
+
 ## Current picture: all methods, poll rounds 5, with nomination (2026-10-09)
 
 Run (user): all 59 methods, 400 elections, 99 voters, 6 candidates, defaults (strategic share 0.5, aggressive share 0.5, poll error 2.0x, max score 5), `--rounds 5 --exits 1 --clones 2`. First run with separate runoffs and shared random streams (section below). Replaces the picture of 2026-10-06 further down, which used convergent learning and other axes. Only one round count, so differences between methods not in the "Dominated by" column are point estimates; the frontier's most balanced point is VSE 95.3 / WME 96.7.

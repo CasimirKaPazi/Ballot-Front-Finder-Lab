@@ -53,7 +53,6 @@ electorate, drawn in run.py, the same voters for every method). The others alway
 """
 import numpy as np
 import methods
-from methods import SINCERE
 
 BACK_TO_SINCERE = 0.15  # share of proposals that return a deviating group to sincere
 
@@ -193,7 +192,7 @@ def learn(method, u, rng, rounds=20, samples=10, group_size=0, strategic=None):
     if group_size > 0:   # split each ranking group at random into subgroups of at most group_size
         groups = [part for m in groups for part in np.array_split(rng.permutation(m), -(-len(m) // group_size))]
     shared = [None] * len(groups)              # None = members vote sincerely
-    ref = [SINCERE[method.ballot](u[m].mean(axis=0, keepdims=True))[0] for m in groups]
+    ref = [method.sincere(u[m].mean(axis=0, keepdims=True))[0] for m in groups]
     Ug = [u[m].sum(axis=0) for m in groups]
     # Methods with features (all but Condorcet-random-drop) keep the summed features per poll sample
     # and update them only for the group that changes; the result is the same as recounting.
@@ -237,7 +236,7 @@ def learn(method, u, rng, rounds=20, samples=10, group_size=0, strategic=None):
                 P_cur = P_new
                 shared[g] = None if to_sincere else prop
                 changed_last = True
-    return B, not changed_last, float(sincerity(B, u).mean())
+    return B, not changed_last, float(sincerity(B, method.pref(u)).mean())
 
 
 PATIENCE = 3    # poll rounds: random search stops after this many proposals in a row without gain
@@ -295,7 +294,7 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
     # methods without feature sums can't scale counts: a smaller poll has about poll_error times the error
     # (only approximates poll_error >= 1; smaller values give polls of poll_size voters)
     m_full = max(1, min(m, int(round(m / poll_error ** 2)))) if poll_error > 0 else m
-    ref = [SINCERE[method.ballot](u[g].mean(axis=0, keepdims=True))[0] for g in groups]
+    ref = [method.sincere(u[g].mean(axis=0, keepdims=True))[0] for g in groups]
     Ug = [u[g].sum(axis=0) for g in groups]
     shared = [None] * len(groups)              # each group's answer in the last round (None = sincere)
     inc = method.full is None
@@ -326,8 +325,8 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
                 B[mem] = x
         settled = np.array_equal(B, B_prev)       # the ballots repeat the round before
         if snapshot:
-            snapshot(r, (B, settled, float(sincerity(B, u).mean())))
-    return B, settled, float(sincerity(B, u).mean())
+            snapshot(r, (B, settled, float(sincerity(B, method.pref(u)).mean())))
+    return B, settled, float(sincerity(B, method.pref(u)).mean())
 
 
 def _widened(tot, dev, j):
