@@ -1,8 +1,12 @@
 """Analyse one or more elections CSVs (from run.py or sweep.py): uncertainty, fronts, plots, report.
 
 Usage:
-    python analyze.py sweep-elections.csv --out analysis      # files without a directory: looked up in output/
-    python analyze.py a-elections.csv b-elections.csv --compare "BTR-score:STAR" "Minimax:Baldwin"
+    python analyze.py rounds                    # a run or sweep folder (looked up in output/) -> rounds/analysis/
+    python analyze.py rounds mine --out compare --compare "BTR-score:STAR"   # several inputs: --out needed
+
+Inputs are run or sweep folders (their elections.csv) or elections CSV files. With one input the
+analysis goes into an analysis/ folder next to it, so results and their analysis stay together;
+with several, --out names the folder.
 
 Conditions: rows with identical parameters except the seed form one condition; seeds are
 pooled as replications. Runs of different methods on the same elections can be combined, e.g. a
@@ -28,7 +32,7 @@ with honest ballots, would be separated by noise-sized differences). Each is fol
 axes on which it is clearly better. This is a pointer for interpretation, not a verdict: the
 values themselves are the result.
 
-Outputs in --out (a directory; a bare name goes into output/):
+Outputs in the analysis folder (--out: a bare name goes into output/):
     summary.csv                one row per (condition, method): estimates, intervals, dominated_by
     report.md                  tables per condition, comparisons, plots
     arrows-<c>.png             per condition: honest -> strategic in the VSE/WME plane, all methods together
@@ -44,7 +48,7 @@ from collections import OrderedDict
 import numpy as np
 
 import plots
-from run import out_path, group_text, strategy_text, cand_text, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
+from run import out_path, write_command, group_text, strategy_text, cand_text, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
 from methods import GROUPS, METHODS, select, group_of
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
@@ -54,6 +58,23 @@ TYPES = ["compromise", "burial", "pushover"]
 PARAMS = [k for k in RUN_PARAMS if k != "seed"]      # condition parameters, as run.py writes them
 NOM = ["nom_changed", "nom_exits", "nom_clones", "nom_settled"]     # per method and election (sincere rows)
 PART = ["noshow", "noshow_voters", "noshow_gain"]   # participation check (run.py --participation), both ballot sets
+def input_path(p):
+    """A run or sweep folder, or an elections CSV; a bare name not found here is looked up in output/."""
+    if not os.path.exists(p) and not os.path.dirname(p):
+        p = os.path.join(OUTPUT_DIR, p)
+    if os.path.isdir(p):
+        p = os.path.join(p, "elections.csv")
+    if not os.path.exists(p):
+        raise SystemExit(f"no elections CSV at {p}")
+    return p
+
+
+def source_name(p):
+    """How an input is named in notes and the report: its folder for elections.csv, else the file."""
+    d, f = os.path.split(os.path.abspath(p))
+    return os.path.basename(d) if f == "elections.csv" else f
+
+
 def load(paths):
     rows = []
     for p in paths:
@@ -64,7 +85,7 @@ def load(paths):
             if missing:
                 raise SystemExit(f"{p} lacks {', '.join(missing)}; regenerate it with the current run.py or sweep.py")
             for r in reader:
-                r["_file"] = os.path.basename(p)
+                r["_file"] = source_name(p)
                 rows.append(r)
     if not rows:
         raise SystemExit("no rows in the input CSVs")
@@ -451,8 +472,9 @@ def fmt(x, lo, hi, pct=True):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("csv", nargs="+", help="elections CSV files")
-    ap.add_argument("--out", default="analysis")
+    ap.add_argument("csv", nargs="+", help="run or sweep folders, or elections CSV files")
+    ap.add_argument("--out", default=None,
+                    help="analysis folder; default: analysis/ next to the input (needed with several inputs)")
     ap.add_argument("--boot", type=int, default=1000, help="bootstrap replicates")
     ap.add_argument("--compare", nargs="*", default=[], help='pairs "A:B" for paired differences')
     ap.add_argument("--hide", nargs="*", default=["references", "inverse"],
@@ -467,10 +489,15 @@ def main():
                     help="methods (or groups) to follow across all conditions: track-<method>.png each")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
-    a.out = out_path(a.out)
+    a.csv = [input_path(p) for p in a.csv]
+    if a.out is None:
+        if len(a.csv) > 1:
+            ap.error("with several inputs, name the analysis folder with --out")
+        a.out = os.path.join(os.path.dirname(a.csv[0]) or ".", "analysis")
+    else:
+        a.out = out_path(a.out)
     os.makedirs(a.out, exist_ok=True)
-    # CSVs given without a directory are looked up in the output folder if not found here
-    a.csv = [p if os.path.exists(p) or os.path.dirname(p) else os.path.join(OUTPUT_DIR, p) for p in a.csv]
+    write_command(a.out)
     rng = np.random.default_rng(a.seed)
 
     if a.show:
@@ -541,7 +568,7 @@ def main():
 
     # report.md
     L = ["# Voting Pareto Lab — analysis", ""]
-    L += [f"Input: {', '.join(os.path.basename(p) for p in a.csv)} (simulator version {', '.join(versions)}"
+    L += [f"Input: {', '.join(source_name(p) for p in a.csv)} (simulator version {', '.join(versions)}"
           + ("; mixed versions" if len(versions) > 1 else "") + f"; analysis version {VERSION}). "
           f"Bootstrap: {a.boot} paired replicates over elections. Brackets are 95% intervals.", ""]
     if combined:

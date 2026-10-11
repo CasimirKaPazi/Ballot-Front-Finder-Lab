@@ -17,14 +17,20 @@ ballots (see strategy.sincerity) and the share of elections where the strategic 
 Partial strategy: --strategic p makes a random share p of the voters strategic (the same voters
 for every method); the rest always vote sincerely.
 
-Outputs (prefix set by --out; a name without a directory goes into output/):
-    <out>-elections.csv   one row per (election, method, ballots), with the run's parameters
-                          as columns, so several runs can be combined (see analyze.py)
-    <out>-summary.csv     one row per method, with on_front for the VSE*/WME*/sincerity front
+Outputs, in one folder per run (--out; a name without a directory goes into output/; default
+run-<date>-<time>). `python analyze.py <folder>` puts its analysis into <folder>/analysis/.
+    elections.csv   one row per (election, method, ballots), with the run's parameters as columns,
+                    so several runs can be combined (see analyze.py)
+    summary.csv     one row per method, with on_front for the VSE*/WME*/sincerity front
+    table.txt       the printed table
+    command.txt     the command, simulator version and start time
 """
 import argparse
 import csv
 import os
+import shlex
+import sys
+import time
 import zlib
 from multiprocessing import Pool
 import numpy as np
@@ -110,6 +116,26 @@ def out_path(name):
     path = name if os.path.dirname(name) else os.path.join(OUTPUT_DIR, name)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     return path
+
+
+def run_dir(name, kind, overwrite=False):
+    """Folder for one run or sweep, which also takes its analysis: output/<name>/ (a name with a
+    directory is used as given). Without a name: <kind>-<date>-<time>, so nothing is overwritten.
+    An existing run is only replaced with overwrite. Checked before simulating."""
+    if not name:
+        name = f"{kind}-{time.strftime('%Y%m%d-%H%M%S')}"
+    path = name if os.path.dirname(name) else os.path.join(OUTPUT_DIR, name)
+    if os.path.exists(os.path.join(path, "elections.csv")) and not overwrite:
+        raise SystemExit(f"{path} already holds a run; choose another --out or add --overwrite")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def write_command(path):
+    """command.txt: the exact command, the simulator version and the start time, for reproducing."""
+    with open(os.path.join(path, "command.txt"), "w") as f:
+        f.write(f"python {' '.join(shlex.quote(x) for x in sys.argv)}\n")
+        f.write(f"simulator version {VERSION}, started {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
 
 
 def check_params(a, error):
@@ -269,16 +295,19 @@ def main():
     ap.add_argument("--exclude", nargs="+", default=None, help="run all methods except these")
     ap.add_argument("--participation", action="store_true",
                     help="also check participation (no-show paradox) on sincere and learned ballots; slower")
-    ap.add_argument("--out", default="results")
+    ap.add_argument("--out", default=None,
+                    help="folder for this run (in output/ unless it has a directory); default run-<date>-<time>")
+    ap.add_argument("--overwrite", action="store_true", help="replace an existing run in --out")
     a = ap.parse_args()
 
     check_params(a, ap.error)
+    out = run_dir(a.out, "run", a.overwrite)
+    write_command(out)
     p = {k: getattr(a, k) for k in PARAMS}
     names = select(a.methods, a.exclude)
     results = simulate(p, a.elections, a.workers, names, a.participation)
 
-    out = out_path(a.out)
-    with open(f"{out}-elections.csv", "w", newline="") as f:
+    with open(os.path.join(out, "elections.csv"), "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(results[0]))
         w.writeheader()
         w.writerows(results)
@@ -296,25 +325,30 @@ def main():
     front = set(pareto([[summ[m][x] for x in axes] for m in names]))
 
     cols = ["VSE", "WME", "VSE_learned", "WME_learned", "CE", "CE_learned", "sincerity", "settled"]
-    with open(f"{out}-summary.csv", "w", newline="") as f:
+    with open(os.path.join(out, "summary.csv"), "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["method"] + cols + ["on_front"])
         for i, m in enumerate(names):
             w.writerow([m] + [f"{summ[m][c]:.4f}" for c in cols] + [int(i in front)])
 
-    print(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.dims} dimensions"
+    lines = []
+    lines.append(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.dims} dimensions"
           f"{' (Zipf)' if a.zipf else ''}, {a.clusters} clusters, "
           f"spread {a.spread}, width {a.width}{cand_text(a.cand_dispersion, a.cand_shift)}; {strategy_text(a, a.voters)}, "
           f"strategic share {a.strategic}, scores 0..{a.max_score}"
           f"{f', nomination: exits {a.exits}, clones {a.clones}' if a.exits or a.clones else ''}; seed {a.seed}")
-    print(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
+    lines.append(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
     for m in sorted(names, key=lambda m: -summ[m]["VSE_learned"]):
         s = summ[m]
-        print(f"{m:<26}{s['VSE']*100:7.1f}{s['WME']*100:7.1f}{s['VSE_learned']*100:7.1f}{s['WME_learned']*100:7.1f}"
+        lines.append(f"{m:<26}{s['VSE']*100:7.1f}{s['WME']*100:7.1f}{s['VSE_learned']*100:7.1f}{s['WME_learned']*100:7.1f}"
               f"{s['CE']*100:7.1f}{s['CE_learned']*100:7.1f}"
               f"{s['sincerity']*100:10.1f}%{s['settled']*100:8.0f}%"
               f"  {'*' if names.index(m) in front else ''}")
-    print("0 = random ballot, 100 = best candidate; *: with learned ballots; front on VSE*, WME*, sincerity")
+    lines.append("0 = random ballot, 100 = best candidate; *: with learned ballots; front on VSE*, WME*, sincerity")
+    with open(os.path.join(out, "table.txt"), "w") as f:
+        f.write("\n".join(lines) + "\n")
+    print("\n".join(lines))
+    print(f"wrote {out}/: elections.csv, summary.csv, table.txt, command.txt; analyse with: python analyze.py {out}")
 
 
 if __name__ == "__main__":

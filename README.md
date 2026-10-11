@@ -26,12 +26,23 @@ Python 3.9 or newer + NumPy; the analysis also needs matplotlib (`pip install -r
 
 ```
 python test_methods.py                                   # hand-built checks
-python run.py                                            # one condition at the defaults, prints a table
-python sweep.py --rounds 1 2 3 --aggressive 0 0.5 1    # grid of conditions -> sweep-elections.csv
-python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> output/analysis/
+python run.py --out base                                 # one condition at the defaults -> output/base/
+python sweep.py --rounds 1 2 3 --aggressive 0 0.5 1 --out rounds   # grid of conditions -> output/rounds/
+python analyze.py rounds --compare "BTR-score:STAR"      # -> output/rounds/analysis/
 ```
 
-All outputs go into the folder `output/` (created when needed): an `--out` name without a directory is placed there, and `analyze.py` looks there for CSVs given without a directory. An `--out` with a directory (`--out runs/test`) is used as given.
+**One folder per run.** Every run or sweep writes into its own folder, and its analysis goes into an `analysis/` folder inside it, so results and their analysis stay together and can be copied or published as one unit:
+
+```
+output/rounds/
+    elections.csv      one row per election, method and ballot set (the data)
+    command.txt        the exact command, simulator version and start time
+    summary.csv        run.py only: one row per method
+    table.txt          run.py only: the printed table
+    analysis/          written by python analyze.py rounds: report.md, summary.csv, plots, command.txt
+```
+
+`--out` names the folder; a name without a directory goes into `output/` (created when needed), one with a directory (`--out runs/test`) is used as given. Without `--out` the folder is named by the time (`run-20261011-143000`, `sweep-…`), so nothing is overwritten by accident; an existing run is only replaced with `--overwrite`. `analyze.py` takes run folders (or elections CSV files) and looks up bare names in `output/`. With several inputs (combining runs) it needs `--out` for the analysis folder.
 
 200 elections with all methods at the default settings (three poll rounds, 10 polls per round) took about 20 minutes in one measurement; time scales linearly with cores, with the number of poll rounds and with the polls per round. To try a new method, there is no need to rerun the others: see Combining runs. More candidates and more voters take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
 
@@ -167,16 +178,17 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--workers` | all cores | parallel processes |
 | `--methods` | all | run only these methods (start from none); method or group names (see Methods), case ignored |
 | `--exclude` | none | run all methods except these |
-| `--out` | `results` | output prefix: `output/<out>-elections.csv` and `output/<out>-summary.csv` |
+| `--out` | time-stamped | folder of the run: `output/<out>/` (see One folder per run) |
+| `--overwrite` | off | replace an existing run in `--out` |
 
-`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--converge`, `--group-size`, `--strategic`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `output/<out>-elections.csv` (default `--out sweep`), one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--converge`, `--group-size`, `--strategic`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `output/<out>/elections.csv`, one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
 
 `analyze.py`:
 
 | Flag | Default | Meaning |
 |---|---|---|
-| (positional) | | one or more elections CSVs |
-| `--out` | `analysis` | output directory (`output/analysis`) |
+| (positional) | | one or more run or sweep folders (or elections CSV files) |
+| `--out` | `analysis/` in the input folder | analysis folder; needed with several inputs |
 | `--boot` | 1000 | bootstrap replicates |
 | `--compare` | none | pairs `"A:B"` for paired differences |
 | `--hide` | `references` | methods or groups left out of the scatter and chain plots; `--hide` alone shows all |
@@ -192,7 +204,7 @@ To see how much a model assumption matters, vary each parameter on its own aroun
 ```
 python sweep.py --one-at-a-time --clusters 5 3 10 --spread 0.5 0.25 1.0 --width 1.0 1.5 \
     --rounds 1 3 --aggressive 0.5 0 1 --strategic 0.5 1 --seeds 1 2 --elections 400 --out model
-python analyze.py model-elections.csv --out model-analysis
+python analyze.py model                                   # -> output/model/analysis/
 ```
 
 Conditions are labelled by how they differ from the base (`c1: base`, `clusters 5`, ...).
@@ -291,7 +303,7 @@ A method's distance to the curve is what it loses to having only ballots, not ut
 
 VSE, WME and CE use sincere ballots; VSE*, WME* and CE* (in the CSV: VSE_learned, WME_learned, CE_learned) the strategic ballots ("learned": after the poll rounds, or after convergent learning). In all cases the preferences that count are the sincere ones.
 
-**Output files of `run.py`:** `<out>-elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns; the simulator version (column `version`, from `run.VERSION`; the report names it, and warns when CSVs of different versions are combined); the quantities for the axes: U_method, U_best, U_rb (random ballot), U_rand (random candidate, for the usual VSE), WM (the winner's worst margin, share of voters), WM_best, WM_rb; has_cw and p_cw (probability of electing the Condorcet winner); the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see Robustness); sincerity, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
+**Output files of `run.py`:** `elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns; the simulator version (column `version`, from `run.VERSION`; the report names it, and warns when CSVs of different versions are combined); the quantities for the axes: U_method, U_best, U_rb (random ballot), U_rand (random candidate, for the usual VSE), WM (the winner's worst margin, share of voters), WM_best, WM_rb; has_cw and p_cw (probability of electing the Condorcet winner); the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see Robustness); sincerity, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
 
 | Column | Meaning |
 |---|---|
@@ -486,7 +498,7 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 
 ```
 python run.py --methods "My method" --out mine          # added to methods.py; same parameters and seed as the reference
-python analyze.py results-elections.csv mine-elections.csv --out compare
+python analyze.py reference mine --out compare            # reference: the folder of the existing run
 ```
 
 How the files are combined (the report lists what was done, and `analyze.py` prints it):
@@ -514,7 +526,7 @@ How the files are combined (the report lists what was done, and `analyze.py` pri
 - Read results **per condition first**. The strategic axes depend on how voters strategise: the number of poll rounds, the aggressive and strategic shares (and, with `--converge`, the group size; see Coordination).
 - An ordering between two methods only counts if their paired difference is not a tie.
 
-**Plots** (in `--out`):
+**Plots** (in the analysis folder):
 
 | File | Shows |
 |---|---|

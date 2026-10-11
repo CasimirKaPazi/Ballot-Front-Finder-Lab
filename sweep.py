@@ -14,16 +14,19 @@ Usage:
 
 Conditions that differ only in --rounds come from one run (see strategy.respond).
 
-Output:
-    <out>-elections.csv   rows from all runs, each carrying its parameters as columns
-                          (written run by run, so a long sweep can be inspected while it runs)
+Output, in one folder per sweep (--out; a name without a directory goes into output/; default
+sweep-<date>-<time>). `python analyze.py <folder>` puts its analysis into <folder>/analysis/.
+    elections.csv   rows from all runs, each carrying its parameters as columns
+                    (written run by run, so a long sweep can be inspected while it runs)
+    command.txt     the command, simulator version and start time
 """
 import argparse
 import csv
 import itertools
+import os
 import time
 
-from run import simulate, PARAMS, out_path, group_size_arg, check_params
+from run import simulate, PARAMS, run_dir, write_command, group_size_arg, check_params
 from methods import select
 
 
@@ -60,10 +63,14 @@ def main():
                     help="vary one parameter at a time around the base (the first value of every flag)")
     ap.add_argument("--participation", action="store_true",
                     help="also check participation (no-show paradox) on sincere and learned ballots; slower")
-    ap.add_argument("--out", default="sweep")
+    ap.add_argument("--out", default=None,
+                    help="folder for this sweep (in output/ unless it has a directory); default sweep-<date>-<time>")
+    ap.add_argument("--overwrite", action="store_true", help="replace an existing sweep in --out")
     a = ap.parse_args()
     names = select(a.methods, a.exclude)
     check_params(a, ap.error)
+    out = run_dir(a.out, "sweep", a.overwrite)
+    write_command(out)
     # parameters that have no effect in the chosen strategy model give identical conditions
     conv = set(a.converge) - {0}
     if not conv and len(a.group_size) > 1:
@@ -95,8 +102,7 @@ def main():
     grid = list(runs.values())
     print(f"{len(grid)} runs x {a.elections} elections, {len(names)} methods"
           + (f" (poll rounds {', '.join(map(str, values['rounds']))} from one run each)" if len(values["rounds"]) > 1 else ""))
-    out = out_path(a.out)
-    with open(f"{out}-elections.csv", "w", newline="") as f:
+    with open(os.path.join(out, "elections.csv"), "w", newline="") as f:
         w = None
         for i, p in enumerate(grid, 1):
             t = time.time()
@@ -108,6 +114,7 @@ def main():
             f.flush()
             varying = ", ".join(f"{k}={p[k]}" for k in PARAMS if len(values[k]) > 1)
             print(f"[{i}/{len(grid)}] {varying or 'single run'}: {time.time() - t:.0f}s")
+    print(f"wrote {out}/elections.csv and command.txt; analyse with: python analyze.py {out}")
 
 
 if __name__ == "__main__":
