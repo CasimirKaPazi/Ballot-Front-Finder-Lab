@@ -151,7 +151,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--cand-shift` | 0.0 | candidates moved along the main dimension by this many voter SDs; see Electorates |
 | `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |
 | `--rounds` | 3 | poll rounds before the vote (0 = everyone sincere); see Strategy engine. Three rounds take voters past the first answer to the honest poll, which leans on the modelling of sincere ballots, toward the state they settle in |
-| `--samples` | 30 | polls per round (they stand for the uncertainty); with `--converge`, bootstrap resamples per round |
+| `--samples` | 10 | polls per round (they stand for the uncertainty); with `--converge`, bootstrap resamples per round |
 | `--poll-error` | 2 | voters treat polls as this many times less precise than their sampling error |
 | `--aggressive` | 0.5 | share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) only when the polls show a gain (poll rounds only) |
 | `--poll-size` | 0 | voters per poll; 0 = half the electorate, rounded to an odd number |

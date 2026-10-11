@@ -40,7 +40,7 @@ def main():
     ap.add_argument("--cand-dispersion", type=float, nargs="+", default=[1.0])
     ap.add_argument("--cand-shift", type=float, nargs="+", default=[0.0])
     ap.add_argument("--rounds", type=int, nargs="+", default=[3])
-    ap.add_argument("--samples", type=int, nargs="+", default=[30])
+    ap.add_argument("--samples", type=int, nargs="+", default=[10])
     ap.add_argument("--group-size", type=group_size_arg, nargs="+", default=[10])
     ap.add_argument("--strategic", type=float, nargs="+", default=[0.5])
     ap.add_argument("--max-score", type=int, nargs="+", default=[5])

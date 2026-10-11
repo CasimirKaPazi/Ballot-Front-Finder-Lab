@@ -231,7 +231,7 @@ def main():
                     help="candidates moved along the first (main) dimension by this many voter SDs; voters unchanged")
     ap.add_argument("--rounds", type=int, default=3,
                     help="poll rounds before the vote (0 = everyone votes sincerely); see strategy.py")
-    ap.add_argument("--samples", type=int, default=30,
+    ap.add_argument("--samples", type=int, default=10,
                     help="poll rounds: polls per round (they stand for the uncertainty); --converge: bootstrap "
                          "resamples per round")
     ap.add_argument("--poll-size", type=int, default=0,

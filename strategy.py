@@ -177,7 +177,7 @@ def group_value(P, Ug):
 def learn(method, u, rng, rounds=20, samples=10, group_size=0, strategic=None):
     """Convergent learning (see the module docstring). Return learned ballots, whether learning
     settled, and mean sincerity (all voters). strategic: boolean mask of voters who take part
-    (None = all). run.py passes --samples (default 30, chosen for poll rounds)."""
+    (None = all). run.py passes --samples (default 10, chosen for poll rounds)."""
     n, C = u.shape
     sincere = method.sincere(u)
     B = sincere.copy()
@@ -250,7 +250,7 @@ def default_poll_size(n):
     return m if m % 2 else m + 1
 
 
-def respond(method, u, rng, rounds=1, samples=30, poll_size=0, search=10, strategic=None, poll_error=2.0,
+def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=10, strategic=None, poll_error=2.0,
             report=None, aggressive=None, start=None):
     """Poll rounds (see the module docstring). Returns ballots of the last round, whether it
     settled (same as the round before), and mean sincerity (all voters).
