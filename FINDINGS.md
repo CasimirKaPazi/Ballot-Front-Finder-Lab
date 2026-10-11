@@ -4,11 +4,59 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Units.** Up to 2026-10-06 the axes were PE (zero = utility-proportional lottery) and WM (the winner's worst margin in % of voters); the sections below keep those units. Since then they are VSE and WME, both with 0 = random ballot and 100 = best candidate (README, Axes). Within one condition the change is a fixed rescaling of each axis (the sums over elections that set the zero and the 100 are the same for all methods), so method order, dominance and rank stability are unaffected; only the numbers differ.
 
+**Default poll rounds and version.** From 2026-10-10 the default is 3 poll rounds (before: 1), and every row records the simulator version (1.0.0 from then on). Sections before this note report round 1 unless they say otherwise.
+
 **Removed methods.** On 2026-10-09 the Dowdall variants (Black-, BTR-, Baldwin-, Nanson-Dowdall; plain Dowdall stays) and the contingent vote (Contingent vote, Contingent-ER) were removed: the Dowdall test had answered its question (see the current picture below), and the contingent vote only served to separate the automated from the real runoff. Sections below still report them.
 
 **Front.** From 2026-10-09 the analysis judges dominance on VSE*, WME* and sincerity: the result with strategic voters and how honest they can afford to be. Honest VSE and WME depend more on modelling assumptions and are context only. Earlier sections used other axes.
 
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
+
+## First look: Soft Minimax (2026-10-10)
+
+Run (Claude, small): 100 elections, defaults, poll rounds 1 and 3; Soft Minimax with the clip at 20%, 40% and 60% of the score range, against Score, STAR, IC-MARS, INS, Minimax and MMPO. Point estimates; most differences are ties at this size. VSE* / WME* / sincerity at round 3:
+
+| Method | VSE* | WME* | Sincerity |
+|---|---|---|---|
+| Score | 92.3 | 89.5 | 99.9 |
+| Soft Minimax-60 (not kept) | 91.6 | 90.3 | 99.8 |
+| Soft Minimax-40 | 89.7 | 93.0 | 99.8 |
+| STAR | 89.4 | 94.3 | 99.7 |
+| Soft Minimax (20%) | 89.1 | 97.2 | 99.8 |
+| INS | 87.8 | 95.4 | 99.5 |
+| Minimax | 82.4 | 100.0 | 97.0 |
+| MMPO | 82.3 | 98.5 | 98.1 |
+
+- **The clip moves the method along the trade-off,** from Minimax-like (20%) to Score-like (60%), as designed.
+- **Soft Minimax (20%) reached the front at round 3** (with STAR and Minimax): VSE* tied with STAR, WME* about 3 points higher, as sincere as the score methods.
+- **On the default 0–5 scale it is Minimax on score ballots:** a 1-point clip turns every integer score difference into a whole vote. So most of its advantage over ranked Minimax (VSE* 89 against 82, sincerity 99.8 against 97.0) comes from the ballot, not the rule: sincere score ballots leave close candidates level, and strategic voters reverse far fewer preferences on scores (burial 2.9% against 12.1%, compromise 0.3% against 7.6%). With a wider score range the 20% clip makes it a genuinely soft rule.
+- Kept: Soft Minimax (20%) and Soft Minimax-40. Needs a full-size run.
+
+## New methods: DSC, DAC, STLR, INS, MAMPO, COWPEA Lottery (2026-10-10)
+
+Run (user): `sweep.py --one-at-a-time --strategic 0.5 1 --aggressive 0.5 0 1`, 400 elections, one poll round, defaults otherwise; the new methods with STAR, Score, Approval, MDDA, MMPO, Plurality and Random pair runoff for reference. INS was then still called "Iterated normalized score". Base condition, VSE* / WME* / sincerity, and paired differences:
+
+| Method | VSE* | WME* | Sincerity |
+|---|---|---|---|
+| INS | 90.8 | 95.0 | 99.7 |
+| Score | 90.4 | 93.4 | 99.9 |
+| STAR | 90.3 | 94.9 | 99.8 |
+| MDDA | 90.2 | 91.4 | 99.6 |
+| MAMPO | 90.1 | 91.8 | 98.9 |
+| Approval | 89.6 | 89.6 | 99.9 |
+| DAC | 88.2 | 88.3 | 97.6 |
+| DSC | 87.4 | 86.9 | 97.1 |
+| STLR | 86.9 | 95.6 | 99.8 |
+| MMPO | 86.7 | 99.7 | 97.7 |
+| Random pair runoff | 54.1 | 43.9 | 98.3 |
+| COWPEA Lottery | 27.2 | 26.3 | 99.6 |
+
+- **INS performs well:** tied with Score and STAR on VSE* and WME* in every condition, slightly less sincere than Score. Honestly it trades 3.6 points of VSE for 4.1 of WME against Score and has clearly higher Condorcet efficiency (CE +8, CE* +4 to +8): renormalizing after each elimination recovers pairwise information that plain Score ballots flatten.
+- **STLR loses VSE against STAR** (VSE −4.2 honest, VSE* −3 to −6 in every condition) and ties on WME and WME*: levelling the runoff to the preferred finalist favours the more widely preferred over the more strongly liked candidate.
+- **MAMPO is tied with MDDA and Approval** on VSE* and WME*, a little less sincere; honestly it loses WME (−3.4) and CE (−5.4) against MDDA.
+- **DAC is at least as good as DSC,** better under full strategy and with all-aggressive voters (WME* +2 to +4, CE* +3 to +6): with strict sincere ballots they are identical, and the difference comes from how strategic voters use equal rankings. Both stay in the middle of the field, with burial shares of 16–39%.
+- **COWPEA Lottery is a weak lottery reference** (VSE* 27, below Random pair runoff's 54), and strategy lowers it further (honest VSE 36).
+- The front (dominated by none on VSE*, WME*, sincerity) is Score and MMPO in three conditions, plus STAR with only kind voters.
 
 ## Candidates unlike the electorate (2026-10-10)
 

@@ -102,6 +102,7 @@ def one_election(args):
 
 
 OUTPUT_DIR = "output"
+VERSION = "1.0.0"      # written into every row (column "version") and shown in the analysis report
 
 
 def out_path(name):
@@ -206,7 +207,7 @@ def simulate(p, elections, workers=None, names=None, participation=False):
             dummy = dict(zip(names, pool.map(previous_election, [(sc, p, max(rounds), n) for n in names])))
         jobs = [j + (p["start"], dummy) for j in jobs]
         rows = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
-    meta = {k: p[k] for k in PARAMS if k != "rounds"}
+    meta = {k: p[k] for k in PARAMS if k != "rounds"} | {"version": VERSION}
     rows = [{**meta, **r} for r in rows]
     rows.sort(key=lambda r: rounds.index(r["rounds"]))          # stable: one condition after another
     return [{k: r[k] for k in PARAMS} | r for r in rows]
@@ -228,7 +229,7 @@ def main():
                          "> 1: spread out; Merrill 1984); voters unchanged")
     ap.add_argument("--cand-shift", type=float, default=0.0,
                     help="candidates moved along the first (main) dimension by this many voter SDs; voters unchanged")
-    ap.add_argument("--rounds", type=int, default=1,
+    ap.add_argument("--rounds", type=int, default=3,
                     help="poll rounds before the vote (0 = everyone votes sincerely); see strategy.py")
     ap.add_argument("--samples", type=int, default=30,
                     help="poll rounds: polls per round (they stand for the uncertainty); --converge: bootstrap "

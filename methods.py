@@ -289,6 +289,53 @@ def _firsts_eq(B):
     return ((Bm == Bm.max(axis=2, keepdims=True)) & m).reshape(n, -1)
 
 
+def _coalitions(B, strict):
+    """For every subset S of candidates: 1 if the voter is solidly committed to S (strict: every
+    candidate in S ranked strictly above every candidate outside, DSC) or acquiesces to it (not
+    strict: no candidate outside ranked strictly above one inside, DAC). The empty set counts 0."""
+    n, C = B.shape
+    m = masks(C)[None]
+    lo_in = np.where(m, B[:, None, :], np.inf).min(axis=2)
+    hi_out = np.where(~m, B[:, None, :], -np.inf).max(axis=2)
+    out = (lo_in > hi_out) if strict else (lo_in >= hi_out)
+    out[:, 0] = False
+    return out
+
+
+def _levelled(B):
+    """STLR runoff scores: L[a, b] = the voter's score for a, rescaled so that the higher of a and b
+    gets the top score (a's score x MAXS / max(a, b)); 0 if the voter gives both 0."""
+    x = np.maximum(B[:, :, None], B[:, None, :])
+    return np.where(x > 0, B[:, :, None] * MAXS / np.where(x > 0, x, 1), 0.0).reshape(len(B), -1)
+
+
+def _nscore_sub(B):
+    """For every subset S: the voter's scores among S stretched to the full range 0..MAXS (lowest in S
+    gets 0, highest MAXS; all 0 if the voter rates S all the same), 0 outside S."""
+    n, C = B.shape
+    m = masks(C)[None]
+    lo = np.where(m, B[:, None, :], np.inf).min(axis=2, keepdims=True)
+    hi = np.where(m, B[:, None, :], -np.inf).max(axis=2, keepdims=True)
+    span = hi - lo
+    out = np.where(m & (span > 0), (B[:, None, :] - lo) * MAXS / np.where(span > 0, span, 1), 0.0)
+    return out.reshape(n, -1)
+
+
+def _soft_margins(B, frac):
+    """Soft pairwise margins: per voter, the score difference a - b clipped to +-frac x MAXS and divided
+    by that, so a difference of frac of the range or more counts as a full vote for one side and smaller
+    ones count in proportion. frac -> 0 gives majority margins, frac = 1 score differences."""
+    k = frac * MAXS
+    return (np.clip(B[:, :, None] - B[:, None, :], -k, k) / k).reshape(len(B), -1)
+
+
+def _diff_hist(B):
+    """Per pair (a, b): one-hot of the integer score difference a - b, shifted to 0 .. 2 MAXS
+    (score ballots are integers), so clipped sums can be formed for any clip after counting."""
+    d = np.rint(B[:, :, None] - B[:, None, :]).astype(int) + MAXS
+    return (d[:, :, :, None] == np.arange(2 * MAXS + 1)).reshape(len(B), -1)
+
+
 def _lcm_upto(C):
     out = 1
     for k in range(2, C + 1):
@@ -353,6 +400,13 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "keepnorm": (_keepnorm, lambda C: (2 ** C, C)),
     "firsts_eq": (_firsts_eq, lambda C: (2 ** C, C)),
     "dowdall": (_dowdall, lambda C: (C,)),
+    "solid": (lambda B: _coalitions(B, True), lambda C: (2 ** C,)),
+    "acquiesce": (lambda B: _coalitions(B, False), lambda C: (2 ** C,)),
+    "levelled": (_levelled, lambda C: (C, C)),
+    "nscore_sub": (_nscore_sub, lambda C: (2 ** C, C)),
+    "aset": (lambda B: _onehot(_subset_id(B > 0), 2 ** B.shape[1]), lambda C: (2 ** C,)),   # approval set
+    "diffhist": (_diff_hist, lambda C: (C, C, 2 * MAXS + 1)),
+    **{f"soft{int(f * 100)}": ((lambda f: lambda B: _soft_margins(B, f))(f), lambda C: (C, C)) for f in (0.2, 0.4)},
     "firsts_ex": (_firsts_ex, lambda C: (2 ** C, C)),
     "lasts": (_lasts, lambda C: (2 ** C, C)),
     "firstsecond": (_firstsecond, lambda C: (C, C)),
@@ -640,6 +694,19 @@ def d_mdda(s):
     return uniform_max(np.where(keep, s["pos"], -1.0))
 
 
+def d_mampo(s):
+    """Majority Approval, Minimum Pairwise Opposition (Kevin Venzke): ranked = approved. If nobody is
+    approved by more than half the voters, the most approved wins. Otherwise, among those approved by
+    more than half, the one whose largest pairwise opposition (most voters ranking some rival above
+    it) is smallest wins; ties share."""
+    app = s["pos"]
+    maj = app > s["n"] / 2
+    if not maj.any():
+        return uniform_max(app)
+    opp = s["gt"].max(axis=0).astype(float)                # gt[y, x]: voters ranking y above x
+    return uniform_max(np.where(maj, -opp, -np.inf))
+
+
 def place_dist(values, k):
     """Probability that each candidate ends up in place k (0 = first) when ranking by values,
     high to low, with ties broken uniformly at random."""
@@ -775,6 +842,131 @@ def d_score_plus(s):
     return P
 
 
+# ---------- coalitions, STLR, iterated normalized score, COWPEA lottery ----------
+MAX_TIED_ORDERS = 5    # equal-strength coalitions: average over their orders up to this many conflicting ones
+
+
+def _bits(x):
+    return [c for c in range(x.bit_length()) if x >> c & 1]
+
+
+def descending_coalitions(strength, C):
+    """DSC / DAC: consider candidate sets from the strongest down; each makes every candidate outside it
+    ineligible, unless that would leave none (then it is skipped); the last eligible candidate wins.
+    Sets of equal strength whose order matters (each would change the eligible set, and not all can be
+    applied) are applied in every order with equal weight (at most MAX_TIED_ORDERS of them; beyond that,
+    in the order of their index). Several still eligible at the end share the win."""
+    from itertools import permutations as perms
+    full = (1 << C) - 1
+    order = [S for S in np.argsort(-strength, kind="stable") if strength[S] > 0 and S != full]
+    groups = []
+    for S in order:
+        if groups and abs(strength[S] - strength[groups[-1][0]]) < EPS:
+            groups[-1].append(int(S))
+        else:
+            groups.append([int(S)])
+    P = np.zeros(C)
+
+    def go(elig, gi, w):
+        while gi < len(groups) and bin(elig).count("1") > 1:
+            live = [S for S in groups[gi] if (S & elig) not in (0, elig)]
+            gi += 1
+            if not live:
+                continue
+            if len(live) == 1:
+                elig &= live[0]
+                continue
+            orders = list(perms(live)) if len(live) <= MAX_TIED_ORDERS else [live]
+            for o in orders:
+                e = elig
+                for S in o:
+                    if S & e:
+                        e &= S
+                go(e, gi, w / len(orders))
+            return
+        for c in _bits(elig):
+            P[c] += w / bin(elig).count("1")
+
+    go(full, 0, 1.0)
+    return P
+
+
+def d_dsc(s):
+    """Descending Solid Coalitions."""
+    st = s["solid"]
+    return descending_coalitions(st, int(np.log2(len(st))))
+
+
+def d_dac(s):
+    """Descending Acquiescing Coalitions."""
+    st = s["acquiesce"]
+    return descending_coalitions(st, int(np.log2(len(st))))
+
+
+def d_stlr(s):
+    """STLR: the two highest score totals go on; in the runoff each ballot's scores for the two are
+    rescaled so that the preferred one gets the top score (a ballot giving both 0 counts for neither);
+    a runoff tie goes to the higher score total."""
+    tot = s["sum"]
+    L = s["levelled"]
+    M = L - L.T
+    P = np.zeros(len(tot))
+    for a, b, w in top_two(tot):
+        runoff(P, M, a, b, w, tiebreak=tot)
+    return P
+
+
+def d_iterated_normalized_score(s):
+    """Score, but each round every ballot is stretched to the full range over the remaining candidates;
+    the lowest total is eliminated (ties for last split the win), until one is left."""
+    sub = s["nscore_sub"]
+    C = sub.shape[1]
+    P = np.zeros(C)
+
+    def go(alive, w):
+        if len(alive) == 1:
+            P[alive[0]] += w
+            return
+        pts = sub[int(sum(1 << c for c in alive))][alive]
+        low = np.flatnonzero(pts <= pts.min() + EPS)
+        for i in low:
+            go([c for j, c in enumerate(alive) if j != i], w / len(low))
+
+    go(list(range(C)), 1.0)
+    return P
+
+
+def d_cowpea(s):
+    """COWPEA Lottery, single winner: a random ballot's approved candidates; then further random ballots
+    each remove the candidates they do not approve, ballots that would remove all (or none) being
+    skipped, until one remains; if no ballot can break a tie, the remaining share the win. Exact
+    probabilities by recursion over the remaining set (N[T] = ballots approving exactly the set T)."""
+    N = s["aset"]
+    C = int(np.log2(len(N)))
+    sets = [T for T in range(1, len(N)) if N[T] > EPS]
+    memo = {}
+
+    def win(S):
+        if S in memo:
+            return memo[S]
+        cs = _bits(S)
+        if len(cs) == 1:
+            out = np.eye(C)[cs[0]]
+        else:
+            nxt = [(N[T], S & T) for T in sets if (S & T) not in (0, S)]
+            if not nxt:
+                out = np.zeros(C)
+                out[cs] = 1 / len(cs)
+            else:
+                tot = sum(w for w, _ in nxt)
+                out = sum(w * win(R) for w, R in nxt) / tot
+        memo[S] = out
+        return out
+
+    tot = sum(N[T] for T in sets)
+    return sum(N[T] * win(T) for T in sets) / tot
+
+
 # ---------- decisions (continued) ----------
 def d_er_irv(s):
     """IRV on rankings with ties: every candidate tied at the top of a ballot (among the remaining)
@@ -855,6 +1047,78 @@ def d_ic_mars(s):
     M, tot, eq = margins_of(s), s["sum"], s["eqtop"]
     V = np.sign(M) * np.clip(np.abs(M) - eq, 0, None)
     return bottom_two_runoff(tot, lambda a, b: V[a, b] + (tot[a] - tot[b]) / MAXS)
+
+
+def d_mars_t(s):
+    """MARS-T: as MARS, but each pairwise margin is scaled by the share of ballots that score the two
+    candidates differently (1 - t, t = share scoring them equally): pairs that many voters do not tell
+    apart are decided more by the score difference."""
+    M, tot = margins_of(s), s["sum"]
+    t = s["diffhist"][:, :, MAXS].astype(float) / s["n"]
+    V = M * (1 - t)
+    return bottom_two_runoff(tot, lambda a, b: V[a, b] + (tot[a] - tot[b]) / MAXS)
+
+
+def soft_minimax(key):
+    """Soft Minimax: each candidate's worst soft margin (see _soft_margins) against any rival; the best
+    worst margin wins, ties share. Between Minimax (sharp margins) and Score (score differences: the
+    worst difference of a total is against the runner-up, so the highest total wins)."""
+    def d(s):
+        D = s[key].astype(float)
+        np.fill_diagonal(D, np.inf)
+        return uniform_max(D.min(axis=1))
+    return d
+
+
+def _soft_minimax_clip(H, k):
+    """Minimax on soft margins from difference counts H (C, C, 2 MAXS + 1) with a clip k[a, b] (points)
+    per pair: sum of clip(difference, -k, k) / k; a pair with k = 0 (both always 0) counts 0."""
+    x = np.arange(H.shape[2]) - MAXS
+    kk = np.maximum(k, 1e-9)[:, :, None]
+    D = (H * np.clip(x[None, None, :], -kk, kk)).sum(axis=2) / kk[:, :, 0]
+    D = np.where(k > 0, D, 0.0)
+    np.fill_diagonal(D, np.inf)
+    return uniform_max(D.min(axis=1))
+
+
+def d_soft_level(s):
+    """Soft Minimax-L: the clip for a pair is the mean of the two candidates' average scores (A averages
+    3, B 2: clip 2.5 points). Pairs of well-liked candidates are compared more by score difference,
+    pairs of little-liked ones more by majority vote."""
+    H = s["diffhist"].astype(float)
+    avg = s["sum"] / s["n"]
+    return _soft_minimax_clip(H, (avg[:, None] + avg[None, :]) / 2)
+
+
+GEOMEDIAN_STEPS = 20     # Weiszfeld iterations at most; stop earlier when no coordinate moves by GEOMEDIAN_TOL
+GEOMEDIAN_TOL = 1e-3     # (checked: the same winner as 500 steps to 1e-10 in 2000 random poll-sized profiles)
+
+
+def t_geometric_median(B):
+    """Geometric median of the score ballots (the point with the smallest total Euclidean distance to all
+    ballots, as vectors over the candidates), by at most GEOMEDIAN_STEPS Weiszfeld iterations from the
+    mean; the candidate with the highest coordinate wins. The mean would be Score; the coordinate-wise
+    median is a median grade. Each ballot pulls the median toward itself with the same force however
+    far away it is, so exaggerating a ballot in the same direction adds no pull."""
+    x = B.mean(axis=0)
+    for _ in range(GEOMEDIAN_STEPS):
+        d = np.linalg.norm(B - x, axis=1)
+        w = 1.0 / np.maximum(d, 1e-9)
+        nx = (w[:, None] * B).sum(axis=0) / w.sum()
+        if np.abs(nx - x).max() < GEOMEDIAN_TOL:
+            x = nx
+            break
+        x = nx
+    return uniform_max(np.round(x, 6))
+
+
+def d_soft_diff(s):
+    """Soft Minimax-D: the clip for a pair is 1 point plus the difference of the two candidates' average
+    scores: pairs close in average score are compared by majority vote, pairs far apart more by score
+    difference."""
+    H = s["diffhist"].astype(float)
+    avg = s["sum"] / s["n"]
+    return _soft_minimax_clip(H, np.abs(avg[:, None] - avg[None, :]) + 1)
 
 
 def d_coombs(s):
@@ -1031,16 +1295,24 @@ class Method:
         """Per-voter features, concatenated: (n, d)."""
         return np.concatenate([FEATURES[f][0](B).reshape(len(B), -1).astype(float) for f in self.feats], axis=1)
 
+    def _layout(self, C):
+        """(name, start, end, shape) of each feature in the concatenated vector, cached per C and score
+        range (some shapes depend on MAXS)."""
+        cache = self.__dict__.setdefault("_layouts", {})
+        key = (C, MAXS)
+        if key not in cache:
+            out, i = [], 0
+            for f in self.feats:
+                shape = FEATURES[f][1](C)
+                k = int(np.prod(shape))
+                out.append((f, i, i + k, shape))
+                i += k
+            cache[key] = out
+        return cache[key]
+
     def unpack(self, S):
         """Summed features (d,) -> dict name -> array of its proper shape."""
-        C = self._C
-        out, i = {}, 0
-        for f in self.feats:
-            shape = FEATURES[f][1](C)
-            k = int(np.prod(shape))
-            out[f] = S[i:i + k].reshape(shape) if shape else S[i]
-            i += k
-        return out
+        return {f: S[a:b].reshape(shape) if shape else S[a] for f, a, b, shape in self._layout(self._C)}
 
     def decide_many(self, S, C):
         """Winner probabilities for each row of summed features S (samples, d)."""
@@ -1098,28 +1370,39 @@ METHODS = {
     "IRV": M_("rank", d_irv, ("firsts",)),
     "ER-IRV": M_("weak", d_er_irv, ("firsts_eq",)),
     "IRV-3": M_("trunc3", lambda s: d_irv(s, "firsts_ex"), ("firsts_ex",)),
+    "DSC": M_("weak", d_dsc, ("solid",)),
+    "DAC": M_("weak", d_dac, ("acquiesce",)),
     "Coombs": M_("rank", d_coombs, ("firsts", "lasts")),
     # approval-based
     "Approval": M_("approval", d_sum, ("sum",)),
     "Approval runoff": M_("app_run", d_approval_two_round, ("app", "runoff_gt")),
     "Approval cond. runoff": M_("app_run", d_approval_two_round_if_needed, ("n", "app", "runoff_gt")),
     "MDDA": M_("trunc", d_mdda, ("n", "gt", "pos")),
+    "MAMPO": M_("trunc", d_mampo, ("n", "gt", "pos")),
     # rated
     "Score": M_("score", d_sum, ("sum",)),
     "MJ": M_("score", d_mj, ("grades",)),
     "MCA": M_("grade3", d_mca, ("n", "ge2", "ge1")),
     "Reciprocal score": M_("score", d_reciprocal_score, ("fset", "fsetB")),
+    "INS": M_("score", d_iterated_normalized_score, ("nscore_sub",)),
+    "Geometric median": M_("score", full=t_geometric_median),
     # hybrid
     "STAR": M_("score", d_star, ("sum", "gt")),
     "BTR-score": M_("score", d_btr, ("sum", "gt")),
     "MARS": M_("score", d_mars, ("sum", "gt")),
     "IC-MARS": M_("score", d_ic_mars, ("sum", "gt", "eqtop")),
+    "MARS-T": M_("score", d_mars_t, ("n", "sum", "gt", "diffhist")),
     "ARA": M_("score", ara("upper"), ("upper", "gt")),          # ratings above the middle (0..5: 3-5) count as approval
     "ARA-Top": M_("score", ara("maxs"), ("maxs", "gt")),        # only the top score counts as approval
     "Score+": M_("score", d_score_plus, ("sum", "excess", "keepnorm")),
     "321": M_("grade3", d_321, ("n", "ge2", "eq0", "sum", "gt")),
     "MMWV+Score": M_("score", d_mmwv_plus_score, ("n", "sum", "gt")),
     "MMWVxScore": M_("score", d_mmwv_times_score, ("n", "sum", "gt")),
+    "STLR": M_("score", d_stlr, ("sum", "levelled")),
+    "Soft Minimax": M_("score", soft_minimax("soft20"), ("soft20",)),
+    "Soft Minimax-40": M_("score", soft_minimax("soft40"), ("soft40",)),
+    "Soft Minimax-L": M_("score", d_soft_level, ("n", "sum", "diffhist")),
+    "Soft Minimax-D": M_("score", d_soft_diff, ("n", "sum", "diffhist")),
     # positional
     "Borda": M_("rank", d_sum, ("sum",)),
     "Borda-ER": M_("weak", d_borda_er, ("gt",)),
@@ -1128,6 +1411,7 @@ METHODS = {
     "Random pair runoff": M_("rank", d_random_pair, ("n", "first", "gt")),
     "Anti-plurality": M_("veto", d_sum, ("sum",)),
     "TRASH": M_("rank", d_trash, ("first", "last", "gt")),
+    "COWPEA Lottery": M_("approval", d_cowpea, ("aset",)),
     # inverse: tests of the strategy model. Same ballot and count as the original, but the sincere
     # ballot expresses reversed preferences (name the least liked; approve those below the mean; rank
     # upside down), so honest voting elects (nearly) the worst candidate. Voters who learn to reverse
@@ -1151,12 +1435,13 @@ GROUPS = {
                   "Ranked Robin-SR", "SICT", "Condorcet-random-drop"],
     "minimax-family": ["Minimax", "Minimax-ER", "MMWV", "MMPO", "MMPOWV"],
     "condorcet-hybrid": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
-    "plurality-based": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs"],
-    "approval-based": ["Approval", "Approval runoff", "Approval cond. runoff", "MDDA"],
-    "rated": ["Score", "MJ", "MCA", "Reciprocal score"],
-    "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore"],
+    "plurality-based": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs", "DSC", "DAC"],
+    "approval-based": ["Approval", "Approval runoff", "Approval cond. runoff", "MDDA", "MAMPO"],
+    "rated": ["Score", "MJ", "MCA", "Reciprocal score", "INS", "Geometric median"],
+    "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "MARS-T", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore", "STLR", "Soft Minimax",
+               "Soft Minimax-40", "Soft Minimax-L", "Soft Minimax-D"],
     "positional": ["Borda", "Borda-ER", "Dowdall"],
-    "references": ["Random pair runoff", "Anti-plurality", "TRASH"],
+    "references": ["Random pair runoff", "Anti-plurality", "TRASH", "COWPEA Lottery"],
     "inverse": ["Inverse-Plurality", "Inverse-Approval", "Inverse-Minimax", "Inverse-IRV", "Inverse-ER-IRV", "Inverse-TTR",
                 "Inverse-Borda", "Inverse-Score"],
 }

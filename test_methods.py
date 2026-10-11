@@ -162,7 +162,7 @@ for S in (10, 100):
     up = _m.FEATURES["upper"][0](np.array([[S / 2, S / 2 + 1, S]]))
     assert up.tolist() == [[False, True, True]], S
     for name, m in METHODS.items():
-        if m.ballot == "score":
+        if m.ballot == "score" and m.full is None:
             Bs = m.sincere(u); F = m.features(Bs); B2 = Bs.copy(); B2[:3] = Bs[-1]
             S2 = F.sum(axis=0) + (m.features(B2[:3]) - F[:3]).sum(axis=0)
             assert np.allclose(m.decide_many(S2[None], Bs.shape[1])[0], m.tally(B2)), (name, S)
@@ -303,6 +303,13 @@ print("ER variants = strict versions on strict ballots ok")
 sc = np.array([[5, 4, 0]] * 3 + [[3, 5, 0]] * 2 + [[5, 5, 0]] * 4, dtype=float)
 check("MARS on the tied-at-top example", METHODS["MARS"].tally(sc), [1, 0, 0])
 check("IC-MARS on the tied-at-top example", METHODS["IC-MARS"].tally(sc), [0, 1, 0])
+# MARS-T scales the margin by the share of ballots scoring A and B differently (5/9): 5/9 - 1/5 > 0 -> A.
+# With the 2 B voters rating A 2 instead of 3 (A 39, B 42, a gap of 3 points): MARS 1 - 3/5 > 0 -> A,
+# MARS-T 5/9 - 3/5 < 0 -> B.
+check("MARS-T on the tied-at-top example", METHODS["MARS-T"].tally(sc), [1, 0, 0])
+sc2 = np.array([[5, 4, 0]] * 3 + [[2, 5, 0]] * 2 + [[5, 5, 0]] * 4, dtype=float)
+check("MARS, score gap 3", METHODS["MARS"].tally(sc2), [1, 0, 0])
+check("MARS-T, score gap 3", METHODS["MARS-T"].tally(sc2), [0, 1, 0])
 # MMWV+Score and MMWVxScore: an undefeated candidate with the highest score wins
 sc2 = np.array([[5, 3, 0]] * 5 + [[2, 5, 0]] * 3 + [[4, 0, 5]] * 1, dtype=float)
 check("MMWV+Score", METHODS["MMWV+Score"].tally(sc2), [1, 0, 0])
@@ -449,3 +456,83 @@ c0 = a[1].mean(axis=0)
 want = c0 + 0.5 * (a[2] - c0); want[:, 0] += 1.0 * a[1][:, 0].std()
 assert np.allclose(b[2], want)
 print("candidate dispersion and shift ok")
+
+# DSC and DAC. Benham's example: 46 A (B, C tied below), 44 B>C, 10 C (A, B tied below).
+# DSC: {A} is the strongest solid coalition (46) -> A. DAC: {A,C} acquiesced by 56, then {B,C} by 54 -> C.
+bx = np.array([[2, 0, 0]] * 46 + [[0, 2, 1]] * 44 + [[0, 0, 2]] * 10, dtype=float)
+check("DSC on Benham's example", METHODS["DSC"].tally(bx), [1, 0, 0])
+check("DAC on Benham's example", METHODS["DAC"].tally(bx), [0, 0, 1])
+for _ in range(100):                          # strict rankings: DSC = DAC (solid = acquiescing sets)
+    uu = r.random((int(r.integers(5, 30)), int(r.integers(3, 6))))
+    assert np.allclose(METHODS["DSC"].honest(uu), METHODS["DAC"].honest(uu))
+    assert abs(METHODS["DSC"].honest(uu).sum() - 1) < 1e-9
+
+# STLR: A totals 3x5+2x1 = 17, B 3x4+2x5 = 22, C 0: A and B go on. Levelled: the first 3 voters give
+# A 5, B 4; the other 2 give A 1, B 5: A 15 + 2 = 17, B 12 + 10 = 22 -> B. With 0..5 scores 2 and 1 on
+# one ballot the levelled scores are 5 and 2.5 (electowiki's example).
+st = np.array([[5, 4, 0]] * 3 + [[1, 5, 0]] * 2, dtype=float)
+check("STLR", METHODS["STLR"].tally(st), [0, 1, 0])
+L = FEATURES_ = __import__("methods").FEATURES["levelled"][0](np.array([[2.0, 1.0, 0.0]])).reshape(3, 3)
+assert abs(L[0, 1] - 5) < 1e-9 and abs(L[1, 0] - 2.5) < 1e-9 and L[2, 0] == 0
+
+# INS (iterated normalized score): 2 voters A5 B4 C0, 2 voters C5 B4 A0, 1 voter B5 A0 C0. Totals A10 B13
+# C10: A and C tie for last (split). Without A: the C voters' ballots stretch to C5 B0... see below.
+ins = np.array([[5, 4, 0]] * 2 + [[0, 4, 5]] * 2 + [[0, 5, 0]], dtype=float)
+p = METHODS["INS"].tally(ins)
+# A out: ballots over {B,C}: A-voters B5 C0, C-voters B0 C5, B-voter B5 C0 -> B 15, C 10 -> B.
+# C out: over {A,B}: A-voters A5 B0, C-voters A0 B5, B-voter A0 B5 -> B 15 -> B.
+check("INS", p, [0, 1, 0])
+
+# COWPEA Lottery: exact probabilities equal a simulation of the lottery
+cw_ = np.array([[1, 1, 0]] * 6 + [[0, 1, 1]] * 3 + [[1, 0, 0]] * 1, dtype=float)
+P = METHODS["COWPEA Lottery"].tally(cw_)
+rs = np.random.default_rng(1); wins = np.zeros(3)
+for _ in range(20000):
+    S = set(np.flatnonzero(cw_[rs.integers(10)]))
+    for _ in range(200):
+        if len(S) == 1:
+            break
+        T = set(np.flatnonzero(cw_[rs.integers(10)]))
+        if S & T and S & T != S:
+            S &= T
+    for c in S:
+        wins[c] += 1 / len(S)
+assert np.allclose(P, wins / wins.sum(), atol=0.015), (P, wins / wins.sum())
+print("COWPEA Lottery = simulation ok", np.round(P, 3))
+
+# MAMPO: 4 voters A>B (A, B approved), 3 voters B>C, 2 voters C (truncated). Approvals A 4, B 7, C 5 of
+# 9: B and C have a majority. Largest opposition: B 4 (A over B), C 7 (B over C: 4 + 3) -> B.
+# Without a majority approval the most approved wins.
+mp = np.array([[2, 1, 0]] * 4 + [[0, 2, 1]] * 3 + [[0, 0, 1]] * 2, dtype=float)
+check("MAMPO", METHODS["MAMPO"].tally(mp), [0, 1, 0])
+mp2 = np.array([[1, 0, 0]] * 4 + [[0, 1, 0]] * 3 + [[0, 0, 1]] * 2, dtype=float)
+check("MAMPO without majority approval (most approved)", METHODS["MAMPO"].tally(mp2), [1, 0, 0])
+
+
+# Soft Minimax: with clipping at 1 point on integer 0..5 scores, a soft margin is the majority margin,
+# so Soft Minimax is Minimax on the score ballots; Soft Minimax-40 counts 1-point differences as half
+from methods import d_minimax, Method
+mm_on_scores = Method("score", d_minimax, ("gt",))
+for _ in range(100):
+    uu = r.random((int(r.integers(5, 30)), int(r.integers(3, 6))))
+    assert np.allclose(METHODS["Soft Minimax"].honest(uu), mm_on_scores.honest(uu))
+sm = np.array([[5, 4, 0]] * 3 + [[3, 5, 0]] * 2, dtype=float)
+# A over B: 3 voters by 1 point (half each) = 1.5, 2 voters by 2 (full) the other way: soft margin -0.5 -> B
+check("Soft Minimax-40 (1-point differences count half)", METHODS["Soft Minimax-40"].tally(sm), [0, 1, 0])
+check("Soft Minimax (= Minimax on scores: A beats B 3:2)", METHODS["Soft Minimax"].tally(sm), [1, 0, 0])
+
+# Soft Minimax-L and -D. 3 voters A5 B4 C0, 2 voters A3 B5 C0: A averages 4.2, B 4.4, clip 4.3 for A-B
+# under -L: A over B: 3 x 1/4.3 - 2 x 2/4.3 < 0 -> B (like Score). Under -D the clip is 1 + 0.2 = 1.2:
+# A over B 3 x 1/1.2 - 2 x 1 > 0 -> A (close averages: nearly a majority vote).
+check("Soft Minimax-L (clip = mean average score of the pair)", METHODS["Soft Minimax-L"].tally(sm), [0, 1, 0])
+check("Soft Minimax-D (clip = 1 + difference of the averages)", METHODS["Soft Minimax-D"].tally(sm), [1, 0, 0])
+
+# Geometric median: on 2 candidates with ballots (5,0) x3 and (0,5) x2 it is the majority's ballot (3 > 2,
+# the median sits at a data point), unlike the mean (Score would also pick A here); exaggeration test:
+# a 1-ballot minority moving further away does not move the median.
+gm = np.array([[5, 0, 2]] * 3 + [[0, 5, 2]] * 2, dtype=float)
+check("Geometric median (majority ballot)", METHODS["Geometric median"].tally(gm), [1, 0, 0])
+x1 = METHODS["Geometric median"].full(np.array([[3, 2, 0]] * 4 + [[2, 3, 0]] * 3 + [[0, 3, 5]], dtype=float))
+x2 = METHODS["Geometric median"].full(np.array([[3, 2, 0]] * 4 + [[2, 3, 0]] * 3 + [[0, 5, 5]], dtype=float))
+assert np.allclose(x1, x2)
+print("geometric median ok")

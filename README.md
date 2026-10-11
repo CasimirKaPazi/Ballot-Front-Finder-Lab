@@ -1,6 +1,6 @@
 # Voting Pareto Lab
 
-A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 53 in all, plus eight test methods. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
+A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 65 in all, plus eight test methods. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
 
 **The question.** Every voting method turns ballots into a winner, and every method can be gamed to some degree. Comparisons with honest ballots alone flatter methods that are easy to manipulate; comparisons under fully rational strategy depend on assumptions nobody believes. This lab places voters in between: some of them read polls and adjust their ballots when it pays, the way people vote tactically in real elections, and it measures what the method makes of that.
 
@@ -22,7 +22,7 @@ The two pull apart, so no method can reach 100 on both; the lab computes the bou
 
 The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulations) and on Clay Smith's spatial voter model; in the strategy model, rounds of best responses to the previous poll (level-k reasoning), the leader rule of Myerson and Weber (1993) emerges instead of being coded. Its assumptions are spelled out in the sections below, and eight Inverse-* methods (honest voting elects the worst candidate) test whether voters learn their way back.
 
-Python 3 + NumPy; the analysis also needs matplotlib. This file describes the software: the model, its parameters, the methods and the analysis. What the simulations have shown so far, with the commands that produced it, is in [FINDINGS.md](FINDINGS.md).
+Python 3.9 or newer + NumPy; the analysis also needs matplotlib (`pip install -r requirements.txt`). This file describes the software: the model, its parameters, the methods and the analysis. What the simulations have shown so far, with the commands that produced it, is in [FINDINGS.md](FINDINGS.md).
 
 ```
 python test_methods.py                                   # hand-built checks
@@ -33,7 +33,7 @@ python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> output/a
 
 All outputs go into the folder `output/` (created when needed): an `--out` name without a directory is placed there, and `analyze.py` looks there for CSVs given without a directory. An `--out` with a directory (`--out runs/test`) is used as given.
 
-200 elections with all 61 methods at the default settings (one poll round) take about 14 minutes on 2 cores; time scales linearly with cores and with the number of poll rounds. More candidates and more voters take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
+200 elections with all methods at the default settings (three poll rounds) take about three times as long as with one round (measured with one round and fewer methods: about 14 minutes on 2 cores); time scales linearly with cores and with the number of poll rounds. More candidates and more voters take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
 
 ## Files
 
@@ -61,7 +61,7 @@ Two models of strategic voting (`strategy.py`). **Poll rounds** is the default; 
 One election, with a few polls before it. Voters see only published poll results, never anyone's preferences, and answer them all at the same time.
 
 - **Round 0:** everyone votes sincerely (naive, uninformed). `--rounds 0` reports this as the strategic result.
-- **Round r** (1 … `--rounds`, default 1): a poll of round r−1 is published, and every strategic group answers it at once. Nobody sees anyone else's answer before the next poll. The strategic axes report the last round. Each round answers a pure poll of the round before (level-k reasoning: round 1 best-responds to sincere voters, round 2 to round-1 voters, …).
+- **Round r** (1 … `--rounds`, default 3): a poll of round r−1 is published, and every strategic group answers it at once. Nobody sees anyone else's answer before the next poll. The strategic axes report the last round. Each round answers a pure poll of the round before (level-k reasoning: round 1 best-responds to sincere voters, round 2 to round-1 voters, …).
 - **What a poll shows:** the method's own counts, the summed ballot features it decides from (first preferences for Plurality, approvals for Approval, the pairwise matrix for Condorcet methods, score totals and head-to-heads for STAR, …), from a random sample of `--poll-size` voters (default half the electorate, rounded to an odd number: 99 → 49, 100 → 51, 200 → 101), scaled up to the electorate. `--samples` independent polls (30) stand for the uncertainty. For some methods these counts say more than a real poll would (IRV's counts include every elimination order); methods with richer counts may profit from that.
 - **Uncertainty:** voters treat a poll as `--poll-error` times (2) less precise than its sampling error: the polls are spread around the true count by that factor. Real polls miss results by about twice their stated sampling error (Shirani-Mehr, Rothschild, Goel & Gelman 2018). With the sampling error alone, the leader's supporters almost never see a poll in which they are behind, so they never protect their lead, while the runner-up's supporters attack it.
 - **Groups:** whole ranking groups (strategic voters with the same sincere ranking, no cap). Voters who share a ranking and see the same poll reach the same answer, so they act as a bloc. Factions across rankings are not built in; they emerge when groups answer the same poll alike (all who prefer the runner-up to the leader, say).
@@ -150,7 +150,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--cand-dispersion` | 1.0 | candidates' distance from the electorate's centre × this (< 1 clustered, > 1 spread out); see Electorates |
 | `--cand-shift` | 0.0 | candidates moved along the main dimension by this many voter SDs; see Electorates |
 | `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |
-| `--rounds` | 1 | poll rounds before the vote (0 = everyone sincere); see Strategy engine |
+| `--rounds` | 3 | poll rounds before the vote (0 = everyone sincere); see Strategy engine. Three rounds take voters past the first answer to the honest poll, which leans on the modelling of sincere ballots, toward the state they settle in |
 | `--samples` | 30 | polls per round (they stand for the uncertainty); with `--converge`, bootstrap resamples per round |
 | `--poll-error` | 2 | voters treat polls as this many times less precise than their sampling error |
 | `--aggressive` | 0.5 | share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) only when the polls show a gain (poll rounds only) |
@@ -235,7 +235,7 @@ Run time falls less than in proportion to p: halving the strategic voters remove
 
 ## Score range
 
-`--max-score m` sets the range of the score ballot to 0–m for every method that uses it (Score, MJ, STAR, BTR-score, MARS, ARA, ARA-Top, Score+, Reciprocal score, Smith//Score). The default 0–5 is an implementation choice, not part of these methods; other simulations (e.g. Quinn's VSE) also run 0–10 and 0–100. With a coarse range, sincere voters must give candidates they like differently the same score, so pairwise preferences are lost: this is the cap on WME seen for the rated and hybrid methods. A wider range reduces it. MCA and 321 keep their three grades, and methods on other ballots are unaffected; the electorates are the same for every value, so a sweep (`sweep.py --max-score 5 10 100`) isolates the effect of the range, and its chain plot draws the reachable frontier.
+`--max-score m` sets the range of the score ballot to 0–m for every method that uses it (Score, MJ, STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, Reciprocal score, Smith//Score, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D, INS, Geometric median). The default 0–5 is an implementation choice, not part of these methods; other simulations (e.g. Quinn's VSE) also run 0–10 and 0–100. With a coarse range, sincere voters must give candidates they like differently the same score, so pairwise preferences are lost: this is the cap on WME seen for the rated and hybrid methods. A wider range reduces it. MCA and 321 keep their three grades, and methods on other ballots are unaffected; the electorates are the same for every value, so a sweep (`sweep.py --max-score 5 10 100`) isolates the effect of the range, and its chain plot draws the reachable frontier.
 
 Rules that refer to the range scale with it: ARA approves ratings above the middle, ARA-Top only the top score, Score+ stretches to the full range, Reciprocal score measures support as a share of the top score. Learning: see the score mutation in Strategy engine.
 
@@ -287,7 +287,7 @@ Both axes are **efficiencies with the same two reference points**, as ratios of 
 
 VSE, WME and CE use sincere ballots; VSE*, WME* and CE* (in the CSV: VSE_learned, WME_learned, CE_learned) the strategic ballots ("learned": after the poll rounds, or after convergent learning). In all cases the preferences that count are the sincere ones.
 
-**Output files of `run.py`:** `<out>-elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns; the quantities for the axes: U_method, U_best, U_rb (random ballot), U_rand (random candidate, for the usual VSE), WM (the winner's worst margin, share of voters), WM_best, WM_rb; has_cw and p_cw (probability of electing the Condorcet winner); the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see Robustness); sincerity, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
+**Output files of `run.py`:** `<out>-elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns; the simulator version (column `version`, from `run.VERSION`; the report names it, and warns when CSVs of different versions are combined); the quantities for the axes: U_method, U_best, U_rb (random ballot), U_rand (random candidate, for the usual VSE), WM (the winner's worst margin, share of voters), WM_best, WM_rb; has_cw and p_cw (probability of electing the Condorcet winner); the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see Robustness); sincerity, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
 
 | Column | Meaning |
 |---|---|
@@ -328,7 +328,7 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 
 ## Methods
 
-61 methods, listed by group (see Groups below). "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
+73 methods, listed by group (see Groups below). "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
 
 **condorcet**
 
@@ -377,6 +377,8 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | IRV | ranking | eliminate fewest first choices among remaining |
 | ER-IRV | ranking, ties allowed | IRV where every candidate tied at the top of a ballot (among the remaining) gets a whole vote, as in approval. Sincere ballots are strict, so it equals IRV with honest ballots; ties are learned |
 | IRV-3 | ranking of at most 3 | IRV as used in practice with a limited ballot: at most 3 candidates ranked; a ballot whose ranked candidates are all out is exhausted and counts for nobody. Equals IRV with 3 candidates |
+| DSC | ranking, ties allowed | Descending Solid Coalitions (Woodall): every set of candidates gets the number of voters who rank all of it strictly above all other candidates; from the strongest set down, each makes the candidates outside it ineligible unless none would remain; the last eligible candidate wins. Equal-strength sets whose order matters are applied in every order with equal weight. Clone-independent; with strict rankings the coalitions are each voter's top-k sets |
+| DAC | ranking, ties allowed | Descending Acquiescing Coalitions: as DSC, but a voter counts for every set none of whose outside candidates they rank strictly above one inside (equal ranks count for both sides). Equals DSC on strict rankings; differs once voters tie candidates |
 | Coombs | ranking | a candidate with more than half of the first choices among the remaining wins; otherwise the one with the most last places among the remaining is eliminated |
 
 **approval-based**
@@ -387,6 +389,7 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | Approval runoff | two-round, approval first round | top two by approvals go to a separate runoff, decided by sincere preferences; a runoff tie goes to more approvals |
 | Approval cond. runoff | two-round, approval first round | as Approval runoff, but a candidate approved by more than half the voters wins outright |
 | MDDA | truncated ranking (ranked = approved) | disqualify every candidate that more than half the voters rank some other candidate above (unless all would be); most approved remaining wins. Sincere: rank everyone above the mean |
+| MAMPO | truncated ranking | Majority Approval, Minimum Pairwise Opposition (Kevin Venzke): ranked = approved. If nobody is approved by more than half the voters, the most approved wins; otherwise, among those approved by more than half, the one with the smallest largest pairwise opposition (most voters ranking some rival above it) wins. Devised to show that favourite betrayal, strong defensive strategy and strategy-freeness are compatible |
 
 **rated**
 
@@ -396,6 +399,8 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | MJ | 0–5 | majority judgment: highest median grade; ties broken by repeatedly removing the median |
 | MCA | three grades | majority choice approval, MCA-A variant: the first grade level (good, then good or OK, then all) at which some candidate is rated that high by more than half the voters decides; one such candidate wins, among several the most approved (good or OK) |
 | Reciprocal score | 0–5 | interpretation of [electowiki](https://electowiki.org/wiki/Reciprocal_Score_Voting): a voter's faction is their top-rated candidate(s). R(X→Y) is the mean rating supporters of X give Y, as a share of the top score. A score for c is multiplied by min(1, R(c→F)/R(F→c)), F the voter's faction: support that c's supporters do not return is cut. Scores for the voter's own top and for candidates nobody top-rates stay unchanged; highest total wins |
+| INS | 0–5 | iterated normalized score, a score elimination: each round every ballot is stretched to the full range over the remaining candidates (lowest 0, highest the top score; a ballot rating them all the same counts for none), the lowest total is eliminated (ties for last split the win), until one is left |
+| Geometric median | 0–5 | the geometric median of the score ballots, taken as vectors over the candidates (the point with the smallest total Euclidean distance to all ballots; at most 20 Weiszfeld iterations from the mean); the candidate with the highest coordinate wins. The mean would be Score, the coordinate-wise median a median grade. Each ballot pulls with the same force however far away it is, so exaggerating in the same direction adds no pull. No feature sums, so polls use smaller samples, as for Condorcet-random-drop |
 
 **hybrid**
 
@@ -405,12 +410,18 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | BTR-score | 0–5 | order by total score, bottom-two pairwise runoffs climbing up |
 | MARS | 0–5 | as BTR-score; each match adds share preferring to score as share of maximum |
 | IC-MARS | 0–5 | MARS where a pairwise margin counts only beyond the votes rating both candidates at the top (tied at the top, as in [Improved Condorcet Approval](https://electowiki.org/wiki/Improved_Condorcet_Approval)): a margin those votes could reverse counts 0, so score weighs more |
+| MARS-T | 0–5 | MARS with each pairwise margin scaled by the share of ballots that score the two candidates differently (1 − share of equal scores): pairs that many voters do not tell apart are decided more by the score difference |
 | ARA | 0–5 | ratings above the middle of the range are approvals (0–5: 3–5; 0–10: 6–10); order by approvals; each match adds voters preferring to approvals (formerly MARA) |
 | ARA-Top | 0–5 | as ARA, but only the top score counts as approval |
 | Score+ | 0–5 | simplified variant from the [votingtheory.org thread](https://www.votingtheory.org/forum/topic/138/score-interval-score-with-additional-protection-against-the-chicken-dilemma): A defeats B robustly if A's total minus the scores both share (per voter the lower of the two) still exceeds B's total. Robustly defeated candidates are eliminated, each voter's scores among the rest are stretched again to the full range, highest total wins |
 | 321 | three grades | 3-2-1 voting: 3 semifinalists with the most "good" (the third only with at least half as many as the first), of them 2 finalists with the fewest "bad", then the finalist rated above the other on more ballots. Ties: higher score (good 2, OK 1), then split. The party rule for semifinalists does not apply |
 | MMWV+Score | 0–5 | score share (total ÷ (voters × top score)) minus the worst defeat in winning votes as a share of voters; the highest wins (proposed in this lab; pairwise from the ratings) |
 | MMWVxScore | 0–5 | score share × (1 − worst winning-votes defeat share), as in MMPOWV |
+| STLR | 0–5 | score then levelled runoff: the two highest score totals go on; in the runoff each ballot's scores for the two are rescaled so that the preferred one gets the top score (the other keeps its ratio, e.g. 2 and 1 become 5 and 2.5); a ballot giving both 0 counts for neither; a runoff tie goes to the higher total |
+| Soft Minimax | 0–5 | proposed in this lab: Minimax on soft margins. For each pair, every ballot's score difference is clipped to ±20% of the range and divided by that, so a difference of a fifth of the range or more is a full vote for one side and smaller ones count in proportion; the candidate whose worst soft margin is best wins. With the default 0–5 scale the clip is 1 point, so on integer scores this is exactly Minimax by margins on the score ballots; with a wider range (`--max-score 10`) small differences count in part. Clipping at the whole range would give Score |
+| Soft Minimax-40 | 0–5 | the same with the clip at 40% of the range (2 points on 0–5): 1-point differences count half; between Soft Minimax and Score |
+| Soft Minimax-L | 0–5 | Soft Minimax with an adaptive clip per pair: the mean of the two candidates' average scores (A averages 3, B 2: clip 2.5 points). Pairs of well-liked candidates are compared more by score difference, pairs of little-liked ones more by majority vote |
+| Soft Minimax-D | 0–5 | Soft Minimax with an adaptive clip per pair: 1 point plus the difference of the two candidates' average scores. Pairs close in average score are compared by majority vote, pairs far apart more by score difference |
 
 **positional**
 
@@ -427,6 +438,7 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | Random pair runoff | ranking | two random ballots; same first choice wins, else majority runoff between the two |
 | Anti-plurality | veto (one name against) | fewest vetoes wins; sincere: against the least liked |
 | TRASH | ranking | "This Random Acronym Sounds Honest": the plurality runner-up and the anti-plurality runner-up (second fewest last places) meet in a runoff, and the one ranked lower by more voters wins; if both are the same candidate, it wins. A deliberately bad reference |
+| COWPEA Lottery | approve or not | single-winner COWPEA lottery: a random ballot's approved candidates; further random ballots each remove the candidates they do not approve (a ballot that would remove all, or none, is skipped) until one remains; if no ballot can break a tie, the remaining share the win. Exact probabilities, not a simulation. Made for proportional representation; here a lottery reference next to Random pair runoff |
 
 **inverse**: tests of the strategy model. Each has the ballot and the count of its original, but its sincere ballot expresses reversed preferences, so honest voting elects (nearly) the worst candidate. Voters who learn to reverse their ballot get the original method back; how far the poll rounds get there shows how well the strategy model finds strategies that are not small steps from the honest ballot.
 
@@ -448,12 +460,12 @@ The three are exclusive. For score ballots, "burial" includes small reversals am
 | `condorcet` | Ranked pairs, Schulze, Schulze-ER, Kemeny-Young, Copeland, Ranked Robin, Ranked Robin-SR, SICT, Condorcet-random-drop (Condorcet methods decided by the pairwise counts alone) |
 | `minimax-family` | Minimax, Minimax-ER, MMWV, MMPO, MMPOWV (the minimax family; MMPO and MMPOWV are not Condorcet methods) |
 | `condorcet-hybrid` | Black, Baldwin, Baldwin-ER, Nanson, BTR-Borda, BTR-IRV, Benham, Smith//Score (Condorcet methods built on a Borda, IRV or score count) |
-| `plurality-based` | Plurality, TTR, Supplementary vote, IRV, ER-IRV, IRV-3, Coombs (first choices and eliminations; Coombs eliminates by last places) |
-| `approval-based` | Approval, Approval runoff, Approval cond. runoff, MDDA |
-| `rated` | Score, MJ, MCA, Reciprocal score |
-| `hybrid` | STAR, BTR-score, MARS, IC-MARS, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore (ratings combined with pairwise comparisons or runoffs) |
+| `plurality-based` | Plurality, TTR, Supplementary vote, IRV, ER-IRV, IRV-3, Coombs, DSC, DAC (first choices, eliminations and coalitions of top preferences; Coombs eliminates by last places) |
+| `approval-based` | Approval, Approval runoff, Approval cond. runoff, MDDA, MAMPO |
+| `rated` | Score, MJ, MCA, Reciprocal score, INS, Geometric median |
+| `hybrid` | STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D (ratings combined with pairwise comparisons or runoffs) |
 | `positional` | Borda, Borda-ER, Dowdall |
-| `references` | Random pair runoff, Anti-plurality, TRASH (benchmarks, not proposals; hidden in the plots by default) |
+| `references` | Random pair runoff, Anti-plurality, TRASH, COWPEA Lottery (benchmarks, not proposals; hidden in the plots by default) |
 | `inverse` | Inverse-Plurality, Inverse-Approval, Inverse-Minimax, Inverse-IRV, Inverse-ER-IRV, Inverse-TTR, Inverse-Borda, Inverse-Score (tests of the strategy model, below; hidden in the plots by default) |
 
 **Comparison sets**, selection names across groups (not plot panels): `er-pairs`, each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Ranked Robin-SR/Ranked Robin. Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.

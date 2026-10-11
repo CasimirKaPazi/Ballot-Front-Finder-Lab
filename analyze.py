@@ -43,7 +43,7 @@ from collections import OrderedDict
 import numpy as np
 
 import plots
-from run import out_path, group_text, strategy_text, cand_text, OUTPUT_DIR, PARAMS as RUN_PARAMS
+from run import out_path, group_text, strategy_text, cand_text, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
 from methods import GROUPS, METHODS, select, group_of
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
@@ -338,7 +338,11 @@ def main():
         a.hide = [m for m in METHODS if m not in keep]
     elif a.hide:
         a.hide = select(a.hide)
-    conds = conditions(load(a.csv))
+    rows_all = load(a.csv)
+    versions = sorted({r.get("version") or "unknown" for r in rows_all})
+    if len(versions) > 1:
+        print(f"note: the input mixes simulator versions {', '.join(versions)}")
+    conds = conditions(rows_all)
     keys = list(conds)
     varying = [k for i, k in enumerate(PARAMS) if len({key[i] for key in keys}) > 1]
     results = OrderedDict()
@@ -387,8 +391,9 @@ def main():
 
     # report.md
     L = ["# Voting Pareto Lab — analysis", ""]
-    L += [f"Input: {', '.join(os.path.basename(p) for p in a.csv)}. Bootstrap: {a.boot} paired replicates "
-          "over elections. Brackets are 95% intervals.", ""]
+    L += [f"Input: {', '.join(os.path.basename(p) for p in a.csv)} (simulator version {', '.join(versions)}"
+          + ("; mixed versions" if len(versions) > 1 else "") + f"; analysis version {VERSION}). "
+          f"Bootstrap: {a.boot} paired replicates over elections. Brackets are 95% intervals.", ""]
     L += ["How to read this:", "",
           "- The values are the result. The **front** is VSE*, WME* and sincerity: the result with strategic voters, "
           "and how honest they can afford to be. Honest VSE and WME depend more on modelling assumptions and are "
