@@ -536,3 +536,30 @@ x1 = METHODS["Geometric median"].full(np.array([[3, 2, 0]] * 4 + [[2, 3, 0]] * 3
 x2 = METHODS["Geometric median"].full(np.array([[3, 2, 0]] * 4 + [[2, 3, 0]] * 3 + [[0, 5, 5]], dtype=float))
 assert np.allclose(x1, x2)
 print("geometric median ok")
+
+# Combining runs (analyze.combine) relies on each method's result depending only on the election,
+# not on which other methods ran: a method alone gives the same rows as in company.
+def _run(names):
+    out = []
+    for e in range(3):
+        out += one_election((Scenario(n_voters=31, n_cands=4), 5, e, [1, 2], 5, 10, 0.5, 5, 0, 0, 0, 2.0, 3, 0, 0.5,
+                             names, False, "honest", None))
+    return {(r["election"], r["rounds"], r["ballots"]): (r["U_method"], r["sincerity"]) for r in out if r["method"] == "STAR"}
+assert _run(["STAR"]) == _run(["Plurality", "STAR", "Minimax"])
+print("method results independent of the other methods ok")
+
+import analyze as _an
+def _rows(f, methods, elections, u=1.0):
+    base = {k: "1" for k in _an.PARAMS}
+    return [{**base, "seed": "1", "election": str(e), "method": m, "ballots": b, "_file": f, "U_best": str(u + e),
+             "U_rb": "0", "WM_best": "1", "WM_rb": "0", "U_method": str(len(m)), "WM": "0", "sincerity": "1"}
+            for e in elections for m in methods for b in ("sincere", "learned")]
+rs, notes, cover = _an.combine(_rows("a", ["X", "Y"], range(4)) + _rows("b", ["Y", "Z"], range(3)))
+assert {r["method"] for r in rs} == {"X", "Y", "Z"} and {r["election"] for r in rs} == {"0", "1", "2"}
+assert all(r["_file"] == "b" for r in rs if r["method"] == "Y") and len(notes) == 1 and len(cover) == 1
+try:
+    _an.combine(_rows("a", ["X"], range(2)) + _rows("b", ["Y"], range(2), u=2.0))
+    raise AssertionError("different electorates were combined")
+except SystemExit:
+    pass
+print("combine ok")

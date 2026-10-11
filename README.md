@@ -33,7 +33,7 @@ python analyze.py sweep-elections.csv --compare "BTR-score:STAR"   # -> output/a
 
 All outputs go into the folder `output/` (created when needed): an `--out` name without a directory is placed there, and `analyze.py` looks there for CSVs given without a directory. An `--out` with a directory (`--out runs/test`) is used as given.
 
-200 elections with all methods at the default settings (three poll rounds) take about three times as long as with one round (measured with one round and fewer methods: about 14 minutes on 2 cores); time scales linearly with cores and with the number of poll rounds. More candidates and more voters take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
+200 elections with all methods at the default settings (three poll rounds, 10 polls per round) took about 20 minutes in one measurement; time scales linearly with cores, with the number of poll rounds and with the polls per round. To try a new method, there is no need to rerun the others: see Combining runs. More candidates and more voters take longer. Use `--methods` or `--exclude` to run fewer, by name or by group (see Methods).
 
 ## Files
 
@@ -477,6 +477,20 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 ## Analysis
 
 `analyze.py` reads one or more elections CSVs. Rows with the same parameters except the seed form one **condition**; seeds are pooled as replications.
+
+**Combining runs.** Each method's result in an election depends only on the parameters, the seed and the election number: every method gets the same random streams, whichever other methods run alongside (a test checks this). So results of separate runs can be pooled, and a new or changed method compared with an existing run, such as the example output, without rerunning the other methods: run it with the same parameters and seed, and give both files to `analyze.py`, the newer last.
+
+```
+python run.py --methods "My method" --out mine          # added to methods.py; same parameters and seed as the reference
+python analyze.py results-elections.csv mine-elections.csv --out compare
+```
+
+How the files are combined (the report lists what was done, and `analyze.py` prints it):
+- **Same elections:** rows of the same election (same parameters, seed and election number) must describe the same electorate. If they do not, the files come from incompatible simulator versions and the analysis stops.
+- **Duplicates:** a method that appears in several files keeps its rows from the last file, for the elections both have. The report says whether its results changed, which shows whether the method (or the simulator) was changed between the runs.
+- **Coverage:** within a condition, only the elections every method has are used, so all comparisons stay paired. A run with fewer elections than the reference therefore shortens the whole condition to its elections; a run with another seed has no elections in common with the reference and stops the analysis.
+- More elections for the same methods come from another seed (`--seed 2`); the seeds are pooled.
+- A method taken from a run without `--participation` shows no values in the participation table.
 
 **Uncertainty: paired bootstrap.** All methods face the same electorates, so each bootstrap replicate redraws whole elections with replacement and recomputes every method on that same draw (1000 replicates by default). This keeps comparisons paired: two methods can differ clearly even when the interval of each value on its own is wide, because elections differ much more from each other than methods differ within an election.
 

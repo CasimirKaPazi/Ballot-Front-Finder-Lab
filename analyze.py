@@ -5,7 +5,8 @@ Usage:
     python analyze.py a-elections.csv b-elections.csv --compare "BTR-score:STAR" "Minimax:Baldwin"
 
 Conditions: rows with identical parameters except the seed form one condition; seeds are
-pooled as replications.
+pooled as replications. Runs of different methods on the same elections can be combined, e.g. a
+new method with the example output: see combine() and README, Combining runs.
 
 Uncertainty: paired bootstrap over elections. All methods share the same electorates, so each
 bootstrap replicate redraws whole elections (with replacement) and recomputes every method
@@ -62,10 +63,82 @@ def load(paths):
                        if k not in (reader.fieldnames or [])]
             if missing:
                 raise SystemExit(f"{p} lacks {', '.join(missing)}; regenerate it with the current run.py or sweep.py")
-            rows.extend(reader)
+            for r in reader:
+                r["_file"] = os.path.basename(p)
+                rows.append(r)
     if not rows:
         raise SystemExit("no rows in the input CSVs")
     return rows
+
+
+ELECTORATE_COLS = ["U_best", "U_rb", "WM_best", "WM_rb"]   # the same in every row of an election
+RESULT_COLS = ["U_method", "WM", "sincerity"]               # compared when a method's rows are replaced
+
+
+def _same(r1, r2, cols):
+    return all(abs(float(r1[k]) - float(r2[k])) <= 1e-9 * max(1.0, abs(float(r1[k]))) for k in cols)
+
+
+def combine(rows):
+    """Combine rows from several files into one consistent set (see README, Combining runs).
+
+    An election is (condition, seed, election number). Every method's result in an election depends
+    only on these (run.py gives each method the same random streams), so runs of different methods
+    with the same parameters and seed can be pooled, and a new method compared with an existing run
+    without rerunning the others.
+    - Elections: rows for the same election must describe the same electorate; otherwise the files
+      come from incompatible simulator versions and analysis stops.
+    - Duplicates: a method in a later file replaces the same method from earlier files in the
+      elections both have (later files win: give the newest run last).
+    - Coverage: within a condition, only the elections every method has are kept, so all
+      comparisons stay paired.
+    Returns (rows, notes, cover): notes on replaced rows; cover[condition key] says which elections
+    were left out, for conditions where not all methods had the same ones."""
+    seen, elect = OrderedDict(), {}
+    replaced = OrderedDict()        # (method, old file, new file) -> [elections, elections with other results]
+    for r in rows:
+        cond = tuple(r[k] for k in PARAMS)
+        ek = cond + (r["seed"], r["election"])
+        first = elect.setdefault(ek, r)
+        if first is not r and not _same(first, r, ELECTORATE_COLS):
+            raise SystemExit(f"election {r['election']} (seed {r['seed']}) differs between {first['_file']} and "
+                             f"{r['_file']} although the parameters are the same: the files come from incompatible "
+                             "simulator versions and cannot be combined")
+        key = ek + (r["method"], r["ballots"])
+        old = seen.get(key)
+        if old is not None:
+            c = replaced.setdefault((r["method"], old["_file"], r["_file"]), [set(), set()])
+            c[0].add(ek)
+            if not _same(old, r, RESULT_COLS):
+                c[1].add(ek)
+        seen[key] = r                 # an OrderedDict keeps the method's first position
+    notes = [f"{m}: {len(c[0])} election(s) of {f_old} replaced by {f_new}, "
+             + ("same results" if not c[1] else f"different results in {len(c[1])} (the method or simulator "
+                                               f"changed between the runs; {f_new} is used)")
+             for (m, f_old, f_new), c in replaced.items()]
+    rows = list(seen.values())
+    # coverage: per condition, keep the elections that every method has
+    by_cond = OrderedDict()
+    for r in rows:
+        by_cond.setdefault(tuple(r[k] for k in PARAMS), []).append(r)
+    out, cover = [], {}
+    for cond, rs in by_cond.items():
+        have = OrderedDict()
+        for r in rs:
+            have.setdefault(r["method"], set()).add((r["seed"], r["election"]))
+        common = set.intersection(*have.values())
+        if not common:
+            raise SystemExit("some methods have no elections in common with the others under the same parameters "
+                             f"({', '.join(have)}): to compare with an existing run, use the same parameters and "
+                             "seed (and at most as many elections)")
+        alle = set.union(*have.values())
+        if len(common) < len(alle):
+            least = min(len(e) for e in have.values())
+            short = [m for m, e in have.items() if len(e) == least]
+            cover[cond] = (f"{len(common)} of {len(alle)} elections used, the ones all methods have; "
+                           f"fewest: {', '.join(short[:5])}{' …' if len(short) > 5 else ''}")
+        out += [r for r in rs if (r["seed"], r["election"]) in common]
+    return out, notes, cover
 
 
 def conditions(rows):
@@ -294,7 +367,13 @@ def ranks(x):
 def spearman(x, y):
     """Rank correlation of two value vectors (1 = same order, 0 = unrelated, -1 = reversed)."""
     rx, ry = ranks(np.round(x, 9)), ranks(np.round(y, 9))
+    if rx.std() == 0 or ry.std() == 0:      # all methods equal on this axis: no order to compare
+        return float("nan")
     return float(np.corrcoef(rx, ry)[0, 1])
+
+
+def cor(x):
+    return "—" if np.isnan(x) else f"{x:.2f}"
 
 
 def dom_text(items, sep=", ", limit=None):
@@ -338,7 +417,14 @@ def main():
         a.hide = [m for m in METHODS if m not in keep]
     elif a.hide:
         a.hide = select(a.hide)
-    rows_all = load(a.csv)
+    rows_all, combined, cover = combine(load(a.csv))
+    for line in combined:
+        print("note:", line)
+    present = {r["method"] for r in rows_all}
+    all_hidden = not (present - set(a.hide))
+    if all_hidden:          # e.g. a run of the inverse group only, with the default --hide
+        print("note: --hide/--show would leave the plots empty; they show all methods instead")
+        a.show, a.hide = None, []
     versions = sorted({r.get("version") or "unknown" for r in rows_all})
     if len(versions) > 1:
         print(f"note: the input mixes simulator versions {', '.join(versions)}")
@@ -351,6 +437,9 @@ def main():
         r["label"] = label(key, varying, keys[0])
         r["seeds"] = sorted({row["seed"] for row in conds[key]}, key=int)
         r["tag"] = f"c{c}"
+        r["cover"] = cover.get(key)
+        if r["cover"]:
+            print(f"note: {r['tag']} ({r['label']}): {r['cover']}")
         results[key] = r
 
     # summary.csv
@@ -394,6 +483,9 @@ def main():
     L += [f"Input: {', '.join(os.path.basename(p) for p in a.csv)} (simulator version {', '.join(versions)}"
           + ("; mixed versions" if len(versions) > 1 else "") + f"; analysis version {VERSION}). "
           f"Bootstrap: {a.boot} paired replicates over elections. Brackets are 95% intervals.", ""]
+    if combined:
+        L += ["Combined runs (a method in a later file replaces the same method from earlier files in the "
+              "elections both have):", ""] + [f"- {x}" for x in combined] + [""]
     L += ["How to read this:", "",
           "- The values are the result. The **front** is VSE*, WME* and sincerity: the result with strategic voters, "
           "and how honest they can afford to be. Honest VSE and WME depend more on modelling assumptions and are "
@@ -451,7 +543,7 @@ def main():
         def full_size(rh):     # Spearman-Brown: agreement expected between two full-size samples
             return 2 * rh / (1 + rh) if rh > -1 else rh
         L.append(f"| noise reference: {base['tag']} vs itself | "
-                 + " | ".join(f"{full_size(spearman(base['halves'][x][0][ib], base['halves'][x][1][ib])):.2f}"
+                 + " | ".join(cor(full_size(spearman(base['halves'][x][0][ib], base['halves'][x][1][ib])))
                               for x in cols) + " |")
         for r in list(results.values())[1:]:
             common = [m for m in shown if m in r["methods"]]
@@ -460,7 +552,7 @@ def main():
             ib = [base["methods"].index(m) for m in common]
             ic = [r["methods"].index(m) for m in common]
             L.append(f"| {r['tag']}: {r['label']} | "
-                     + " | ".join(f"{spearman(base[x][ib], r[x][ic]):.2f}" for x in cols) + " |")
+                     + " | ".join(cor(spearman(base[x][ib], r[x][ic])) for x in cols) + " |")
         L.append("")
         if all(r["electorate"] for r in results.values()):
             L += ["**Electorates** (properties of the generated electorates, independent of the methods): how often "
@@ -477,7 +569,8 @@ def main():
     for key, r in results.items():
         p = dict(zip(PARAMS, key))
         L += [f"## {r['tag']}: {r['label']}", "",
-              f"{r['elections']} elections (seeds {', '.join(r['seeds'])}), {r['with_cw']} with a Condorcet winner. "
+              f"{r['elections']} elections (seeds {', '.join(r['seeds'])}"
+              + (f"; {r['cover']}" if r["cover"] else "") + f"), {r['with_cw']} with a Condorcet winner. "
               f"{p['voters']} voters, {p['cands']} candidates, {p['dims']} dimensions"
               f"{' (Zipf)' if p['zipf'] == '1' else ''}, {p['clusters']} clusters, spread {p['spread']}, "
               f"width {p['width']}{cand_text(p['cand_dispersion'], p['cand_shift'])}; {strategy_text(p, p['voters'])}, "
@@ -519,11 +612,13 @@ def main():
                   "| Method | Elections (honest) | Voters | Gain | Elections (strategic) | Voters | Gain |",
                   "|---|---|---|---|---|---|---|"]
             g = lambda x: "—" if np.isnan(x) else f"{x:.1%}"
+            # methods from a run without --participation, combined with one that had it: no values
+            fp = lambda x, lo, hi: "—" if np.isnan(x) else fmt(x, lo, hi) + "%"
             for j in np.argsort(-pt["noshow_s"], kind="stable"):
-                L.append(f"| {r['methods'][j]} | {fmt(pt['noshow_s'][j], pt['noshow_s_lo'][j], pt['noshow_s_hi'][j])}% "
-                         f"| {pt['noshow_voters_s'][j]:.1%} | {g(pt['noshow_gain_s'][j])} "
-                         f"| {fmt(pt['noshow_l'][j], pt['noshow_l_lo'][j], pt['noshow_l_hi'][j])}% "
-                         f"| {pt['noshow_voters_l'][j]:.1%} | {g(pt['noshow_gain_l'][j])} |")
+                L.append(f"| {r['methods'][j]} | {fp(pt['noshow_s'][j], pt['noshow_s_lo'][j], pt['noshow_s_hi'][j])} "
+                         f"| {g(pt['noshow_voters_s'][j])} | {g(pt['noshow_gain_s'][j])} "
+                         f"| {fp(pt['noshow_l'][j], pt['noshow_l_lo'][j], pt['noshow_l_hi'][j])} "
+                         f"| {g(pt['noshow_voters_l'][j])} | {g(pt['noshow_gain_l'][j])} |")
             L += [""]
         L += [f"![strategy arrows](arrows-{r['tag']}.png)", "", f"![strategy shifts](shift-{r['tag']}.png)", "",
               f"![sincerity](sincerity-{r['tag']}.png)", ""]
@@ -544,7 +639,10 @@ def main():
                     cells.append(f"{pt:+.1f} [{lo:+.1f}, {hi:+.1f}]{tie}")
                 L.append(f"| {m1} − {m2} | " + " | ".join(cells) + " |")
             L.append("")
-    if a.show:
+    if all_hidden:
+        L += ["The plots show all methods: hiding as requested (by default the references and inverse groups) "
+              "would have left them empty.", ""]
+    elif a.show:
         L += [f"Scatter and chain plots show only {', '.join(a.show)}; all methods are in the tables and heatmaps.", ""]
     elif a.hide:
         L += [f"Scatter and chain plots leave out {', '.join(a.hide)}; they are in all tables and heatmaps.", ""]
