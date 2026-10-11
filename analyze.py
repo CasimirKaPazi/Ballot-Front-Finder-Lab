@@ -161,7 +161,7 @@ def arrays(rows):
     den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
     dwm = np.zeros(E)          # per election: WM_best - WM_rb (WME denominator)
     has = np.zeros(E)
-    ele = {k: np.full(E, np.nan) for k in ["cw_is_util", "U_cw", "U_best", "fav_ratio", "U_rb", "WM_rb"]}
+    ele = {k: np.full(E, np.nan) for k in ["cw_is_util", "U_cw", "U_best", "fav_ratio", "U_rb", "WM_rb", "U_rand"]}
     cands = [None] * E           # per election: (total utility, worst margin) of every candidate, for the frontier
     for r in rows:
         i, j = ei[(r["seed"], r["election"])], mi[r["method"]]
@@ -243,6 +243,54 @@ def frontier(cands, dens, ele, steps=101):
     return np.array(out)
 
 
+def region(cands, dens, ele, steps=720):
+    """The whole region of (VSE, WME) any rule could reach in these elections, knowing every voter's
+    sincere utilities: the convex polygon of all combinations of one candidate per election (lotteries
+    fill it in). For each direction (cos t, sin t) the polygon's support point elects, in every election,
+    the candidate furthest in that direction; going round the circle gives its vertices in order
+    (counter-clockwise). The upper-right part is the frontier (see frontier); the rest shows that
+    near one end of the trade-off the other axis is pinned too: always electing the candidate with the
+    best worst margin gives exactly one VSE (up to ties), not anything below it. Returns an array of
+    vertices (VSE, WME) as fractions, or None."""
+    if any(c is None for c in cands):
+        return None
+    du, dw = dens[0].sum(), dens[1].sum()
+    t = np.linspace(0, 2 * np.pi, steps, endpoint=False)
+    D = np.stack([np.cos(t), np.sin(t)], axis=1)                     # K x 2
+    pts = np.zeros((steps, 2))
+    for (U, W), urb, wrb in zip(cands, ele["U_rb"], ele["WM_rb"]):
+        G = np.stack([(U - urb) / du, (W - wrb) / dw], axis=1)       # C x 2
+        c = np.argmax(G @ D.T, axis=0)
+        pts += G[c]
+    out = []
+    for p in pts:                                       # drop repeats
+        if not out or np.abs(p - out[-1]).max() > 1e-9:
+            out.append(p)
+    if len(out) > 1 and np.abs(out[0] - out[-1]).max() <= 1e-9:
+        out.pop()
+    return np.array(out)
+
+
+def references(cands, dens, ele):
+    """Reference points in the VSE/WME plane, as fractions: the random ballot (0, 0 by definition)
+    and a random candidate (the zero of classical VSE; its WME is the average worst margin of the
+    candidates). None when the candidates' values are missing."""
+    if any(c is None for c in cands):
+        return None
+    du, dw = dens[0].sum(), dens[1].sum()
+    v = sum(U.mean() - urb for (U, W), urb in zip(cands, ele["U_rb"])) / du
+    w = sum(W.mean() - wrb for (U, W), wrb in zip(cands, ele["WM_rb"])) / dw
+    return {"random ballot": (0.0, 0.0), "random candidate": (float(v), float(w))}
+
+
+def region_span(R):
+    """Ranges the region allows at its ends: VSE (min, max) where WME is best, WME (min, max) where
+    VSE is best."""
+    top = R[R[:, 1] >= R[:, 1].max() - 1e-9]
+    right = R[R[:, 0] >= R[:, 0].max() - 1e-9]
+    return (top[:, 0].min(), top[:, 0].max()), (right[:, 1].min(), right[:, 1].max())
+
+
 def electorate_summary(dens, has, ele):
     """Electorate properties of a condition (point estimates), or None for CSVs without them."""
     if np.isnan(ele["fav_ratio"]).all():
@@ -255,13 +303,24 @@ def electorate_summary(dens, has, ele):
             "fav": float(np.median(ele["fav_ratio"]))}
 
 
-def frontier_text(F):
+def frontier_text(F, R=None, refs=None):
     if F is None:
         return ""
+    rc = refs and refs.get("random candidate")
+    rc_text = f" A random candidate (the zero of classical VSE) gives VSE {rc[0] * 100:.1f} / WME {rc[1] * 100:.1f}." if rc else ""
     k = int(np.argmax(F[:, 0] + F[:, 1]))
-    return (f" Reachable frontier (any rule, knowing the sincere utilities): with the best WME (100) at most VSE "
-            f"{F[0, 0] * 100:.1f}; with the best VSE (100) at most WME {F[-1, 1] * 100:.1f}; the most balanced point "
-            f"VSE {F[k, 0] * 100:.1f} / WME {F[k, 1] * 100:.1f}.")
+
+    def rng_(a, b, name):         # the other axis at one end of the region: one value, or a range (ties)
+        return f"{name} {a * 100:.1f}" if b - a < 0.0005 else f"{name} {a * 100:.1f} to {b * 100:.1f}"
+    if R is not None:
+        (v0, v1), (w0, w1) = region_span(R)
+        ends = (f"with the best WME (100) {rng_(v0, v1, 'VSE')}; with the best VSE (100) {rng_(w0, w1, 'WME')} "
+                "(nothing lower is possible there either)")
+    else:
+        ends = (f"with the best WME (100) at most VSE {F[0, 0] * 100:.1f}; with the best VSE (100) at most WME "
+                f"{F[-1, 1] * 100:.1f}")
+    return (f" Reachable region (any rule, knowing the sincere utilities): {ends}; the most balanced point "
+            f"VSE {F[k, 0] * 100:.1f} / WME {F[k, 1] * 100:.1f}." + rc_text)
 
 
 def electorate_text(e):
@@ -283,6 +342,8 @@ def analyse_condition(rows, boot, rng):
     dominated_by = [[(methods[j], [FRONT[k] for k in np.flatnonzero(better[i, j])]) for j in np.flatnonzero(dom[i])]
                     for i in range(len(methods))]
     res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs, "halves": halves, "frontier": frontier(cands, dens, ele),
+           "region": region(cands, dens, ele),
+           "references": references(cands, dens, ele),
            "electorate": electorate_summary(dens, has, ele),
            "nomination": {k: A[k].mean(axis=0) for k in NOM},
            "participation": participation_summary(A, W)}
@@ -577,7 +638,7 @@ def main():
               f"strategic share {p['strategic']}, scores 0..{p['max_score']}"
               + (f"; nomination: exits {p['exits']}, clones {p['clones']}" if p['exits'] != '0' or p['clones'] != '0' else "")
               + "." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")
-              + frontier_text(r["frontier"]),
+              + frontier_text(r["frontier"], r["region"], r["references"]),
               "",
               "**Front** (dominated by none on VSE*, WME*, sincerity): "
               + ", ".join(r["methods"][j] for j in np.argsort(-r["VSE*"], kind="stable") if not r["dominated_by"][j])

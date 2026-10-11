@@ -9,6 +9,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.path import Path
+from matplotlib.patches import PathPatch
 
 SURFACE = "#fcfcfb"
 INK = "#0b0b0b"
@@ -130,23 +132,55 @@ def _guides(ax, bx, by):
     ax.set_ylim(y0, y1)
 
 
-def _frontier(ax, F):
+def _frontier(ax, F, R=None, refs=None):
     """Draw the reachable frontier (points (VSE, WME) as fractions, best WME first) and grey out the
-    region beyond it, which no rule can reach in these elections. Faint guide lines mark 1, 2, 4, 8
-    points below it (see _guides); without a frontier they follow the 100 / 100 corner instead."""
+    region beyond it, which no rule can reach in these elections. With R (the whole reachable region,
+    see analyze.region) everything outside that polygon is greyed out: also the parts below the ends of
+    the trade-off (always electing the best-WME candidate pins VSE as well). Faint guide lines mark
+    1, 2, 4, 8 points below the frontier (see _guides); without a frontier they follow the 100 / 100
+    corner instead. refs: reference points {name: (VSE, WME)} as fractions, drawn as small crosses
+    where they fall inside the plot."""
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
+    for name, (rx_, ry_) in (refs or {}).items():
+        ax.scatter([rx_ * 100], [ry_ * 100], marker="x", s=30, color=INK2, linewidths=1.1, zorder=2.5, clip_on=True)
+        ax.annotate(name, (rx_ * 100, ry_ * 100), xytext=(4, -4), textcoords="offset points", fontsize=7,
+                    color=MUTED, ha="left", va="top", zorder=2.5, annotation_clip=True)
     if F is None or len(F) == 0:
         far = -1000.0          # far outside the axes; the lines are clipped
         _guides(ax, np.array([far, 100, 100]), np.array([100, 100, far]))
         return
     x, y = F[:, 0] * 100, F[:, 1] * 100
     hx, hy = max(x1, x.max() + 0.5), max(y1, y.max() + 0.5)
-    # region beyond: above the curve and to its right
-    px = np.concatenate([[x[0], x[0]], x, [hx, hx]])
-    py = np.concatenate([[hy, y[0]], y, [y[-1], hy]])
-    ax.fill(px, py, color=UNREACHABLE, zorder=0, lw=0)
-    # one boundary line: WME = 100 up to the frontier, the frontier, then VSE = 100 below it
+    if R is not None and len(R) >= 3:
+        rx, ry = R[:, 0] * 100, R[:, 1] * 100
+        lx, ly = min(x0, rx.min()) - 1, min(y0, ry.min()) - 1
+        outer = [(lx, ly), (hx + 1, ly), (hx + 1, hy + 1), (lx, hy + 1), (lx, ly)]
+        inner = list(zip(rx[::-1], ry[::-1])) + [(rx[-1], ry[-1])]      # clockwise: a hole
+        verts = outer + inner
+        codes = [Path.MOVETO] + [Path.LINETO] * 3 + [Path.CLOSEPOLY] \
+            + [Path.MOVETO] + [Path.LINETO] * (len(inner) - 2) + [Path.CLOSEPOLY]
+        ax.add_patch(PathPatch(Path(verts, codes), facecolor=UNREACHABLE, lw=0, zorder=0))
+        ax.plot(np.append(rx, rx[0]), np.append(ry, ry[0]), color=BOUNDARY, lw=1.0, zorder=1)
+        # guides: the frontier itself shifted by d points down and left, inside the region only
+        # (beyond the frontier's ends the region bends away, so straight extensions would mislead)
+        inside = PathPatch(Path(np.column_stack([rx, ry]), closed=False), transform=ax.transData,
+                           facecolor="none", lw=0)
+        ax.add_patch(inside)
+        for d in GUIDES:
+            ln, = ax.plot(x - d, y - d, color=GUIDE, lw=0.7, ls=(0, (4, 2)), zorder=0.5)
+            ln.set_clip_path(inside)
+            ax.text(x[-1] - d, y[-1] - d, f"−{d}", fontsize=6, color=MUTED, ha="center", va="top", zorder=0.6,
+                    clip_on=True)
+        ax.set_xlim(x0, hx)
+        ax.set_ylim(y0, hy)
+        return
+    else:
+        # region beyond: above the curve and to its right
+        px = np.concatenate([[x[0], x[0]], x, [hx, hx]])
+        py = np.concatenate([[hy, y[0]], y, [y[-1], hy]])
+        ax.fill(px, py, color=UNREACHABLE, zorder=0, lw=0)
+    # boundary for the guides: WME = 100 up to the frontier, the frontier, then VSE = 100 below it
     bx = np.concatenate([[min(x0, x[0]), x[0]], x, [100, 100]])
     by = np.concatenate([[100, 100], y, [y[-1], min(y0, y[-1])]])
     ax.plot(bx, by, color=BOUNDARY, lw=1.0, zorder=1)
@@ -210,7 +244,7 @@ def arrows(r, path, hide, errorbars=False):
     ax.set_xlabel(VSE_LABEL)
     ax.set_ylabel(WME_LABEL)
     _unreachable(ax, "xy", lines=r.get("frontier") is None)
-    _frontier(ax, r.get("frontier"))
+    _frontier(ax, r.get("frontier"), r.get("region"), r.get("references"))
     ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}"
                  + ("; bars: 95% intervals relative to the average of the methods shown" if errorbars else ""),
                  loc="left")
@@ -340,8 +374,10 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
     if same_electorates is None:
         same_electorates = learning_only
     F = base.get("frontier") if same_electorates else None   # same electorates: one frontier for all conditions
+    R = base.get("region") if same_electorates else None
+    refs = base.get("references") if same_electorates else None
     _unreachable(axs.flat[0], "xy", lines=F is None)       # shared axes: limits apply to all panels
-    _frontier(axs.flat[0], F)
+    _frontier(axs.flat[0], F, R, refs)
     for ax in list(axs.flat)[1:len(panels)]:
         lo, hi = ax.get_xlim()
         ax.axvspan(100, hi, color=UNREACHABLE, zorder=0, lw=0)
@@ -350,15 +386,24 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
         if F is None:
             ax.axvline(100, color=BOUNDARY, lw=1.0, zorder=1)
             ax.axhline(100, color=BOUNDARY, lw=1.0, zorder=1)
-        _frontier(ax, F)
+        _frontier(ax, F, R, refs)
     handles = [plt.Line2D([], [], ls="", marker="o", ms=7, color=shades[i], label=str(v)) for i, v in enumerate(values)]
     handles.append(plt.Line2D([], [], ls="--" if not learning_only else "", lw=0.8, color="#c4c3be", marker="o", ms=6,
                               mfc=SURFACE, mec=MUTED,
                               label="honest ballots" + ("" if learning_only else " (grey italic labels)")))
-    fig.legend(handles=handles, loc="upper right", ncol=len(handles), frameon=False, fontsize=8,
-               title=f"{param} (light → dark)", title_fontsize=8)
     fig.suptitle(f"Sweep over {param}: learned ballots", x=0.01, ha="left", fontweight="bold")
-    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    H = fig.get_size_inches()[1]
+    if ncols > 1:      # wide figure: legend to the right of the title
+        fig.legend(handles=handles, loc="upper right", ncol=len(handles), frameon=False, fontsize=8,
+                   title=f"{param} (light → dark)", title_fontsize=8)
+        fig.tight_layout(rect=(0, 0, 1, 0.93))
+    else:              # one panel: no room beside the title, so the legend goes below it, wrapped
+        per_row = len(handles) if len(handles) <= 6 else 4
+        rows = -(-len(handles) // per_row)
+        fig.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.01, 1 - 0.4 / H), ncol=per_row,
+                   frameon=False, fontsize=8, title=f"{param} (light → dark)", title_fontsize=8,
+                   alignment="left")
+        fig.tight_layout(rect=(0, 0, 1, 1 - (0.55 + 0.22 * rows) / H))
     for ax, texts, anchors in labelled:
         _repel(ax, texts, anchors)
     fig.savefig(path, dpi=150)
@@ -427,8 +472,10 @@ def track(conds, method, varying, names, path, same_electorates, errorbars=False
     ax.set_xlabel(VSE_LABEL.replace("VSE", "VSE*", 1))
     ax.set_ylabel(WME_LABEL.replace("WME", "WME*", 1))
     F = pts[0][0].get("frontier") if same_electorates else None
+    R = pts[0][0].get("region") if same_electorates else None
+    refs = pts[0][0].get("references") if same_electorates else None
     _unreachable(ax, "xy", lines=F is None)
-    _frontier(ax, F)
+    _frontier(ax, F, R, refs)
     ax.set_title(title + "\nlearned ballots (filled); honest (open)"
                  + ("; bars: each point's own 95% interval" if errorbars else ""), loc="left")
     fig.tight_layout()
