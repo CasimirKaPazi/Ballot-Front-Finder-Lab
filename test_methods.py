@@ -432,12 +432,13 @@ for inv, orig in [("Inverse-Plurality", "Plurality"), ("Inverse-Approval", "Appr
                   ("Inverse-Score", "Score")]:
     mi, mo = METHODS[inv], METHODS[orig]
     assert np.allclose(mi.tally(mo.sincere(u)), mo.honest(u))          # original's sincere ballots, same count
-    assert sincerity(mi.sincere(u), mi.pref(u)).min() == 1               # honest = sincere for its own ballot
+    assert sincerity(mi, mi.sincere(u), u).min() == 1                    # honest = sincere for its own ballot
+    assert np.allclose(sincerity(mi, mo.sincere(u), u), 0)              # the original's honest ballot: as far against them as it gets here
 check("Inverse-Minimax elects the Condorcet loser", METHODS["Inverse-Minimax"].honest(u), [0, 0, 0, 1])
 check("Inverse-Plurality elects the most often least liked", METHODS["Inverse-Plurality"].honest(u), [0, 0, 0, 1])
 # Inverse-TTR: marking the favourite in round 1 gives TTR (the runoff reads the reversed ranking back)
 Bt = METHODS["Inverse-TTR"].sincere(u)
-assert sincerity(Bt, METHODS["Inverse-TTR"].pref(u)).min() == 1
+assert sincerity(METHODS["Inverse-TTR"], Bt, u).min() == 1
 Bt = Bt % 4 + 4 * METHODS["Plurality"].sincere(u)                         # marks: favourites
 assert np.allclose(METHODS["Inverse-TTR"].tally(Bt), METHODS["TTR"].honest(u))
 for _ in range(50):
@@ -546,3 +547,32 @@ try:
 except SystemExit:
     pass
 print("combine ok")
+
+# Sincerity (reversals within the format) and fidelity: utilities 0.5 / 0.3 / 0.15 / 0.05 (README)
+from strategy import sincerity, fidelity, _max_separated
+from itertools import product as _prod
+u1 = np.array([[0.5, 0.3, 0.15, 0.05]])
+for name, B, sin, fid in [("Plurality", [1, 0, 0, 0], 1.0, 0.717), ("Plurality", [0, 1, 0, 0], 0.75, 0.317),
+                          ("Plurality", [0, 0, 0, 1], 0.0, 0.05), ("Borda", [2, 3, 1, 0], 0.867, 0.633),
+                          ("Borda", [0, 1, 2, 3], 0.0, 0.0), ("Score", [5, 3, 1, 0], 1.0, 0.97),
+                          ("Score", [5, 5, 0, 0], 1.0, 0.7), ("Approval", [1, 1, 0, 0], 1.0, 0.7),
+                          ("Approval", [0, 0, 1, 1], 0.0, -0.1),
+                          ("TTR", [3, 2 + 4, 1, 0], 0.75, 0.317)]:   # TTR: round-1 mark on the 2nd choice = plurality
+    X = np.array([B], float)
+    got = (float(sincerity(METHODS[name], X, u1)[0]), float(fidelity(METHODS[name], X, u1)[0]))
+    assert abs(got[0] - sin) < 1e-3 and abs(got[1] - fid) < 2e-3, (name, B, got, sin, fid)
+for name in METHODS:                                               # sincere ballots never reverse a preference
+    m = METHODS[name]
+    uu = r.random((20, 5))
+    assert np.allclose(sincerity(m, m.sincere(uu), uu), 1), name
+# the worst ballot with k levels (dynamic programme) = brute force over all ballots with k levels
+for k in (2, 3):
+    for _ in range(10):
+        Pk = r.random((1, 5))
+        w = np.clip(Pk[:, :, None] - Pk[:, None, :], 0, None)
+        best = max((w * (np.array([X])[:, None, :] > np.array([X])[:, :, None])).sum()
+                   for X in _prod(range(k), repeat=5))
+        assert abs(best - _max_separated(Pk, k)[0]) < 1e-9
+from methods import sincerity_defined
+assert not sincerity_defined("TRASH") and not sincerity_defined("Inverse-Plurality") and sincerity_defined("STAR")
+print("sincerity and fidelity ok")

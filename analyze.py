@@ -20,7 +20,9 @@ Axes (higher is better):
     VSE, WME     voter satisfaction and worst-margin efficiency with sincere ballots (see metrics.py);
                  0 = random ballot, 100 = best candidate, as ratios of sums over elections
     VSE*, WME*   the same with learned ballots
-    sincerity    of the learned ballots (higher is more honest)
+    sincerity    of the learned ballots, within each method's ballot format (strategy.sincerity;
+                 higher is more honest); fidelity (how well the ballots reproduce the utility
+                 differences, learned and honest) is reported alongside
 The front is VSE*, WME* and sincerity: what happens with real (strategic) voters, and how honest
 they can afford to be. Honest VSE and WME depend more on modelling assumptions; they are reported
 alongside, as are CE, CE* (Condorcet efficiency), not used for dominance.
@@ -38,18 +40,20 @@ Outputs in the analysis folder (--out: a bare name goes into output/):
     arrows-<c>.png             per condition: honest -> strategic in the VSE/WME plane, all methods together
     shift-<c>.png              per condition: the same shifts as one row per method (VSE and WME panels)
     sincerity-<c>.png          per condition: VSE* and WME* against sincerity
+    fidelity-<c>.png           per condition: honest -> learned ballots in the fidelity / sincerity plane
     axes-heatmap.png           VSE*, WME*, sincerity, VSE, WME: methods x conditions (if several conditions)
     chain-<param>.png          per parameter varied around the base: each method's chain of results
 """
 import argparse
 import csv
 import os
+import warnings
 from collections import OrderedDict
 import numpy as np
 
 import plots
 from run import out_path, write_command, group_text, strategy_text, cand_text, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
-from methods import GROUPS, METHODS, select, group_of
+from methods import GROUPS, METHODS, select, group_of, sincerity_defined
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
 FRONT = ["VSE*", "WME*", "sincerity"]   # the axes dominance is judged on
@@ -75,6 +79,9 @@ def source_name(p):
     return os.path.basename(d) if f == "elections.csv" else f
 
 
+OLD_SINCERITY = []     # inputs written before the current sincerity measure (no fidelity column)
+
+
 def load(paths):
     rows = []
     for p in paths:
@@ -84,6 +91,8 @@ def load(paths):
                        if k not in (reader.fieldnames or [])]
             if missing:
                 raise SystemExit(f"{p} lacks {', '.join(missing)}; regenerate it with the current run.py or sweep.py")
+            if "fidelity" not in reader.fieldnames:
+                OLD_SINCERITY.append(source_name(p))
             for r in reader:
                 r["_file"] = source_name(p)
                 rows.append(r)
@@ -97,7 +106,10 @@ RESULT_COLS = ["U_method", "WM", "sincerity"]               # compared when a me
 
 
 def _same(r1, r2, cols):
-    return all(abs(float(r1[k]) - float(r2[k])) <= 1e-9 * max(1.0, abs(float(r1[k]))) for k in cols)
+    def f(x):
+        return float(x or "nan")
+    return all((np.isnan(f(r1[k])) and np.isnan(f(r2[k])))
+               or abs(f(r1[k]) - f(r2[k])) <= 1e-9 * max(1.0, abs(f(r1[k]))) for k in cols)
 
 
 def combine(rows):
@@ -178,6 +190,7 @@ def arrays(rows):
     mi = {m: j for j, m in enumerate(methods)}
     E, M = len(eids), len(methods)
     A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "wm_s", "wm_l", "sin"] + TYPES + NOM}
+    A.update({k: np.full((E, M), np.nan) for k in ["fid_s", "fid_l"]})   # fidelity (absent in older CSVs)
     A.update({k + sfx: np.full((E, M), np.nan) for k in PART for sfx in ("_s", "_l")})
     den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
     dwm = np.zeros(E)          # per election: WM_best - WM_rb (WME denominator)
@@ -193,6 +206,8 @@ def arrays(rows):
             A["num_s"][i, j], A["cw_s"][i, j], A["wm_s"][i, j] = num, pcw, nwm
             for k in NOM:
                 A[k][i, j] = float(r[k])
+            if sincerity_defined(r["method"]):            # blank for TRASH and Inverse-* (also in older CSVs)
+                A["fid_s"][i, j] = float(r.get("fidelity") or "nan")
             for k in PART:
                 A[k + "_s"][i, j] = float(r[k])               # nan: participation not checked
             den[i] = float(r["U_best"]) - float(r["U_rb"])
@@ -204,7 +219,11 @@ def arrays(rows):
                 cands[i] = (np.array(r["U_cands"].split(";"), float), np.array(r["WM_cands"].split(";"), float))
         else:
             A["num_l"][i, j], A["cw_l"][i, j], A["wm_l"][i, j] = num, pcw, nwm
-            A["sin"][i, j] = float(r["sincerity"])
+            if sincerity_defined(r["method"]):
+                A["sin"][i, j] = float(r["sincerity"] or "nan")
+                A["fid_l"][i, j] = float(r.get("fidelity") or "nan")
+            else:
+                A["sin"][i, j] = np.nan
             for t in TYPES:
                 A[t][i, j] = float(r[t])
             for k in PART:
@@ -224,6 +243,8 @@ def axis_values(W, A, dens, has):
         "CE": (W @ A["cw_s"]) / np.where(h > 0, h, np.nan)[:, None],     # no Condorcet winner drawn: undefined
         "CE*": (W @ A["cw_l"]) / np.where(h > 0, h, np.nan)[:, None],
         "sincerity": (W @ A["sin"]) / W.sum(axis=1)[:, None],
+        "fidelity": (W @ A["fid_l"]) / W.sum(axis=1)[:, None],
+        "fidelity_honest": (W @ A["fid_s"]) / W.sum(axis=1)[:, None],
         **{t: (W @ A[t]) / W.sum(axis=1)[:, None] for t in TYPES},
     }
 
@@ -368,9 +389,11 @@ def analyse_condition(rows, boot, rng):
            "electorate": electorate_summary(dens, has, ele),
            "nomination": {k: A[k].mean(axis=0) for k in NOM},
            "participation": participation_summary(A, W)}
-    for a in AXES + EXTRA + ["sincerity"] + TYPES:
+    for a in AXES + EXTRA + ["sincerity", "fidelity", "fidelity_honest"] + TYPES:
         res[a] = point[a][0]
-        res[a + "_lo"], res[a + "_hi"] = np.nanpercentile(bs[a], [2.5, 97.5], axis=0)
+        with np.errstate(all="ignore"), warnings.catch_warnings():     # all-nan columns (e.g. CE without a
+            warnings.simplefilter("ignore", RuntimeWarning)               # Condorcet winner) give nan, no warning
+            res[a + "_lo"], res[a + "_hi"] = np.nanpercentile(bs[a], [2.5, 97.5], axis=0)
     return res
 
 
@@ -448,6 +471,10 @@ def ranks(x):
 
 def spearman(x, y):
     """Rank correlation of two value vectors (1 = same order, 0 = unrelated, -1 = reversed)."""
+    ok = ~(np.isnan(x) | np.isnan(y))          # undefined values (e.g. sincerity of TRASH) are left out
+    x, y = np.asarray(x)[ok], np.asarray(y)[ok]
+    if len(x) < 3:
+        return float("nan")
     rx, ry = ranks(np.round(x, 9)), ranks(np.round(y, 9))
     if rx.std() == 0 or ry.std() == 0:      # all methods equal on this axis: no order to compare
         return float("nan")
@@ -466,6 +493,8 @@ def dom_text(items, sep=", ", limit=None):
 
 
 def fmt(x, lo, hi, pct=True):
+    if np.isnan(x):
+        return "—"          # undefined (sincerity and fidelity of TRASH and the Inverse-* methods)
     s = 100 if pct else 1
     return f"{x*s:.1f} [{lo*s:.1f}–{hi*s:.1f}]"
 
@@ -508,6 +537,9 @@ def main():
     rows_all, combined, cover = combine(load(a.csv))
     for line in combined:
         print("note:", line)
+    if OLD_SINCERITY:
+        print(f"note: {', '.join(OLD_SINCERITY)} predate(s) the current sincerity measure: their sincerity is an "
+              "earlier one, and fidelity is missing; rerun for the current measures")
     present = {r["method"] for r in rows_all}
     all_hidden = not (present - set(a.hide))
     if all_hidden:          # e.g. a run of the inverse group only, with the default --hide
@@ -534,7 +566,7 @@ def main():
     with open(os.path.join(a.out, "summary.csv"), "w", newline="") as f:
         w = csv.writer(f)
         cols = []
-        for x in AXES + EXTRA + ["sincerity"] + TYPES:
+        for x in AXES + EXTRA + ["sincerity", "fidelity", "fidelity_honest"] + TYPES:
             cols += [x, x + "_lo", x + "_hi"]
         w.writerow(PARAMS + ["condition", "elections", "method", "group"] + cols + ["dominated_by"])
         for key, r in results.items():
@@ -547,6 +579,7 @@ def main():
         plots.arrows(r, os.path.join(a.out, f"arrows-{r['tag']}.png"), a.hide, a.errorbars)
         plots.shift(r, os.path.join(a.out, f"shift-{r['tag']}.png"), a.hide)
         plots.sincerity(r, os.path.join(a.out, f"sincerity-{r['tag']}.png"), a.hide)
+        r["fid_plot"] = plots.fidelity(r, os.path.join(a.out, f"fidelity-{r['tag']}.png"), a.hide)
     if len(results) > 1:
         plots.axes_heatmap(list(results.values()), ["VSE*", "WME*", "sincerity", "VSE", "WME"],
                            os.path.join(a.out, "axes-heatmap.png"))
@@ -571,6 +604,13 @@ def main():
     L += [f"Input: {', '.join(source_name(p) for p in a.csv)} (simulator version {', '.join(versions)}"
           + ("; mixed versions" if len(versions) > 1 else "") + f"; analysis version {VERSION}). "
           f"Bootstrap: {a.boot} paired replicates over elections. Brackets are 95% intervals.", ""]
+    if OLD_SINCERITY:
+        L += [f"**Note:** {', '.join(OLD_SINCERITY)} predate(s) the current sincerity measure (2026-10-12): the "
+              "Sincerity values from there are an earlier measure (not comparable), and so is the sincerity axis of "
+              "the front; fidelity is missing. "
+              + ("Combined with newer runs, methods from different files use different measures and should not be "
+                 "compared on sincerity. " if len(OLD_SINCERITY) < len(a.csv) else "")
+              + "Rerun for the current measure.", ""]
     if combined:
         L += ["Combined runs (a method in a later file replaces the same method from earlier files in the "
               "elections both have):", ""] + [f"- {x}" for x in combined] + [""]
@@ -581,6 +621,15 @@ def main():
           "front axes and clearly worse on none, with the axes on which they are better in brackets. Sincerity "
           "differences are measured very precisely, so at equal VSE* and WME* the more honest method dominates. Clearly means the paired 95% interval of the difference excludes 0; smaller differences count "
           "as ties. It is a pointer for interpretation, relative to the methods included, not a verdict.",
+          "- **Sincerity**: how far the learned ballots go against the voters' own preferences, within each "
+          "method's ballot format: the utility-weighted pairs a ballot puts in the wrong order, relative to the most "
+          "dishonest ballot the format allows (100 = no reversed preference, 0 = as far against one's preferences as "
+          "the format permits). Ties (exaggeration, levelling) are not reversals. **Fidelity**: how well the ballots "
+          "reproduce the voters' utility differences (100 = exactly, a tie loses half a pair, a mirrored pair all of "
+          "it); it includes what the format cannot express. **(honest)** is the fidelity of the sincere ballots: the "
+          "format's own loss; the drop from there to Fidelity is what strategy adds (README, Sincerity and fidelity). "
+          "Both are undefined (—) for TRASH and the Inverse-* methods, whose honest ballot works against the voter's "
+          "own interest; on the front they count as ties on sincerity.",
           "- The intervals in the tables are for each value on its own. They are wide because elections differ "
           "a lot from each other. Comparisons between methods are much more precise, because all methods face the "
           "same elections: use the paired differences for those, not overlapping intervals.",
@@ -670,12 +719,15 @@ def main():
               "**Front** (dominated by none on VSE*, WME*, sincerity): "
               + ", ".join(r["methods"][j] for j in np.argsort(-r["VSE*"], kind="stable") if not r["dominated_by"][j])
               + ".", "",
-              "| Method | Group | VSE* | WME* | Sincerity | VSE | WME | CE | CE* | Compromise | Burial | Push-over | Dominated by |",
-              "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+              "| Method | Group | VSE* | WME* | Sincerity | Fidelity | (honest) | VSE | WME | CE | CE* | Compromise | Burial "
+              "| Push-over | Dominated by |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for j in np.argsort(-r["VSE*"], kind="stable"):
             L.append(f"| {r['methods'][j]} | {group_of(r['methods'][j])} | "
-                     + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j])
-                                  for x in ["VSE*", "WME*", "sincerity", "VSE", "WME"] + EXTRA)
+                     + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in ["VSE*", "WME*", "sincerity"])
+                     + " | " + " | ".join("—" if np.isnan(r[x][j]) else f"{r[x][j] * 100:.1f}"
+                                          for x in ["fidelity", "fidelity_honest"])
+                     + " | " + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in ["VSE", "WME"] + EXTRA)
                      + " | " + " | ".join(f"{r[t][j] * 100:.1f}%" for t in TYPES)
                      + f" | {dom_text(r['dominated_by'][j], limit=3)} |")
         L += [""]
@@ -710,6 +762,8 @@ def main():
             L += [""]
         L += [f"![strategy arrows](arrows-{r['tag']}.png)", "", f"![strategy shifts](shift-{r['tag']}.png)", "",
               f"![sincerity](sincerity-{r['tag']}.png)", ""]
+        if r.get("fid_plot"):
+            L += [f"![fidelity](fidelity-{r['tag']}.png)", ""]
         if a.compare:
             L += ["Paired differences (first minus second), percentage points:", "",
                   "| Pair | " + " | ".join(AXES + EXTRA + ["sincerity"]) + " |", "|---|" + "---|" * 7]

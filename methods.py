@@ -1423,6 +1423,15 @@ COMPARISONS = {
 }
 
 
+def sincerity_defined(method):
+    """Sincerity and fidelity are left undefined (blank) for methods whose honest ballot works against
+    the voter's own interest: TRASH (the candidate ranked lower wins) and the Inverse-* methods (honest
+    voting elects the worst candidate). There, what a ballot says and whom it helps point opposite
+    ways, so moving away from the honest ballot is not a cost of strategy."""
+    return method != "TRASH" and not (method in METHODS and METHODS[method].inverse) \
+        and not method.startswith("Inverse-")
+
+
 def group_of(method):
     """The group a method belongs to ("other" for names not in METHODS, e.g. from older CSVs)."""
     return next((g for g, ms in GROUPS.items() if method in ms), "other")

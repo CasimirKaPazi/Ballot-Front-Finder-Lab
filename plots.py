@@ -240,7 +240,8 @@ def arrows(r, path, hide, errorbars=False):
     idx = _visible(r, hide)
     # cap the colour scale at the 10th percentile, so one extreme method does not wash out the rest
     vals = np.array([r["sincerity"][j] * 100 for j in idx])
-    smin = min(99.5, float(np.percentile(vals, 10)))
+    vals = vals[~np.isnan(vals)]           # sincerity undefined for TRASH and the Inverse-* methods
+    smin = min(99.5, float(np.percentile(vals, 10))) if len(vals) else 99.5
     norm = Normalize(smin, 100, clip=True)
     cmap = SINC
     fig, ax = plt.subplots(figsize=(9.2, 6.6))
@@ -251,7 +252,8 @@ def arrows(r, path, hide, errorbars=False):
         ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
                     arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.1, shrinkA=4, shrinkB=5, mutation_scale=9))
         ax.scatter([x0], [y0], s=34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
-        ax.scatter([x1], [y1], s=64, color=cmap(norm(r["sincerity"][j] * 100)), edgecolors=MUTED,
+        sj = r["sincerity"][j]
+        ax.scatter([x1], [y1], s=64, color=MUTED if np.isnan(sj) else cmap(norm(sj * 100)), edgecolors=MUTED,
                    linewidths=0.6, zorder=4)
         anchors.append((x1, y1))
         texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
@@ -267,7 +269,7 @@ def arrows(r, path, hide, errorbars=False):
                  + ("; bars: 95% intervals relative to the average of the methods shown" if errorbars else ""),
                  loc="left")
     cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, fraction=0.035, pad=0.02,
-                      extend="min" if vals.min() < smin else "neither")
+                      extend="min" if len(vals) and vals.min() < smin else "neither")
     cb.set_label("sincerity of learned ballots (%)", color=INK2)
     cb.outline.set_visible(False)
     fig.tight_layout()
@@ -303,7 +305,7 @@ def shift(r, path, hide):
 def sincerity(r, path, hide):
     """VSE* and WME* against sincerity, side by side. No marginal intervals: they show how much
     single values vary between elections, not how surely methods differ (paired differences do)."""
-    idx = _visible(r, hide)
+    idx = [j for j in _visible(r, hide) if not np.isnan(r["sincerity"][j])]   # undefined: TRASH, Inverse-*
     fig, axs = plt.subplots(1, 2, figsize=(11, 5.2), sharex=True)
     for ax, axis, name in zip(axs, ["VSE*", "WME*"], ["VSE* (learned ballots, %)", "WME* (learned ballots, %)"]):
         texts, anchors = [], []
@@ -320,6 +322,39 @@ def sincerity(r, path, hide):
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
+
+
+def fidelity(r, path, hide):
+    """What strategy does to the ballots: honest (open) -> learned (filled) in the plane of fidelity
+    (x: how well the ballots reproduce the utility differences) and sincerity (y: how far they go
+    against the voters' own preferences). Honest ballots sit at sincerity 100, at the fidelity the
+    format allows; going left is information lost to strategy (exaggeration, levelling), going down
+    is preferences reversed. Returns False when the input has no fidelity (older CSVs)."""
+    idx = [j for j in _visible(r, hide) if not np.isnan(r["fidelity"][j])]
+    if not idx:
+        return False
+    fig, ax = plt.subplots(figsize=(9.2, 6.6))
+    texts, anchors = [], []
+    for j in idx:
+        x0, y0 = r["fidelity_honest"][j] * 100, 100.0
+        x1, y1 = r["fidelity"][j] * 100, r["sincerity"][j] * 100
+        ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
+                    arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.0, shrinkA=4, shrinkB=5, mutation_scale=9))
+        ax.scatter([x0], [y0], s=30, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.1, zorder=3)
+        ax.scatter([x1], [y1], s=60, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=4)
+        anchors.append((x1, y1))
+        texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
+    ax.set_xlabel("fidelity: how well the ballots reproduce the utility differences (%)")
+    ax.set_ylabel("sincerity: no preference reversed = 100 (%)")
+    _pad(ax)
+    _unreachable(ax, "xy", extend=False)
+    ax.set_title("What strategy does to the ballots: honest (open, at sincerity 100) → learned (filled)\n"
+                 f"left: information lost, down: preferences reversed; {r['label']}", loc="left")
+    fig.tight_layout()
+    _repel(ax, texts, anchors)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return True
 
 
 CHAIN = LinearSegmentedColormap.from_list("chain", ["#bcd6f5", "#6aa3e6", "#2a78d6", "#1c5cab", "#0d366b"])

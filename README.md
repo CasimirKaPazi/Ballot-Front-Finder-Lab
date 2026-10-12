@@ -313,7 +313,7 @@ VSE, WME and CE use sincere ballots; VSE*, WME* and CE* (in the CSV: VSE_learned
 | VSE, WME | voter satisfaction and worst-margin efficiency, sincere ballots |
 | VSE_learned, WME_learned | the same with learned ballots |
 | CE, CE_learned | Condorcet efficiency, sincere and learned ballots |
-| sincerity | mean sincerity of the learned ballots, over all voters (below) |
+| sincerity | mean sincerity of the learned ballots, over all voters (below; elections.csv also has `fidelity`, for both ballot sets) |
 | settled | poll rounds: share of elections where the last round gave the same ballots as the round before (a fixed point); convergent learning: no group changed its ballot in the last round. Cycles never settle |
 
 `on_front` in the summary is a quick check on point estimates (VSE_learned, WME_learned, sincerity; no uncertainty). The analysis uses the tie-aware "Dominated by" instead (see Analysis).
@@ -325,7 +325,28 @@ VSE, WME and CE use sincere ballots; VSE*, WME* and CE* (in the CSV: VSE_learned
 
 The three are exclusive. For score ballots, "burial" includes small reversals among lower-rated candidates, so a high burial share can go with high sincerity.
 
-**Sincerity** (`strategy.sincerity`), per voter: for every pair the ballot orders (a above b) while the voter likes b more, add `u[b] − u[a]`; divide by the sum of `|u[a] − u[b]|` over all pairs; sincerity is 1 minus this share. 1 (100%) means the ballot never claims a preference the voter does not hold (true for every sincere ballot, since rounding and leaving candidates level never reverse an order). 0 means every preference is reversed. Example, utilities 0.5 / 0.3 / 0.15 / 0.05: voting for the second choice in plurality gives 0.87, voting for the last gives 0.47. For the Inverse-* methods the preferences that the honest ballot expresses are the reversed ones, so sincerity and the strategy types are measured against those: there, reversing the ballot back is the insincere move.
+**Sincerity and fidelity.** Two separate questions about a learned ballot: does it go against the voter's own preferences, and how much does it tell about them?
+
+**Sincerity** (`strategy.sincerity`) is about voting against one's own preferences because it pays. Per voter, the *reversal mass* R of a ballot is the sum of `u[a] − u[b]` over the pairs the voter prefers a > b but the ballot puts b above a. Sincerity is `1 − R(ballot) / R(worst)`, where the worst ballot is the most dishonest one the method's ballot format allows for this voter: a vote for the last choice in plurality, a veto against the favourite, the reversed ranking (rankings, and scores with enough levels), the most damaging cut in approval (found exactly, over all cuts), the reversed order in three levels for three grades, the three least liked ranked in reverse for IRV-3. So 1 means no reversed preference and 0 means as far against one's own preferences as this format permits, the same in every format. Ties are not reversals and cost nothing: exaggeration (5, 3, 1, 0 → 5, 5, 0, 0), an approval threshold anywhere, unranked candidates. They say less, not something false, and in approval or plurality there is no single honest place for the threshold anyway. This is the usual definition of a sincere ballot (Brams and Fishburn: no candidate is put above one the voter likes more), scaled per format.
+
+**Fidelity** (`strategy.fidelity`) is about how much of the voter's utility differences the ballot conveys. Utilities are stretched to 0–1 per voter (favourite 1, least liked 0) and compared with the values the ballot implies: scores and grades by their value, rankings evenly spaced, approval and plurality marks as 1 and 0, veto 0 for the vetoed candidate. Over all pairs, fidelity is `1 − Σ |Δu − Δv| / Σ 2 |Δu|` (Δu, Δv the differences in utility and implied value): 1 if the ballot shows the differences exactly; a tie loses half of a pair; a mirrored pair loses all of it. A sincere ranking of utilities 100 / 3 / 2 / 1 / 0 loses a lot, since it implies 100 / 75 / 50 / 25 / 0. Fidelity therefore includes what the format cannot express: the report gives it for the learned ballots and for the sincere ones ("(honest)"), so the format's own loss and what strategy adds can be told apart. It is reported for context, not used for the front.
+
+Example, utilities 0.5 / 0.3 / 0.15 / 0.05:
+
+| Ballot | Sincerity | Fidelity |
+|---|---|---|
+| Plurality: vote for the 1st choice (sincere) | 1 | 0.72 |
+| Plurality: vote for the 2nd choice | 0.75 | 0.32 |
+| Plurality: vote for the last choice | 0 | 0.05 |
+| Ranking, sincere | 1 | 0.93 |
+| Ranking: 2nd moved above the 1st | 0.87 | 0.63 |
+| Ranking: reversed | 0 | 0 |
+| Score 0–5: sincere 5, 3, 1, 0 | 1 | 0.97 |
+| Score 0–5: exaggerated 5, 5, 0, 0 | 1 | 0.70 |
+| Approval: {1st, 2nd} (sincere) | 1 | 0.70 |
+| Approval: {3rd, 4th} | 0 | −0.10 |
+
+The exaggerated score ballot and the approval ballot say the same and get the same values. Two-round ballots (TTR, the approval runoffs): the voter only chooses the round-1 marks (the runoff ranking is the sincere one), so both measures look at the marks, as a plurality or approval ballot. **Undefined for TRASH and the Inverse-\* methods.** Both measures assume that the honest ballot is the one a voter would want to keep, so moving away from it is a cost of strategy. In TRASH (the candidate ranked lower wins) and the Inverse-\* methods (honest voting elects the worst candidate) the honest ballot works against the voter's own interest: what a ballot says and whom it helps point opposite ways, and leaving the honest ballot is escaping a bad method, not giving up honesty. Sincerity and fidelity are therefore left blank for these methods (`methods.sincerity_defined`), in the CSV, the tables (—) and the plots; on the front they count as ties on the sincerity axis. The strategy types (compromise, burial, push-over) are still reported; for the Inverse-\* methods they are measured against the reversed preferences the honest ballot expresses. CSVs from before 2026-10-12 (no fidelity column) hold an earlier sincerity measure (reversals over all pairs, not scaled per format); the report says so.
 
 ## Ballots and sincere voting
 
@@ -535,6 +556,7 @@ How the files are combined (the report lists what was done, and `analyze.py` pri
 | `arrows-<c>.png` | VSE/WME plane (everything outside the reachable region greyed out), every method's shift from honest (open) to learned ballots (filled, labelled) in one picture; filled points coloured by sincerity (blue = sincere, through purple to dark red = less honest; the scale is capped at the 10th percentile of the plotted methods); faint dashed lines 1, 2, 4 and 8 points inside the frontier |
 | `shift-<c>.png` | the same shifts as one row per method, VSE and WME panels; easier to read per method |
 | `sincerity-<c>.png` | VSE* and WME* against sincerity |
+| `fidelity-<c>.png` | every method's ballots from honest (open, at sincerity 100 and the fidelity its format allows) to learned (filled) in the fidelity / sincerity plane: going left is information lost to strategy (exaggeration, levelling), going down is preferences reversed; only for CSVs with fidelity |
 | `axes-heatmap.png` | VSE\*, WME\*, sincerity, VSE and WME, methods × conditions (when there are several; methods present in every condition, sorted by VSE\*) |
 | `track-<method>.png` | with `--track`: one method across all conditions in the VSE*/WME* plane (learned ballots filled, honest open). One varied parameter: a chain in its order; two (a grid, e.g. `--aggressive` × `--rounds`): lines along the parameter with more values, colour for the other; more: points with condition tags |
 | `chain-<parameter>.png` | sweeps: for each parameter varied around the base (the first condition), each method's learned values as a chain of arrows through the parameter's values, light to dark; one panel per method group, all on the same scale. If the parameter only affects voters' strategy (strategic and aggressive shares, poll rounds, polls, group size), the electorates are the same and each chain starts at the method's honest point; otherwise the honest values form their own dashed chain |

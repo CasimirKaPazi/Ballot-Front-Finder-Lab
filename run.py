@@ -39,8 +39,8 @@ import numpy as np
 
 from scenario import Scenario, electorate_positions
 from nomination import nominate, clone_setup, utilities, to_original
-from methods import METHODS, select, set_max_score
-from strategy import learn, respond, strategy_types, default_poll_size
+from methods import METHODS, select, set_max_score, sincerity_defined
+from strategy import learn, respond, strategy_types, default_poll_size, fidelity
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats
 import participation as part
 
@@ -83,7 +83,9 @@ def one_election(args):
         if nominating:
             nstats = {**st, "nom_changed": int(np.abs(P_h - m.honest(u)).sum() > 1e-9)}
         check = (lambda B: part.no_show(m, B, uf, u, back)) if participation else (lambda B: part.NAN)
-        sincere_row = {**election_row(u, P_h, m_cand), **estats, "sincerity": 1.0, "settled": 1,
+        defined = sincerity_defined(name)          # blank for TRASH and the Inverse-* methods
+        sincere_row = {**election_row(u, P_h, m_cand), **estats, "sincerity": 1.0 if defined else "",
+                   "fidelity": float(fidelity(m, m.sincere(uf), uf).mean()) if defined else "", "settled": 1,
                        "compromise": 0.0, "pushover": 0.0, "burial": 0.0, **nstats, **check(m.sincere(uf))}
         # Each method learns with a fresh copy of the same stream (common random numbers: the same
         # polls for every method as long as they draw alike), so results stay the same when methods
@@ -104,7 +106,9 @@ def one_election(args):
         for r, (B, settled, sin) in zip(rounds, res):
             out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row})
             out.append({"rounds": r, "election": e, "method": name, "ballots": "learned",
-                        **election_row(u, back(m.tally(B)), m_cand), **estats, "sincerity": sin,
+                        **election_row(u, back(m.tally(B)), m_cand), **estats,
+                        "sincerity": sin if defined else "",
+                        "fidelity": float(fidelity(m, B, uf).mean()) if defined else "",
                         "settled": int(settled), **strategy_types(B, m.pref(uf)), **nstats, **check(B)})
     return out
 
@@ -478,10 +482,11 @@ def main():
         s, l = summarize(sinc), summarize(lrn)
         summ[m] = {"VSE": s["VSE"], "WME": s["WME"], "VSE_learned": l["VSE"], "WME_learned": l["WME"],
                    "CE": s["CE"], "CE_learned": l["CE"],
-                   "sincerity": float(np.mean([r["sincerity"] for r in lrn])),
+                   "sincerity": float(np.mean([r["sincerity"] for r in lrn])) if sincerity_defined(m) else float("nan"),
                    "settled": float(np.mean([r["settled"] for r in lrn]))}
     axes = ["VSE_learned", "WME_learned", "sincerity"]
-    front = set(pareto([[summ[m][x] for x in axes] for m in names]))
+    # undefined sincerity (TRASH, Inverse-*): no advantage on that axis in this quick check
+    front = set(pareto([[summ[m][x] if not np.isnan(summ[m][x]) else -np.inf for x in axes] for m in names]))
 
     cols = ["VSE", "WME", "VSE_learned", "WME_learned", "CE", "CE_learned", "sincerity", "settled"]
     with open(os.path.join(out, "summary.csv"), "w", newline="") as f:
@@ -501,7 +506,8 @@ def main():
         s = summ[m]
         lines.append(f"{m:<26}{s['VSE']*100:7.1f}{s['WME']*100:7.1f}{s['VSE_learned']*100:7.1f}{s['WME_learned']*100:7.1f}"
               f"{s['CE']*100:7.1f}{s['CE_learned']*100:7.1f}"
-              f"{s['sincerity']*100:10.1f}%{s['settled']*100:8.0f}%"
+              + (f"{s['sincerity']*100:10.1f}%" if not np.isnan(s['sincerity']) else f"{'—':>11}")
+              + f"{s['settled']*100:8.0f}%"
               f"  {'*' if names.index(m) in front else ''}")
     lines.append("0 = random ballot, 100 = best candidate; *: with learned ballots; front on VSE*, WME*, sincerity")
     with open(os.path.join(out, "table.txt"), "w") as f:

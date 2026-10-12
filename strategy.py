@@ -133,17 +133,130 @@ def mutate(b, ballot, rng):
     return b
 
 
-def sincerity(B, u):
-    """Per voter: 1 minus the utility-weighted share of preferences the ballot reverses.
+def _marks(method, X):
+    """Two-round ballots (fav_run, app_run): only the round-1 marks are the voter's choice (the runoff
+    ranking is the sincere one), so sincerity and fidelity look at the marks, as a plurality / approval
+    ballot."""
+    if method.ballot in ("fav_run", "app_run"):
+        return (X >= X.shape[1]).astype(float)
+    return X
 
-    For every pair the ballot orders (a rated above b) while the voter likes b more,
-    add u[b] - u[a]; divide by the sum of |u[a] - u[b]| over all pairs; subtract from 1.
-    1 = no reversed preference (every sincere ballot), 0 = every preference reversed.
-    """
-    above = B[:, :, None] > B[:, None, :]                  # ballot says a > b
-    loss = np.clip(u[:, None, :] - u[:, :, None], 0, None)  # u[b] - u[a] where positive
-    total = np.abs(u[:, :, None] - u[:, None, :]).sum(axis=(1, 2)) / 2
-    return 1 - (above * loss).sum(axis=(1, 2)) / np.where(total > 0, total, 1)
+
+def _reversal_mass(X, P):
+    """Per voter: sum of P[a] - P[b] over the pairs with P[a] > P[b] that ballot X puts the other way."""
+    w = np.clip(P[:, :, None] - P[:, None, :], 0, None)            # w[a, b] = P[a] - P[b] where positive
+    return (w * (X[:, None, :] > X[:, :, None])).sum(axis=(1, 2))
+
+
+def _within_cost(s):
+    """cost[i, j] (per voter): sum of differences over all pairs inside the sorted segment s[i..j]."""
+    n, C = s.shape
+    cost = np.zeros((n, C, C))
+    for i in range(C):
+        for j in range(i + 1, C):
+            seg = s[:, i:j + 1]
+            m = j - i + 1
+            k = np.arange(m)
+            cost[:, i, j] = (seg * (2 * k - m + 1)).sum(axis=1)   # sum_{p<q} (s_q - s_p) for sorted values
+    return cost
+
+
+def _max_separated(P, levels):
+    """Per voter: the largest reversal mass a ballot with at most `levels` levels can reach. The worst
+    such ballot reverses the order with candidates grouped into contiguous blocks of the sorted
+    utilities; reversal mass = all pairs minus the pairs inside blocks, so minimise the mass inside
+    blocks (dynamic programme over the sorted candidates)."""
+    s = np.sort(P, axis=1)
+    n, C = s.shape
+    total = _within_cost(s)[:, 0, C - 1] if C > 1 else np.zeros(n)
+    if levels >= C:
+        return total
+    cost = _within_cost(s)
+    INF = np.full(n, np.inf)
+    best = [cost[:, 0, j] for j in range(C)]                     # one block covering 0..j
+    for _ in range(levels - 1):                                  # one more block each time
+        best = [np.minimum(best[j], np.min(np.stack([best[i] + cost[:, i + 1, j] if i + 1 <= j else INF
+                                                     for i in range(j)] or [INF]), axis=0))
+                for j in range(C)]
+    return total - best[C - 1]
+
+
+def worst_reversal(method, P):
+    """Per voter: the reversal mass of the most dishonest ballot the method's format allows (the scale
+    of sincerity). Plurality / two-round with plurality: a vote for the last choice; veto: against the
+    favourite; rankings (strict, weak, truncated): the reversed ranking; approval: the most damaging
+    cut; score / three grades: the reversed order in as many levels as there are; at most 3 ranked
+    (trunc3): the 3 least liked ranked in reverse, the rest unranked."""
+    b = method.ballot
+    C = P.shape[1]
+    if b in ("fav", "fav_run"):
+        return (P - P.min(axis=1, keepdims=True)).sum(axis=1)
+    if b == "veto":
+        return (P.max(axis=1, keepdims=True) - P).sum(axis=1)
+    if b in ("approval", "app_run"):
+        return _max_separated(P, 2)
+    if b == "score":
+        return _max_separated(P, methods.MAXS + 1)
+    if b == "grade3":
+        return _max_separated(P, 3)
+    if b == "trunc3":
+        k = min(methods.TRUNC3, C)
+        s = np.sort(P, axis=1)                                  # ranked: the k least liked; tied: the rest
+        return _within_cost(s)[:, 0, C - 1] - (_within_cost(s)[:, k, C - 1] if k < C - 1 else 0)
+    return _max_separated(P, C)                                  # rank, weak, trunc: full reversal
+
+
+def sincerity(method, B, u):
+    """Per voter, how far the ballot goes against the voter's own preferences, within its format:
+    1 - R(B) / R_max. R is the reversal mass: the sum of u[a] - u[b] over the pairs the voter prefers
+    a > b but the ballot puts b above a. Ties (exaggeration, levelling, unranked candidates) are not
+    reversals and cost nothing: they say less, not something false (fidelity measures how much is
+    said). R_max is the reversal mass of the most dishonest ballot the format allows (worst_reversal),
+    so 0 means "as much against your own preferences as this ballot format permits", in every format.
+    Preferences are method.pref(u) (reversed for the Inverse-* methods)."""
+    P = method.pref(u)
+    worst = worst_reversal(method, P)
+    return 1 - _reversal_mass(_marks(method, B), P) / np.where(worst > 1e-12, worst, 1)
+
+
+def implied_values(method, X):
+    """What a ballot says about the voter's utilities, on 0..1: scores and grades by their value,
+    rankings evenly spaced (best 1, worst 0), approval / plurality marks 1 and 0, veto 0 for the
+    vetoed candidate and 1 for the rest, truncated rankings evenly spaced with the unranked at 0.
+    Two-round ballots by their round-1 marks (see _marks)."""
+    b = method.ballot
+    C = X.shape[1]
+    X = _marks(method, X)
+    if b == "score":
+        return X / methods.MAXS
+    if b == "grade3":
+        return X / 2
+    if b in ("rank", "weak"):
+        return X / max(C - 1, 1)
+    if b == "veto":
+        return X + 1
+    if b in ("trunc", "trunc3"):
+        mx = X.max(axis=1, keepdims=True)
+        return X / np.where(mx > 0, mx, 1)
+    return X                                                     # fav, approval, fav_run / app_run marks
+
+
+def fidelity(method, B, u):
+    """Per voter, how well the ballot reproduces the voter's utility differences: utilities stretched
+    to 0..1 (favourite 1, least liked 0) against the ballot's implied values (implied_values). Over all
+    pairs: 1 - sum |du - dv| / sum 2 |du|, with du, dv the differences in utility and in implied
+    value. 1 = the ballot shows the differences exactly; a tie loses half of a pair (0.5 if
+    everything were tied); a mirrored pair loses all of it; below 0 is possible. It includes what the
+    format cannot express (a ranking spaces candidates evenly, approval has two values): the sincere
+    ballot's fidelity is the format's own loss, the drop from there what strategy adds."""
+    P = method.pref(u)
+    mn, mx = P.min(axis=1, keepdims=True), P.max(axis=1, keepdims=True)
+    p = (P - mn) / np.where(mx - mn > 1e-12, mx - mn, 1)
+    v = implied_values(method, B)
+    du = p[:, :, None] - p[:, None, :]
+    dv = v[:, :, None] - v[:, None, :]
+    den = 2 * np.abs(du).sum(axis=(1, 2))
+    return 1 - np.abs(du - dv).sum(axis=(1, 2)) / np.where(den > 1e-12, den, 1)
 
 
 def strategy_types(B, u):
@@ -236,7 +349,7 @@ def learn(method, u, rng, rounds=20, samples=10, group_size=0, strategic=None):
                 P_cur = P_new
                 shared[g] = None if to_sincere else prop
                 changed_last = True
-    return B, not changed_last, float(sincerity(B, method.pref(u)).mean())
+    return B, not changed_last, float(sincerity(method, B, u).mean())
 
 
 PATIENCE = 3    # poll rounds: random search stops after this many proposals in a row without gain
@@ -330,8 +443,8 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
                 B[mem] = x
         settled = np.array_equal(B, B_prev)       # the ballots repeat the round before
         if snapshot:
-            snapshot(r, (B, settled, float(sincerity(B, method.pref(u)).mean())))
-    return B, settled, float(sincerity(B, method.pref(u)).mean())
+            snapshot(r, (B, settled, float(sincerity(method, B, u).mean())))
+    return B, settled, float(sincerity(method, B, u).mean())
 
 
 def _widened(tot, dev, j):
