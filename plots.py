@@ -75,12 +75,27 @@ UNREACHABLE = "#ecebe7"
 BOUNDARY = "#a8a7a2"       # line along the edge of every unreachable area
 
 
+REACH = 0.5     # a boundary (100, the frontier) is brought into view only if it lies within this share
+                # of the data's span beyond the data; further away it would squeeze the methods together
+
+
+def _pad(ax, frac=0.08, min_span=1.0):
+    """Widen the current (data) limits by frac of the span on each side, and to at least min_span
+    points, so markers and labels at the edge are not cut off and tight clusters are not blown up."""
+    for get, set_ in ((ax.get_xlim, ax.set_xlim), (ax.get_ylim, ax.set_ylim)):
+        lo, hi = get()
+        span = max(hi - lo, min_span)
+        mid = (lo + hi) / 2
+        lo, hi = min(lo, mid - span / 2), max(hi, mid + span / 2)
+        set_(lo - frac * (hi - lo), hi + frac * (hi - lo))
+
+
 def _unreachable(ax, which, extend=True, lines=True):
     """Grey out values above 100 on the x and/or y axis (efficiencies cannot exceed 100). With
     extend, the axis is widened so the boundary is in view; without, only a visible part is shaded."""
     for w in which:
         lo, hi = ax.get_xlim() if w == "x" else ax.get_ylim()
-        if not extend and hi <= 100:
+        if hi <= 100 and (not extend or 100 - hi > REACH * (hi - lo)):
             continue
         hi = max(hi, 100 + 0.04 * (hi - lo))
         if w == "x":
@@ -151,7 +166,9 @@ def _frontier(ax, F, R=None, refs=None):
         _guides(ax, np.array([far, 100, 100]), np.array([100, 100, far]))
         return
     x, y = F[:, 0] * 100, F[:, 1] * 100
-    hx, hy = max(x1, x.max() + 0.5), max(y1, y.max() + 0.5)
+    # bring the frontier's far ends into view only if they are near the data (see REACH)
+    hx = max(x1, x.max() + 0.05 * (x1 - x0)) if x.max() - x1 <= REACH * (x1 - x0) else x1
+    hy = max(y1, y.max() + 0.05 * (y1 - y0)) if y.max() - y1 <= REACH * (y1 - y0) else y1
     if R is not None and len(R) >= 3:
         rx, ry = R[:, 0] * 100, R[:, 1] * 100
         lx, ly = min(x0, rx.min()) - 1, min(y0, ry.min()) - 1
@@ -243,6 +260,7 @@ def arrows(r, path, hide, errorbars=False):
         _errorbars(ax, r, idx, "VSE*", "WME*", INK2, 0.7)
     ax.set_xlabel(VSE_LABEL)
     ax.set_ylabel(WME_LABEL)
+    _pad(ax)
     _unreachable(ax, "xy", lines=r.get("frontier") is None)
     _frontier(ax, r.get("frontier"), r.get("region"), r.get("references"))
     ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}"
@@ -376,6 +394,7 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
     F = base.get("frontier") if same_electorates else None   # same electorates: one frontier for all conditions
     R = base.get("region") if same_electorates else None
     refs = base.get("references") if same_electorates else None
+    _pad(axs.flat[0])
     _unreachable(axs.flat[0], "xy", lines=F is None)       # shared axes: limits apply to all panels
     _frontier(axs.flat[0], F, R, refs)
     for ax in list(axs.flat)[1:len(panels)]:
@@ -474,6 +493,7 @@ def track(conds, method, varying, names, path, same_electorates, errorbars=False
     F = pts[0][0].get("frontier") if same_electorates else None
     R = pts[0][0].get("region") if same_electorates else None
     refs = pts[0][0].get("references") if same_electorates else None
+    _pad(ax)
     _unreachable(ax, "xy", lines=F is None)
     _frontier(ax, F, R, refs)
     ax.set_title(title + "\nlearned ballots (filled); honest (open)"
