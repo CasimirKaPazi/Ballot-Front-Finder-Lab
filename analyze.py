@@ -41,6 +41,7 @@ Outputs in the analysis folder (--out: a bare name goes into output/):
     shift-<c>.png              per condition: the same shifts as one row per method (VSE and WME panels)
     sincerity-<c>.png          per condition: VSE* and WME* against sincerity
     fidelity-<c>.png           per condition: honest -> learned ballots in the fidelity / sincerity plane
+    tradeoff-<c>.png           per condition: ternary map of the Pareto front (best method per weighting)
     axes-heatmap.png           VSE*, WME*, sincerity, VSE, WME: methods x conditions (if several conditions)
     chain-<param>.png          per parameter varied around the base: each method's chain of results
 """
@@ -52,6 +53,7 @@ from collections import OrderedDict
 import numpy as np
 
 import plots
+from metrics import pareto
 from run import out_path, write_command, group_text, strategy_text, cand_text, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
 from methods import GROUPS, METHODS, select, group_of, sincerity_defined
 
@@ -392,7 +394,9 @@ def analyse_condition(rows, boot, rng):
            "electorate": electorate_summary(dens, has, ele),
            "nomination": {k: A[k].mean(axis=0) for k in NOM},
            "participation": participation_summary(A, W),
-           "ballot_cw": ballot_cw_summary(A, has)}
+           "ballot_cw": ballot_cw_summary(A, has),
+           # Pareto front on point estimates; undefined sincerity (TRASH, Inverse-*) counts as worst
+           "pareto": set(pareto(np.nan_to_num(np.stack([point[a][0] for a in FRONT], axis=1), nan=-np.inf)))}
     for a in AXES + EXTRA + ["sincerity", "fidelity", "fidelity_honest"] + TYPES:
         res[a] = point[a][0]
         with np.errstate(all="ignore"), warnings.catch_warnings():     # all-nan columns (e.g. CE without a
@@ -596,11 +600,11 @@ def main():
         cols = []
         for x in AXES + EXTRA + ["sincerity", "fidelity", "fidelity_honest"] + TYPES:
             cols += [x, x + "_lo", x + "_hi"]
-        w.writerow(PARAMS + ["condition", "elections", "method", "group"] + cols + ["dominated_by"])
+        w.writerow(PARAMS + ["condition", "elections", "method", "group"] + cols + ["pareto_front", "dominated_by"])
         for key, r in results.items():
             for j, m in enumerate(r["methods"]):
                 w.writerow(list(key) + [r["tag"], r["elections"], m, group_of(m)]
-                           + [f"{r[x][j]:.5f}" for x in cols] + [dom_text(r["dominated_by"][j], "; ")])
+                           + [f"{r[x][j]:.5f}" for x in cols] + [int(j in r["pareto"]), dom_text(r["dominated_by"][j], "; ")])
 
     # plots
     for key, r in results.items():
@@ -608,6 +612,7 @@ def main():
         plots.shift(r, os.path.join(a.out, f"shift-{r['tag']}.png"), a.hide)
         plots.sincerity(r, os.path.join(a.out, f"sincerity-{r['tag']}.png"), a.hide)
         r["fid_plot"] = plots.fidelity(r, os.path.join(a.out, f"fidelity-{r['tag']}.png"), a.hide)
+        r["tri_plot"] = plots.tradeoff(r, os.path.join(a.out, f"tradeoff-{r['tag']}.png"), FRONT, a.hide)
     if len(results) > 1:
         plots.axes_heatmap(list(results.values()), ["VSE*", "WME*", "sincerity", "VSE", "WME"],
                            os.path.join(a.out, "axes-heatmap.png"))
@@ -643,8 +648,13 @@ def main():
         L += ["Combined runs (a method in a later file replaces the same method from earlier files in the "
               "elections both have):", ""] + [f"- {x}" for x in combined] + [""]
     L += ["How to read this:", "",
-          "- The values are the result. The **front** is VSE*, WME* and sincerity: the result with strategic voters, "
-          "and how honest they can afford to be. Honest VSE and WME depend more on modelling assumptions and are "
+          "- The values are the result. The **front** is judged on VSE*, WME* and sincerity: the result with strategic "
+          "voters, and how honest they can afford to be. The **Pareto front** uses the point estimates as they are: "
+          "a method is on it if no other is at least as good on all three and better on one, however small the "
+          "difference. **Undominated** asks for clear differences instead (see Dominated by). The two need not agree: a "
+          "noise-sized advantage on one axis keeps a method on the Pareto front, but does not protect it from a method "
+          "clearly better on another axis; a method beaten by a hair on every axis leaves the Pareto front but can stay "
+          "undominated. Honest VSE and WME depend more on modelling assumptions and are "
           "shown for context. **Dominated by** lists the methods that are clearly better on at least one of the three "
           "front axes and clearly worse on none, with the axes on which they are better in brackets. Sincerity "
           "differences are measured very precisely, so at equal VSE* and WME* the more honest method dominates. Clearly means the paired 95% interval of the difference excludes 0; smaller differences count "
@@ -744,7 +754,11 @@ def main():
               + "." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")
               + frontier_text(r["frontier"], r["region"], r["references"]),
               "",
-              "**Front** (dominated by none on VSE*, WME*, sincerity): "
+              "**Pareto front** (point estimates: no other method at least as good on all of VSE*, WME*, "
+              "sincerity and better on one): "
+              + ", ".join(r["methods"][j] for j in np.argsort(-r["VSE*"], kind="stable") if j in r["pareto"]) + ".", "",
+              "**Undominated** (no other method clearly better, i.e. beyond the paired 95% interval, on one of "
+              "these axes and clearly worse on none): "
               + ", ".join(r["methods"][j] for j in np.argsort(-r["VSE*"], kind="stable") if not r["dominated_by"][j])
               + ".", "",
               "| Method | Group | VSE* | WME* | Sincerity | Fidelity | (honest) | VSE | WME | CE | CE* | Compromise | Burial "
@@ -812,6 +826,13 @@ def main():
               f"![sincerity](sincerity-{r['tag']}.png)", ""]
         if r.get("fid_plot"):
             L += [f"![fidelity](fidelity-{r['tag']}.png)", ""]
+        if r.get("tri_plot"):
+            L += ["**Trade-off on the Pareto front:** for each weighting of VSE*, WME* and sincerity (a point of the "
+                  "triangle; corners: all weight on one axis), the Pareto method with the highest weighted sum. Each "
+                  "axis is stretched to the range the Pareto methods span on it, so the picture shows the trade-offs "
+                  "within the front, not their absolute size. Point estimates; the methods hidden in the scatter plots are "
+                  "left out, so it is the Pareto front of the methods shown.", "",
+                  f"![trade-off](tradeoff-{r['tag']}.png)", ""]
         if a.compare:
             L += ["Paired differences (first minus second), percentage points:", "",
                   "| Pair | " + " | ".join(AXES + EXTRA + ["sincerity"]) + " |", "|---|" + "---|" * 7]

@@ -24,7 +24,9 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 Runs (Hive): `python run.py --elections 600` at the defaults (99 voters, 6 candidates, 3 poll rounds, 10 polls, strategic share 0.5, aggressive share 0.5, seed 1), in two parts with `--methods` / `--exclude` by group: `run-20261012-191423` (condorcet, condorcet-based, minimax-family, hybrid, plurality-based, positional) and `run-20261012-195852` (the rest), analysed together (`python analyze.py run-20261012-191423 run-20261012-195852 --out …`; same seed, so the same elections). All 72 methods. 580 elections have a real Condorcet winner, 20 do not. First run with the current sincerity measure, fidelity and the ballot Condorcet winner (README, Sincerity and fidelity; Condorcet winner in the cast ballots). Point estimates; the ballot Condorcet table has no intervals.
 
-**Front** (VSE*, WME*, sincerity): Soft Minimax-L, Soft Minimax-D, Baldwin-ER.
+**Pareto front** (point estimates on VSE*, WME*, sincerity; from the report's rounded values, so near-ties may differ in the full-precision analysis): Geometric median, Soft Minimax-L, IC-MARS, Soft Minimax-D, BTR-score, Soft Minimax, MMWV+Score, Condorcet-random-drop, Baldwin-ER, Minimax, Ranked pairs, Schulze-ER, MMWV, MMPOWV. Two branches: the score-based methods (sincerity 99.8–99.9) trading VSE* against WME* from Geometric median (VSE* 93.1) to MMWV+Score (WME* 96.4), and the ranking-based Condorcet methods (WME* 98.2–99.4, sincerity 96.5–97.8), which reach higher WME* at lower sincerity.
+
+**Undominated** (no method clearly better, beyond the paired 95% interval): Soft Minimax-L, Soft Minimax-D, Baldwin-ER. Each of the other Pareto methods is clearly beaten on at least one axis by a method that it beats, if at all, only within noise.
 
 | Method | VSE* | WME* | Sincerity | Fidelity | (honest) |
 |---|---|---|---|---|---|

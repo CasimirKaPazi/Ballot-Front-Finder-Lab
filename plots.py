@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.colors import LinearSegmentedColormap, Normalize, ListedColormap
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch
 
@@ -352,6 +352,79 @@ def fidelity(r, path, hide):
                  f"left: information lost, down: preferences reversed; {r['label']}", loc="left")
     fig.tight_layout()
     _repel(ax, texts, anchors)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return True
+
+
+TINTS = ["#dbe7f7", "#f6e3cf", "#dcefe0", "#efdcef", "#f5f0cc", "#d6eef0", "#f3d9d9", "#e4e2f5"]   # region fills
+
+
+def tradeoff(r, path, axes=("VSE*", "WME*", "sincerity"), hide=()):
+    """Ternary map of the Pareto front: each point of the triangle is a weighting of the three axes
+    (corners: all weight on one axis), coloured by the Pareto method with the highest weighted sum.
+    Each axis is first stretched to 0..1 over the Pareto methods (worst to best among them), so a
+    weight means "share of the range the front spans on that axis". Methods on the Pareto front that
+    are best for no weighting (in a dent of the front) are listed below the triangle. Methods in
+    `hide` are left out before the front is found, so it is the Pareto front of the methods shown.
+    Returns False with fewer than two Pareto methods."""
+    vis = [j for j in _visible(r, hide) if all(not np.isnan(r[a][j]) for a in axes)]
+    P = np.array([[r[a][j] for a in axes] for j in vis]) if vis else np.zeros((0, len(axes)))
+    idx = [vis[i] for i in range(len(vis))
+           if not any(np.all(P[k] >= P[i]) and np.any(P[k] > P[i]) for k in range(len(vis)) if k != i)]
+    if len(idx) < 2:
+        return False
+    X = np.array([[r[a][j] for a in axes] for j in idx])
+    lo, hi = X.min(axis=0), X.max(axis=0)
+    Z = (X - lo) / np.where(hi - lo > 1e-12, hi - lo, 1)
+    h = np.sqrt(3) / 2
+    n = 400
+    gx, gy = np.meshgrid(np.linspace(0, 1, n), np.linspace(0, h, int(n * h)))
+    w3 = gy / h                                  # top corner: third axis
+    w2 = gx - w3 / 2                             # right corner: second axis
+    w1 = 1 - w2 - w3                             # left corner: first axis
+    inside = (w1 >= -1e-9) & (w2 >= -1e-9) & (w3 >= -1e-9)
+    W = np.stack([w1, w2, w3], axis=-1)
+    best = np.argmax(W @ Z.T, axis=-1)
+    lab = np.where(inside, best, -1)
+    fig, ax = plt.subplots(figsize=(8.6, 8.0))
+    shown = sorted(set(lab[inside].ravel()))
+    colour = {k: TINTS[i % len(TINTS)] for i, k in enumerate(shown)}
+    img = np.ones(lab.shape + (4,))
+    img[..., 3] = 0
+    for k in shown:
+        rgb = matplotlib.colors.to_rgb(colour[k])
+        img[lab == k, :3] = rgb
+        img[lab == k, 3] = 1
+    edge = np.zeros(lab.shape, bool)               # region borders
+    edge[:, 1:] |= (lab[:, 1:] != lab[:, :-1]) & (lab[:, 1:] >= 0) & (lab[:, :-1] >= 0)
+    edge[1:, :] |= (lab[1:, :] != lab[:-1, :]) & (lab[1:, :] >= 0) & (lab[:-1, :] >= 0)
+    img[edge] = (*matplotlib.colors.to_rgb(MUTED), 1)
+    ax.imshow(img, origin="lower", extent=(0, 1, 0, h), interpolation="nearest", zorder=1)
+    ax.plot([0, 1, 0.5, 0], [0, 0, h, 0], color=INK2, lw=1.0, zorder=2)
+    for k in shown:
+        yy, xx = np.nonzero(lab == k)
+        cx, cy = gx[0, xx].mean(), gy[yy, 0].mean()
+        j = idx[k]
+        small = len(yy) < 0.02 * inside.sum()        # small region: name only, smaller
+        ax.text(cx, cy, r["methods"][j] + ("" if small else "\n" + " / ".join(f"{r[a][j] * 100:.1f}" for a in axes)),
+                ha="center", va="center", fontsize=6.5 if small else 7.5, color=INK, zorder=3)
+    names = [f"{a} ({lo[i] * 100:.1f}–{hi[i] * 100:.1f})" for i, a in enumerate(axes)]
+    ax.text(-0.02, -0.03, names[0], ha="left", va="top", fontsize=9, color=INK)
+    ax.text(1.02, -0.03, names[1], ha="right", va="top", fontsize=9, color=INK)
+    ax.text(0.5, h + 0.025, names[2], ha="center", va="bottom", fontsize=9, color=INK)
+    never = [r["methods"][idx[k]] for k in range(len(idx)) if k not in shown]
+    if never:
+        ax.text(0.5, -0.09, "Also on the Pareto front, best for no weighting: " + ", ".join(never),
+                ha="center", va="top", fontsize=7.5, color=INK2, wrap=True)
+    ax.set_xlim(-0.05, 1.05)
+    ax.set_ylim(-0.16, h + 0.08)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.set_title("Pareto front: the best method for each weighting of the three axes\n"
+                 f"corner = all weight on that axis; axes stretched to the range of the front (in brackets); "
+                 f"{r['label']}", loc="left", fontsize=10)
+    fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return True
