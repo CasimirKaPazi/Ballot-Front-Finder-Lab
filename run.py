@@ -23,7 +23,9 @@ run-<date>-<time>). `python analyze.py <folder>` puts its analysis into <folder>
                     so several runs can be combined (see analyze.py)
     summary.csv     one row per method, with on_front for the VSE*/WME*/sincerity front
     table.txt       the printed table
-    command.txt     the command, simulator version and start time
+    command.txt     the command, simulator version and start time (a resumed run adds its own)
+Every election is saved as soon as it is done; after an interruption the same command with
+--resume continues where it stopped (see README, Progress, saving and resuming).
 """
 import argparse
 import csv
@@ -118,22 +120,30 @@ def out_path(name):
     return path
 
 
-def run_dir(name, kind, overwrite=False):
+def run_dir(name, kind, overwrite=False, resume=False):
     """Folder for one run or sweep, which also takes its analysis: output/<name>/ (a name with a
     directory is used as given). Without a name: <kind>-<date>-<time>, so nothing is overwritten.
-    An existing run is only replaced with overwrite. Checked before simulating."""
+    An existing run is only replaced with overwrite, or continued with resume. Checked before
+    simulating."""
+    if resume and not name:
+        raise SystemExit("--resume needs --out: the folder of the interrupted run")
     if not name:
         name = f"{kind}-{time.strftime('%Y%m%d-%H%M%S')}"
     path = name if os.path.dirname(name) else os.path.join(OUTPUT_DIR, name)
-    if os.path.exists(os.path.join(path, "elections.csv")) and not overwrite:
-        raise SystemExit(f"{path} already holds a run; choose another --out or add --overwrite")
+    has = os.path.exists(os.path.join(path, "elections.csv"))
+    if resume and not has:
+        raise SystemExit(f"{path} holds no run to resume")
+    if has and not overwrite and not resume:
+        raise SystemExit(f"{path} already holds a run; choose another --out, add --overwrite, "
+                         "or --resume to continue it")
     os.makedirs(path, exist_ok=True)
     return path
 
 
-def write_command(path):
-    """command.txt: the exact command, the simulator version and the start time, for reproducing."""
-    with open(os.path.join(path, "command.txt"), "w") as f:
+def write_command(path, resume=False):
+    """command.txt: the exact command, the simulator version and the start time, for reproducing.
+    A resumed run adds its command below the first."""
+    with open(os.path.join(path, "command.txt"), "a" if resume else "w") as f:
         f.write(f"python {' '.join(shlex.quote(x) for x in sys.argv)}\n")
         f.write(f"simulator version {VERSION}, started {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
 
@@ -214,29 +224,167 @@ def previous_election(args):
     return B
 
 
-def simulate(p, elections, workers=None, names=None, participation=False):
+def _fmt_time(t):
+    t = int(t)
+    return f"{t // 3600}:{t // 60 % 60:02d}:{t % 60:02d}" if t >= 3600 else f"{t // 60}:{t % 60:02d}"
+
+
+class Progress:
+    """Elections done, time used and an estimate of the time left, on one line (stderr): in a
+    terminal redrawn in place after every election; otherwise (output to a file) a new line at
+    most `updates` times per run (default 10, one per tenth)."""
+
+    def __init__(self, total, label="", updates=None):
+        self.total, self.label, self.done, self.t0 = total, label, 0, time.time()
+        self.tty = sys.stderr.isatty()
+        self.updates = self.total if self.tty else (updates or 10)
+        self.next_mark = 1
+
+    def step(self):
+        self.done += 1
+        if self.done * self.updates < self.next_mark * self.total and self.done < self.total:
+            return
+        while self.next_mark * self.total <= self.done * self.updates:
+            self.next_mark += 1
+        el = time.time() - self.t0
+        left = el / self.done * (self.total - self.done)
+        text = f"{self.label}{self.done}/{self.total}, {_fmt_time(el)} so far, ~{_fmt_time(left)} left"
+        if self.tty:     # \r and clear to the end of the line: redraw in place
+            print("\r\033[K" + text, end="", file=sys.stderr, flush=True)
+        else:
+            print(text, file=sys.stderr, flush=True)
+
+    def close(self):
+        if self.tty and self.done:
+            print(file=sys.stderr, flush=True)
+
+
+def _ignore_sigint():     # workers: Ctrl-C goes to the main process only, which stops the pool
+    import signal
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
+def simulate(p, elections, workers=None, names=None, participation=False, sink=None, skip=(), label=""):
     """Run one condition. p: dict with the keys in PARAMS; names: methods (default all);
     participation: also run the no-show check (participation.py) on sincere and learned ballots.
     p["rounds"] may be a list of numbers of poll rounds: they all come from one run (the rounds
     up to the highest are computed once), one condition per value, in that order.
-    Returns rows with p as columns."""
+    sink: called with each election's rows as soon as it is done (in election order), so a
+    caller can save as it goes; skip: election numbers already done (resuming), not run again.
+    Every election depends only on its seed and number, so skipped and new ones fit together.
+    Shows progress (see Progress). Returns the new rows with p as columns."""
     names = names or list(METHODS)
     rounds = list(p["rounds"]) if isinstance(p["rounds"], (list, tuple)) else [p["rounds"]]
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"],
                   p["cand_dispersion"], p["cand_shift"])
+    todo = [e for e in range(elections) if e not in set(skip)]
     jobs = [(sc, p["seed"], e, rounds, p["samples"], p["group_size"], p["strategic"], p["max_score"],
              p["exits"], p["clones"], p["poll_size"], p["poll_error"], p["search"], p["converge"], p["aggressive"],
-             names, participation) for e in range(elections)]
-    with Pool(workers) as pool:
-        dummy = None
-        if p["start"] == "previous":          # one previous election for the whole batch, per method
-            dummy = dict(zip(names, pool.map(previous_election, [(sc, p, max(rounds), n) for n in names])))
-        jobs = [j + (p["start"], dummy) for j in jobs]
-        rows = [r for batch in pool.imap(one_election, jobs, chunksize=4) for r in batch]
+             names, participation) for e in todo]
     meta = {k: p[k] for k in PARAMS if k != "rounds"} | {"version": VERSION}
-    rows = [{**meta, **r} for r in rows]
+    rows = []
+    if not todo:
+        return rows
+    prog = Progress(len(todo), label)
+    try:
+        with Pool(workers, initializer=_ignore_sigint) as pool:
+            dummy = None
+            if p["start"] == "previous":          # one previous election for the whole batch, per method
+                dummy = dict(zip(names, pool.map(previous_election, [(sc, p, max(rounds), n) for n in names])))
+            jobs = [j + (p["start"], dummy) for j in jobs]
+            for batch in pool.imap(one_election, jobs, chunksize=1):   # in order: the file stays reproducible
+                batch = [{**meta, **r} for r in batch]
+                batch = [{k: r[k] for k in PARAMS} | r for r in batch]      # parameters first, as columns
+                if sink:
+                    sink(batch)
+                rows += batch
+                prog.step()
+    finally:
+        prog.close()
     rows.sort(key=lambda r: rounds.index(r["rounds"]))          # stable: one condition after another
-    return [{k: r[k] for k in PARAMS} | r for r in rows]
+    return rows
+
+
+def numeric(row):
+    """A row read back from elections.csv with its numbers as floats (for summarize)."""
+    out = {}
+    for k, v in row.items():
+        if k in ("method", "ballots"):       # names, even when they look like numbers (321)
+            out[k] = v
+            continue
+        try:
+            out[k] = float(v)
+        except (TypeError, ValueError):
+            out[k] = v
+    return out
+
+
+def run_key(row, params):
+    """Identifies a run (everything but rounds and the election) in rows as written to CSV."""
+    return tuple(str(row[k]) for k in params if k != "rounds")
+
+
+def resume_state(path, names, rounds_per_run):
+    """Read an interrupted elections.csv for --resume: keep the elections that are complete (every
+    method, both ballot sets, every requested number of rounds), rewrite the file with only those,
+    and return (done, header): done maps a run key (see run_key) to the set of finished election
+    numbers. rounds_per_run: run key -> the poll rounds values written per election (the runs of
+    this command). Stops if the file holds other methods, other parameters or another simulator
+    version."""
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        header, rows = reader.fieldnames, list(reader)
+    if not rows:
+        return {}, header
+    if {r["method"] for r in rows} - set(names) or {r.get("version") for r in rows} != {VERSION}:
+        raise SystemExit(f"{path} was made with other methods or another simulator version; "
+                         "--resume needs the same command")
+    if any(run_key(r, PARAMS) not in rounds_per_run
+           or r["rounds"] not in {str(x) for x in rounds_per_run[run_key(r, PARAMS)]} for r in rows):
+        raise SystemExit(f"{path} was made with other parameters; --resume needs the same command")
+    count = {}
+    for r in rows:
+        key = (run_key(r, PARAMS), int(r["election"]))
+        count[key] = count.get(key, 0) + 1
+    complete = {k for k, c in count.items() if c == len(names) * 2 * len(rounds_per_run[k[0]])}
+    kept = [r for r in rows if (run_key(r, PARAMS), int(r["election"])) in complete]
+    tmp = path + ".tmp"
+    with open(tmp, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=header)
+        w.writeheader()
+        w.writerows(kept)
+    os.replace(tmp, path)
+    done = {}
+    for k, e in complete:
+        done.setdefault(k, set()).add(e)
+    return done, header
+
+
+class CsvSink:
+    """Appends rows to elections.csv as elections finish (flushed each time), writing the header
+    first unless the file already has one (resuming)."""
+
+    def __init__(self, path, header=None):
+        self.f = open(path, "a" if header else "w", newline="")
+        self.w = csv.DictWriter(self.f, fieldnames=header) if header else None
+
+    def __call__(self, rows):
+        if self.w is None:
+            self.w = csv.DictWriter(self.f, fieldnames=list(rows[0]))
+            self.w.writeheader()
+        self.w.writerows(rows)
+        self.f.flush()
+
+    def close(self):
+        self.f.close()
+
+
+def interrupted(out, n):
+    cmd = " ".join(shlex.quote(x) for x in sys.argv)
+    if "--resume" not in sys.argv:
+        cmd += " --resume" + ("" if "--out" in sys.argv else f" --out {shlex.quote(out)}")
+    raise SystemExit(f"\ninterrupted; {n} complete election(s) are saved in {out}/elections.csv. "
+                     f"Continue with:\n  python {cmd}")
 
 
 def main():
@@ -298,19 +446,30 @@ def main():
     ap.add_argument("--out", default=None,
                     help="folder for this run (in output/ unless it has a directory); default run-<date>-<time>")
     ap.add_argument("--overwrite", action="store_true", help="replace an existing run in --out")
+    ap.add_argument("--resume", action="store_true",
+                    help="continue an interrupted run in --out (same command): finished elections are kept")
     a = ap.parse_args()
 
     check_params(a, ap.error)
-    out = run_dir(a.out, "run", a.overwrite)
-    write_command(out)
+    out = run_dir(a.out, "run", a.overwrite, a.resume)
+    write_command(out, a.resume)
     p = {k: getattr(a, k) for k in PARAMS}
     names = select(a.methods, a.exclude)
-    results = simulate(p, a.elections, a.workers, names, a.participation)
-
-    with open(os.path.join(out, "elections.csv"), "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(results[0]))
-        w.writeheader()
-        w.writerows(results)
+    path = os.path.join(out, "elections.csv")
+    key = run_key(p, PARAMS)
+    done, header = resume_state(path, names, {key: [a.rounds]}) if a.resume else ({}, None)
+    if a.resume:
+        print(f"resuming: {len(done.get(key, ()))} of {a.elections} elections already done")
+    sink = CsvSink(path, header)
+    try:
+        simulate(p, a.elections, a.workers, names, a.participation, sink=sink, skip=done.get(key, set()))
+    except KeyboardInterrupt:
+        sink.close()
+        with open(path, newline="") as f:
+            interrupted(out, len({r["election"] for r in csv.DictReader(f)}))
+    sink.close()
+    with open(path, newline="") as f:     # all elections, including those of an earlier, interrupted start
+        results = [numeric(r) for r in csv.DictReader(f)]
 
     summ = {}
     for m in names:

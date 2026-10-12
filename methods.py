@@ -404,7 +404,6 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "acquiesce": (lambda B: _coalitions(B, False), lambda C: (2 ** C,)),
     "levelled": (_levelled, lambda C: (C, C)),
     "nscore_sub": (_nscore_sub, lambda C: (2 ** C, C)),
-    "aset": (lambda B: _onehot(_subset_id(B > 0), 2 ** B.shape[1]), lambda C: (2 ** C,)),   # approval set
     "diffhist": (_diff_hist, lambda C: (C, C, 2 * MAXS + 1)),
     **{f"soft{int(f * 100)}": ((lambda f: lambda B: _soft_margins(B, f))(f), lambda C: (C, C)) for f in (0.2, 0.4)},
     "firsts_ex": (_firsts_ex, lambda C: (2 ** C, C)),
@@ -842,7 +841,7 @@ def d_score_plus(s):
     return P
 
 
-# ---------- coalitions, STLR, iterated normalized score, COWPEA lottery ----------
+# ---------- coalitions, STLR, iterated normalized score ----------
 MAX_TIED_ORDERS = 5    # equal-strength coalitions: average over their orders up to this many conflicting ones
 
 
@@ -934,37 +933,6 @@ def d_iterated_normalized_score(s):
 
     go(list(range(C)), 1.0)
     return P
-
-
-def d_cowpea(s):
-    """COWPEA Lottery, single winner: a random ballot's approved candidates; then further random ballots
-    each remove the candidates they do not approve, ballots that would remove all (or none) being
-    skipped, until one remains; if no ballot can break a tie, the remaining share the win. Exact
-    probabilities by recursion over the remaining set (N[T] = ballots approving exactly the set T)."""
-    N = s["aset"]
-    C = int(np.log2(len(N)))
-    sets = [T for T in range(1, len(N)) if N[T] > EPS]
-    memo = {}
-
-    def win(S):
-        if S in memo:
-            return memo[S]
-        cs = _bits(S)
-        if len(cs) == 1:
-            out = np.eye(C)[cs[0]]
-        else:
-            nxt = [(N[T], S & T) for T in sets if (S & T) not in (0, S)]
-            if not nxt:
-                out = np.zeros(C)
-                out[cs] = 1 / len(cs)
-            else:
-                tot = sum(w for w, _ in nxt)
-                out = sum(w * win(R) for w, R in nxt) / tot
-        memo[S] = out
-        return out
-
-    tot = sum(N[T] for T in sets)
-    return sum(N[T] * win(T) for T in sets) / tot
 
 
 # ---------- decisions (continued) ----------
@@ -1354,7 +1322,7 @@ METHODS = {
     "MMWV": M_("weak", d_minimax_wv, ("gt",)),
     "MMPO": M_("weak", d_mmpo, ("gt",)),
     "MMPOWV": M_("weak", d_mmpowv, ("n", "gt")),
-    # condorcet-hybrid
+    # condorcet-based
     "Black": M_("rank", d_black, ("sum", "gt")),
     "Baldwin": M_("rank", d_baldwin, ("gt",)),
     "Baldwin-ER": M_("weak", d_baldwin, ("gt",)),
@@ -1411,7 +1379,6 @@ METHODS = {
     "Random pair runoff": M_("rank", d_random_pair, ("n", "first", "gt")),
     "Anti-plurality": M_("veto", d_sum, ("sum",)),
     "TRASH": M_("rank", d_trash, ("first", "last", "gt")),
-    "COWPEA Lottery": M_("approval", d_cowpea, ("aset",)),
     # inverse: tests of the strategy model. Same ballot and count as the original, but the sincere
     # ballot expresses reversed preferences (name the least liked; approve those below the mean; rank
     # upside down), so honest voting elects (nearly) the worst candidate. Voters who learn to reverse
@@ -1434,14 +1401,14 @@ GROUPS = {
     "condorcet": ["Ranked pairs", "Schulze", "Schulze-ER", "Kemeny-Young", "Copeland", "Ranked Robin",
                   "Ranked Robin-SR", "SICT", "Condorcet-random-drop"],
     "minimax-family": ["Minimax", "Minimax-ER", "MMWV", "MMPO", "MMPOWV"],
-    "condorcet-hybrid": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
+    "condorcet-based": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
     "plurality-based": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs", "DSC", "DAC"],
     "approval-based": ["Approval", "Approval runoff", "Approval cond. runoff", "MDDA", "MAMPO"],
     "rated": ["Score", "MJ", "MCA", "Reciprocal score", "INS", "Geometric median"],
     "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "MARS-T", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore", "STLR", "Soft Minimax",
                "Soft Minimax-40", "Soft Minimax-L", "Soft Minimax-D"],
     "positional": ["Borda", "Borda-ER", "Dowdall"],
-    "references": ["Random pair runoff", "Anti-plurality", "TRASH", "COWPEA Lottery"],
+    "references": ["Random pair runoff", "Anti-plurality", "TRASH"],
     "inverse": ["Inverse-Plurality", "Inverse-Approval", "Inverse-Minimax", "Inverse-IRV", "Inverse-ER-IRV", "Inverse-TTR",
                 "Inverse-Borda", "Inverse-Score"],
 }

@@ -6,6 +6,8 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Default poll rounds and version.** From 2026-10-10 the default is 3 poll rounds (before: 1), and every row records the simulator version (1.0.0 from then on). Sections before this note report round 1 unless they say otherwise.
 
+**Removed method, renamed group.** On 2026-10-12 COWPEA Lottery was removed: it is meant as a proportional method, so judging it on single-winner measures makes it look worse than it is, and it was by far the slowest method. The group condorcet-hybrid was renamed condorcet-based (to keep it apart from the groups condorcet and hybrid). Sections below still report COWPEA Lottery.
+
 **Output folders.** From 2026-10-11 every run or sweep writes into its own folder (`output/<out>/elections.csv`, analysis in `output/<out>/analysis/`). The commands in the sections below are from before: there `--out x` wrote `output/x-elections.csv`, and `analyze.py` was given that file. The same commands now write the folder, and `analyze.py x` reads it.
 
 **Polls per round.** From 2026-10-11 the default is 10 polls per round (`--samples`, before: 30). A test with 1 to 30 samples showed systematic shifts only at 3 or fewer; from 5 up the results moved by a few points without a trend, which is strategy noise that more elections average out. 10 samples take about 37% of the time of 30. Sections before this note used 30.

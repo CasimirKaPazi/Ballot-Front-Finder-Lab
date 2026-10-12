@@ -117,7 +117,7 @@ assert select(["star", "SICT"]) == ["SICT", "STAR"]            # in the order of
 assert "Plurality" not in select(None, ["plurality"]) and len(select()) == len(METHODS)
 from methods import GROUPS
 assert all(m in METHODS for ms in GROUPS.values() for m in ms)
-assert "Schulze" in select(["Condorcet", "STAR"]) and "Benham" in select(["condorcet-hybrid"]) and "STAR" in select(["condorcet", "star"])
+assert "Schulze" in select(["Condorcet", "STAR"]) and "Benham" in select(["condorcet-based"]) and "STAR" in select(["condorcet", "star"])
 assert "TRASH" not in select(None, ["references"]) and "IRV" in select(["plurality-based"])
 print("method selection ok")
 
@@ -482,23 +482,6 @@ p = METHODS["INS"].tally(ins)
 # A out: ballots over {B,C}: A-voters B5 C0, C-voters B0 C5, B-voter B5 C0 -> B 15, C 10 -> B.
 # C out: over {A,B}: A-voters A5 B0, C-voters A0 B5, B-voter A0 B5 -> B 15 -> B.
 check("INS", p, [0, 1, 0])
-
-# COWPEA Lottery: exact probabilities equal a simulation of the lottery
-cw_ = np.array([[1, 1, 0]] * 6 + [[0, 1, 1]] * 3 + [[1, 0, 0]] * 1, dtype=float)
-P = METHODS["COWPEA Lottery"].tally(cw_)
-rs = np.random.default_rng(1); wins = np.zeros(3)
-for _ in range(20000):
-    S = set(np.flatnonzero(cw_[rs.integers(10)]))
-    for _ in range(200):
-        if len(S) == 1:
-            break
-        T = set(np.flatnonzero(cw_[rs.integers(10)]))
-        if S & T and S & T != S:
-            S &= T
-    for c in S:
-        wins[c] += 1 / len(S)
-assert np.allclose(P, wins / wins.sum(), atol=0.015), (P, wins / wins.sum())
-print("COWPEA Lottery = simulation ok", np.round(P, 3))
 
 # MAMPO: 4 voters A>B (A, B approved), 3 voters B>C, 2 voters C (truncated). Approvals A 4, B 7, C 5 of
 # 9: B and C have a majority. Largest opposition: B 4 (A over B), C 7 (B over C: 4 + 3) -> B.

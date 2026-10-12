@@ -18,7 +18,9 @@ Output, in one folder per sweep (--out; a name without a directory goes into out
 sweep-<date>-<time>). `python analyze.py <folder>` puts its analysis into <folder>/analysis/.
     elections.csv   rows from all runs, each carrying its parameters as columns
                     (written run by run, so a long sweep can be inspected while it runs)
-    command.txt     the command, simulator version and start time
+    command.txt     the command, simulator version and start time (a resumed run adds its own)
+Every election is saved as soon as it is done; after an interruption the same command with
+--resume continues where it stopped (see README, Progress, saving and resuming).
 """
 import argparse
 import csv
@@ -26,7 +28,8 @@ import itertools
 import os
 import time
 
-from run import simulate, PARAMS, run_dir, write_command, group_size_arg, check_params
+from run import (simulate, PARAMS, run_dir, write_command, group_size_arg, check_params, run_key,
+                 resume_state, CsvSink, interrupted)
 from methods import select
 
 
@@ -66,11 +69,13 @@ def main():
     ap.add_argument("--out", default=None,
                     help="folder for this sweep (in output/ unless it has a directory); default sweep-<date>-<time>")
     ap.add_argument("--overwrite", action="store_true", help="replace an existing sweep in --out")
+    ap.add_argument("--resume", action="store_true",
+                    help="continue an interrupted sweep in --out (same command): finished elections are kept")
     a = ap.parse_args()
     names = select(a.methods, a.exclude)
     check_params(a, ap.error)
-    out = run_dir(a.out, "sweep", a.overwrite)
-    write_command(out)
+    out = run_dir(a.out, "sweep", a.overwrite, a.resume)
+    write_command(out, a.resume)
     # parameters that have no effect in the chosen strategy model give identical conditions
     conv = set(a.converge) - {0}
     if not conv and len(a.group_size) > 1:
@@ -102,18 +107,30 @@ def main():
     grid = list(runs.values())
     print(f"{len(grid)} runs x {a.elections} elections, {len(names)} methods"
           + (f" (poll rounds {', '.join(map(str, values['rounds']))} from one run each)" if len(values["rounds"]) > 1 else ""))
-    with open(os.path.join(out, "elections.csv"), "w", newline="") as f:
-        w = None
-        for i, p in enumerate(grid, 1):
+    path = os.path.join(out, "elections.csv")
+    keys = [run_key(p, PARAMS) for p in grid]
+    done, header = resume_state(path, names, {k: p["rounds"] for k, p in zip(keys, grid)}) \
+        if a.resume else ({}, None)
+    if a.resume:
+        print(f"resuming: {sum(len(v) for v in done.values())} of {len(grid) * a.elections} elections already done")
+    sink = CsvSink(path, header)
+    try:
+        for i, (p, key) in enumerate(zip(grid, keys), 1):
+            skip = done.get(key, set())
+            if len(skip) >= a.elections:
+                print(f"[{i}/{len(grid)}] done before")
+                continue
             t = time.time()
-            rows = simulate(p, a.elections, a.workers, names, a.participation)
-            if w is None:
-                w = csv.DictWriter(f, fieldnames=list(rows[0]))
-                w.writeheader()
-            w.writerows(rows)
-            f.flush()
             varying = ", ".join(f"{k}={p[k]}" for k in PARAMS if len(values[k]) > 1)
+            simulate(p, a.elections, a.workers, names, a.participation, sink=sink, skip=skip,
+                     label=f"[{i}/{len(grid)}] ")
             print(f"[{i}/{len(grid)}] {varying or 'single run'}: {time.time() - t:.0f}s")
+    except KeyboardInterrupt:
+        sink.close()
+        with open(path, newline="") as f:
+            n = len({(run_key(r, PARAMS), r["election"]) for r in csv.DictReader(f)})
+        interrupted(out, n)
+    sink.close()
     print(f"wrote {out}/elections.csv and command.txt; analyse with: python analyze.py {out}")
 
 
