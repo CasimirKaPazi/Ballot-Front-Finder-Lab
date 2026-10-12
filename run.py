@@ -41,7 +41,7 @@ from scenario import Scenario, electorate_positions
 from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, select, set_max_score, sincerity_defined
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
-from metrics import election_row, summarize, pareto, worst_margins, electorate_stats
+from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet
 import participation as part
 
 
@@ -103,10 +103,12 @@ def one_election(args):
         else:                # all requested numbers of poll rounds from one run (see strategy.respond)
             res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
                           poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0)
+        sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
         for r, (B, settled, sin) in zip(rounds, res):
+            P_l = back(m.tally(B))
             out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row})
             out.append({"rounds": r, "election": e, "method": name, "ballots": "learned",
-                        **election_row(u, back(m.tally(B)), m_cand), **estats,
+                        **election_row(u, P_l, m_cand), **estats, **ballot_condorcet(m, B, u, back, P_l),
                         "sincerity": sin if defined else "",
                         "fidelity": float(fidelity(m, B, uf).mean()) if defined else "",
                         "settled": int(settled), **strategy_types(B, m.pref(uf)), **nstats, **check(B)})

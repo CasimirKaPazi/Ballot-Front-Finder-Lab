@@ -68,6 +68,45 @@ def election_row(u, P, m):
     }
 
 
+ORDERED_BALLOTS = ("rank", "weak", "trunc", "trunc3", "score", "grade3")   # ballots that record an order
+
+
+def condorcet_winner(gt):
+    """Index of the Condorcet winner for pairwise counts gt[a, b] (voters putting a above b), or None."""
+    C = gt.shape[0]
+    cw = np.flatnonzero((gt > gt.T).sum(axis=1) == C - 1)
+    return int(cw[0]) if len(cw) == 1 else None
+
+
+def ballot_condorcet(method, B, u, back, P):
+    """Does the Condorcet winner as the cast ballots show it match the real one (sincere preferences)?
+    This is what a study of real ballot data sees. Pairwise counts come from the ballots themselves
+    (a voter counts for a over b if the ballot puts a higher; equal = no preference), only for ballots
+    that record an order (rankings, scores, grades; not plurality, approval, veto or two-round marks,
+    whose pairwise counts mostly reflect the marks). For the Inverse-* methods the ballot expresses
+    reversed preferences, so it is read reversed. Ballot candidates (nomination: the field) are mapped
+    back to the original candidates. P: the method's winner lottery on the original field.
+    bcw: same (the real Condorcet winner), false (another candidate), none (no Condorcet winner in the
+    ballots although there is a real one), spurious (one in the ballots, none in reality), neither;
+    empty for other ballot types. p_bcw: probability that the method elects the ballots' Condorcet
+    winner (empty without one): its Condorcet efficiency as ballot data would show it."""
+    if method.ballot not in ORDERED_BALLOTS:
+        return {"bcw": "", "p_bcw": ""}
+    X = -B if method.inverse else B
+    gt_b = (X[:, :, None] > X[:, None, :]).sum(axis=0)
+    cb = condorcet_winner(gt_b)
+    if cb is not None:
+        onehot = np.zeros(B.shape[1])
+        onehot[cb] = 1
+        cb = int(np.argmax(back(onehot)))          # clones count as their original
+    cr = condorcet_winner((u[:, :, None] > u[:, None, :]).sum(axis=0))
+    if cr is not None:
+        kind = "same" if cb == cr else ("none" if cb is None else "false")
+    else:
+        kind = "neither" if cb is None else "spurious"
+    return {"bcw": kind, "p_bcw": float(P[cb]) if cb is not None else ""}
+
+
 def efficiency(rows, base):
     num = sum(r["U_method"] - r[base] for r in rows)
     den = sum(r["U_best"] - r[base] for r in rows)

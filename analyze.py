@@ -190,7 +190,8 @@ def arrays(rows):
     mi = {m: j for j, m in enumerate(methods)}
     E, M = len(eids), len(methods)
     A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "wm_s", "wm_l", "sin"] + TYPES + NOM}
-    A.update({k: np.full((E, M), np.nan) for k in ["fid_s", "fid_l"]})   # fidelity (absent in older CSVs)
+    A.update({k: np.full((E, M), np.nan) for k in ["fid_s", "fid_l", "pbcw_s", "pbcw_l"]})   # absent in older CSVs
+    A.update({k: np.full((E, M), "", dtype=object) for k in ["bcw_s", "bcw_l"]})    # ballot Condorcet winner
     A.update({k + sfx: np.full((E, M), np.nan) for k in PART for sfx in ("_s", "_l")})
     den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
     dwm = np.zeros(E)          # per election: WM_best - WM_rb (WME denominator)
@@ -206,6 +207,7 @@ def arrays(rows):
             A["num_s"][i, j], A["cw_s"][i, j], A["wm_s"][i, j] = num, pcw, nwm
             for k in NOM:
                 A[k][i, j] = float(r[k])
+            A["bcw_s"][i, j], A["pbcw_s"][i, j] = r.get("bcw", ""), float(r.get("p_bcw") or "nan")
             if sincerity_defined(r["method"]):            # blank for TRASH and Inverse-* (also in older CSVs)
                 A["fid_s"][i, j] = float(r.get("fidelity") or "nan")
             for k in PART:
@@ -219,6 +221,7 @@ def arrays(rows):
                 cands[i] = (np.array(r["U_cands"].split(";"), float), np.array(r["WM_cands"].split(";"), float))
         else:
             A["num_l"][i, j], A["cw_l"][i, j], A["wm_l"][i, j] = num, pcw, nwm
+            A["bcw_l"][i, j], A["pbcw_l"][i, j] = r.get("bcw", ""), float(r.get("p_bcw") or "nan")
             if sincerity_defined(r["method"]):
                 A["sin"][i, j] = float(r["sincerity"] or "nan")
                 A["fid_l"][i, j] = float(r.get("fidelity") or "nan")
@@ -388,13 +391,38 @@ def analyse_condition(rows, boot, rng):
            "references": references(cands, dens, ele),
            "electorate": electorate_summary(dens, has, ele),
            "nomination": {k: A[k].mean(axis=0) for k in NOM},
-           "participation": participation_summary(A, W)}
+           "participation": participation_summary(A, W),
+           "ballot_cw": ballot_cw_summary(A, has)}
     for a in AXES + EXTRA + ["sincerity", "fidelity", "fidelity_honest"] + TYPES:
         res[a] = point[a][0]
         with np.errstate(all="ignore"), warnings.catch_warnings():     # all-nan columns (e.g. CE without a
             warnings.simplefilter("ignore", RuntimeWarning)               # Condorcet winner) give nan, no warning
             res[a + "_lo"], res[a + "_hi"] = np.nanpercentile(bs[a], [2.5, 97.5], axis=0)
     return res
+
+
+def ballot_cw_summary(A, has):
+    """Per method (ordered ballots only, else None): how the Condorcet winner in the cast ballots
+    relates to the real one (metrics.ballot_condorcet), for honest (_s) and learned (_l) ballots.
+    Shares of the elections with a real Condorcet winner: same, false, none; of those without one:
+    spurious. ce_ballots: how often the method elects the ballots' Condorcet winner, over the
+    elections whose ballots have one (what ballot data would report as Condorcet efficiency)."""
+    out = {}
+    real = has == 1
+    for j in range(A["bcw_l"].shape[1]):
+        if not any(A["bcw_l"][:, j]):
+            out[j] = None
+            continue
+        d = {}
+        for sfx in ("_s", "_l"):
+            k = A["bcw" + sfx][:, j]
+            for c in ("same", "false", "none"):
+                d[c + sfx] = float(np.mean(k[real] == c)) if real.any() else float("nan")
+            d["spurious" + sfx] = float(np.mean(k[~real] == "spurious")) if (~real).any() else float("nan")
+            p = A["pbcw" + sfx][:, j]
+            d["ce_ballots" + sfx] = float(np.nanmean(p)) if (~np.isnan(p)).any() else float("nan")
+        out[j] = d
+    return out
 
 
 def participation_summary(A, W):
@@ -759,6 +787,26 @@ def main():
                          f"| {g(pt['noshow_voters_s'][j])} | {g(pt['noshow_gain_s'][j])} "
                          f"| {fp(pt['noshow_l'][j], pt['noshow_l_lo'][j], pt['noshow_l_hi'][j])} "
                          f"| {g(pt['noshow_voters_l'][j])} | {g(pt['noshow_gain_l'][j])} |")
+            L += [""]
+        bc = r["ballot_cw"]
+        if any(bc[j] for j in bc):
+            n_real, n_none = r["with_cw"], r["elections"] - r["with_cw"]
+            pc = lambda x: "—" if np.isnan(x) else f"{x:.1%}"
+            L += ["**Condorcet winner in the cast ballots** (methods with ordered ballots: rankings, scores, grades): "
+                  "what a study of the ballot data would see. Of the "
+                  f"{n_real} elections with a real (sincere) Condorcet winner: the ballots show the same one, another "
+                  f"one (false), or none (a cycle or ties). Of the {n_none} without one: the ballots show one anyway "
+                  "(spurious). CE* (ballots): how often the method elects the ballots' Condorcet winner, where they "
+                  "have one; compare CE* (real) in the main table. Honest ballots in brackets (rounding and ties of "
+                  "the format alone).", "",
+                  "| Method | Same | False | None | Spurious | CE* (ballots) | CE* (real) |", "|---|---|---|---|---|---|---|"]
+            for j in np.argsort(-r["VSE*"], kind="stable"):
+                d = bc[j]
+                if not d:
+                    continue
+                L.append(f"| {r['methods'][j]} | " + " | ".join(f"{pc(d[c + '_l'])} ({pc(d[c + '_s'])})"
+                         for c in ("same", "false", "none", "spurious", "ce_ballots"))
+                         + f" | {pc(r['CE*'][j])} |")
             L += [""]
         L += [f"![strategy arrows](arrows-{r['tag']}.png)", "", f"![strategy shifts](shift-{r['tag']}.png)", "",
               f"![sincerity](sincerity-{r['tag']}.png)", ""]

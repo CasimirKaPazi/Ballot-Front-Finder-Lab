@@ -576,3 +576,16 @@ for k in (2, 3):
 from methods import sincerity_defined
 assert not sincerity_defined("TRASH") and not sincerity_defined("Inverse-Plurality") and sincerity_defined("STAR")
 print("sincerity and fidelity ok")
+
+# Condorcet winner in the cast ballots: a sincere ranking shows the real one; burying it behind
+# a rival in enough ballots makes the ballots show a false one
+from metrics import ballot_condorcet
+u2 = profile([(4, [0.5, 0.3, 0.15, 0.05]), (3, [0.15, 0.3, 0.5, 0.05]), (2, [0.3, 0.5, 0.15, 0.05])])
+Bor = METHODS["Borda"]
+d = ballot_condorcet(Bor, Bor.sincere(u2), u2, lambda P: P, Bor.honest(u2))
+assert d["bcw"] == "same", d
+Bb = Bor.sincere(u2).copy()
+Bb[:4] = [3, 1, 2, 0]                                  # the 4 A-voters put C above B (the real CW is B)
+assert ballot_condorcet(Bor, Bb, u2, lambda P: P, Bor.tally(Bb))["bcw"] in ("false", "none")
+assert ballot_condorcet(METHODS["Plurality"], METHODS["Plurality"].sincere(u2), u2, lambda P: P, np.ones(4) / 4)["bcw"] == ""
+print("ballot Condorcet winner ok")

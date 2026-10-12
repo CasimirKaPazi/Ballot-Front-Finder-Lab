@@ -20,6 +20,66 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
 
+## Sincerity, fidelity and the Condorcet winner in the ballots (2026-10-12)
+
+Runs (Hive): `python run.py --elections 600` at the defaults (99 voters, 6 candidates, 3 poll rounds, 10 polls, strategic share 0.5, aggressive share 0.5, seed 1), in two parts with `--methods` / `--exclude` by group: `run-20261012-191423` (condorcet, condorcet-based, minimax-family, hybrid, plurality-based, positional) and `run-20261012-195852` (the rest), analysed together (`python analyze.py run-20261012-191423 run-20261012-195852 --out …`; same seed, so the same elections). All 72 methods. 580 elections have a real Condorcet winner, 20 do not. First run with the current sincerity measure, fidelity and the ballot Condorcet winner (README, Sincerity and fidelity; Condorcet winner in the cast ballots). Point estimates; the ballot Condorcet table has no intervals.
+
+**Front** (VSE*, WME*, sincerity): Soft Minimax-L, Soft Minimax-D, Baldwin-ER.
+
+| Method | VSE* | WME* | Sincerity | Fidelity | (honest) |
+|---|---|---|---|---|---|
+| Geometric median | 93.1 | 88.2 | 99.8 | 87.1 | 94.1 |
+| Soft Minimax-L | 92.2 | 94.1 | 99.9 | 86.3 | 94.1 |
+| Soft Minimax-D | 90.8 | 95.5 | 99.9 | 86.8 | 94.1 |
+| Score | 90.8 | 91.4 | 99.9 | 85.5 | 94.1 |
+| MARS | 90.5 | 94.6 | 99.9 | 86.3 | 94.1 |
+| STAR | 90.2 | 95.0 | 99.9 | 86.8 | 94.1 |
+| INS | 89.9 | 94.7 | 99.8 | 86.9 | 94.1 |
+| ER-IRV | 87.9 | 86.3 | 97.1 | 76.7 | 81.8 |
+| Approval | 87.7 | 88.5 | 99.9 | 66.1 | 69.2 |
+| Approval runoff | 87.5 | 95.8 | 99.6 | 65.9 | 69.2 |
+| Baldwin-ER | 86.8 | 98.9 | 97.7 | 77.6 | 81.8 |
+| Minimax | 86.4 | 99.0 | 96.5 | 76.9 | 81.8 |
+| Schulze-ER | 85.5 | 99.4 | 97.7 | 77.5 | 81.8 |
+| IRV | 84.9 | 86.3 | 95.8 | 76.1 | 81.8 |
+| Borda | 84.0 | 90.1 | 94.8 | 74.4 | 81.8 |
+| TTR | 86.0 | 88.5 | 93.8 | 57.1 | 62.8 |
+| Plurality | 72.5 | 66.8 | 96.1 | 58.9 | 62.8 |
+
+Geometric median has the highest VSE* of all methods (93.1) but is dominated on WME* and sincerity; Score is dominated by Soft Minimax-L on VSE* and WME*.
+
+**Sincerity and fidelity: two kinds of strategy.**
+- **Score-based ballots (rated and hybrid groups) hardly reverse a preference** (sincerity 99.5–99.9), but they lose the most fidelity to strategy: from 94.1 honest to 85.5–87.4 (−7 to −9; Score −8.6). Their strategy is exaggeration and levelling.
+- **Approval ballots** neither reverse much (99.3–99.9) nor lose much to strategy (69.2 → 66): the format has already levelled what strategy would level.
+- **Strict rankings reverse preferences** (Condorcet methods 96.1–96.6, IRV 95.8, Borda 94.8) and lose less fidelity: from 81.8 honest (a ranking spaces candidates evenly) to 76–77 (−4 to −6).
+- **Equal-ranking (ER) variants sit in between:** sincerity 97.1–97.8, because burying by ties is not a reversal (burial ~19–21% against ~12% for the strict versions), with about the same fidelity as the strict versions.
+- **TTR has the lowest sincerity (93.8):** its only strategy, marking a compromise in round 1, is a large share of what a plurality mark can say. Plurality and TTR lose most to the format itself (honest fidelity 62.8).
+
+**The Condorcet winner in the ballots.** What a study of the cast ballots would see, against the real (sincere) Condorcet winner:
+
+| Method | Same | False | None | Spurious (of 20) | CE* (ballots) | CE* (real) | CE (honest) |
+|---|---|---|---|---|---|---|---|
+| IRV | 90.3% | 8.1% | 1.6% | 45% | 82.7% | 79.3% | 66.8% |
+| ER-IRV | 91.7% | 6.0% | 2.2% | 35% | 81.1% | 78.4% | 66.8% |
+| Supplementary vote | 89.5% | 9.5% | 1.0% | 60% | 69.5% | 62.9% | 54.1% |
+| Borda | 89.8% | 6.9% | 3.3% | 55% | 86.5% | 80.2% | 83.8% |
+| Minimax | 97.4% | 1.2% | 1.4% | 60% | 100.0% | 98.2% | 100.0% |
+| Schulze | 97.4% | 1.0% | 1.6% | 55% | 100.0% | 98.0% | 100.0% |
+| Minimax-ER | 95.5% | 1.6% | 2.9% | 25% | 100.0% | 97.8% | 100.0% |
+| STAR | 89.5% | 7.6% | 2.9% | 70% | 98.5% | 89.2% | 85.7% |
+| Score | 86.2% | 9.0% | 4.8% | 75% | 89.1% | 80.9% | 77.2% |
+| MJ | 84.8% | 11.6% | 3.6% | 75% | 88.5% | 78.8% | 68.3% |
+| Random pair runoff | 97.8% | 1.7% | 0.5% | 15% | 49.2% | 49.2% | 45.5% |
+
+Same / False / None: shares of the 580 elections with a real Condorcet winner; Spurious: share of the 20 without one in which the ballots show one (rough: 20 elections). CE (honest): the method's Condorcet efficiency with honest ballots.
+
+- **Strategy hides cycles.** In the elections without a real Condorcet winner the strategic rankings show one in 15–60% of cases (IRV 45%), the honest rankings in none. Ballot data that rarely shows a cycle is therefore weak evidence that the electorates had none.
+- **Strategy creates false Condorcet winners,** more under the methods that invite compromise: IRV 8.1%, Supplementary vote 9.5%, Borda 6.9%, against about 1% for Schulze, Minimax, Ranked pairs and Kemeny-Young.
+- **Ballot data overstates Condorcet efficiency.** IRV elects the ballots' Condorcet winner in 82.7% of the elections where the ballots have one, but the real one in 79.3%; Condorcet methods elect the ballots' winner by construction (100%; MMPO and SICT 99%+) and the real one in 92.3–98.3%. For IRV, strategy also raises the apparent rate well above the honest one (66.8%): voters compromising towards the Condorcet winner is one way IRV comes to elect it.
+- **Rated ballots are poor Condorcet data even when honest.** Rounding and ties on 0–5 scores make the honest ballots show another Condorcet winner in 10% and none in 3.3% of elections, and show one in 75% of the elections without one; three grades (MCA, 321) a false one in 20%. Truncated rankings do the same: MDDA and MAMPO (candidates above the voter's mean ranked, the rest tied) show a false one in 24% and none in 9% honestly, IRV-3 (three ranked) none in 10.9%.
+- **Where strategy is weak, the ballots stay right:** Random pair runoff's ballots show the real Condorcet winner in 97.8%. In TRASH and the Inverse-\* methods, where leaving the honest ballot pays most, the ballots show the real one in only 37–65%.
+- **Not a model of real IRV data.** In these electorates (6 candidates, 10 dimensions) IRV's honest Condorcet efficiency is only 67%, far below what real ranked-choice elections show. The model says that strategy pushes ballot data towards Condorcet consistency, not how large the effect is in real elections.
+
 ## First look: Soft Minimax (2026-10-10)
 
 Run (Claude, small): 100 elections, defaults, poll rounds 1 and 3; Soft Minimax with the clip at 20%, 40% and 60% of the score range, against Score, STAR, IC-MARS, INS, Minimax and MMPO. Point estimates; most differences are ties at this size. VSE* / WME* / sincerity at round 3:
