@@ -45,12 +45,24 @@ from metrics import election_row, summarize, pareto, worst_margins, electorate_s
 import participation as part
 
 
-def one_election(args):
-    (sc, seed, e, rounds, samples, group_size, share, max_score, exits, clones, poll_size, poll_error, search,
-     converge, aggr, names, participation, start, dummy) = args[:19]
-    lazy = args[19] if len(args) > 19 else 0.0           # laziness (methods.set_lazy)
-    set_max_score(max_score)                        # per process: workers do not share module state
-    set_lazy(lazy)
+def one_election(job):
+    """One electorate, every method in job["names"]: sincere and learned rows for each number of poll
+    rounds. job is a dict:
+        sc            the Scenario (electorate generator)
+        p             the run parameters (keys as in PARAMS; "rounds" is not used here)
+        e             the election number (with p["seed"], it fixes every random stream)
+        rounds        list of numbers of poll rounds to report
+        names         the methods
+        participation also run the no-show check (participation.py)
+        dummy         --start previous: the previous election's ballots per method, else None
+    A new run parameter only needs to be in PARAMS and be read from p here."""
+    sc, p, e, rounds, names = job["sc"], job["p"], job["e"], job["rounds"], job["names"]
+    participation, dummy = job.get("participation", False), job.get("dummy")
+    seed, samples, group_size, share = p["seed"], p["samples"], p["group_size"], p["strategic"]
+    exits, clones, poll_size, poll_error = p["exits"], p["clones"], p["poll_size"], p["poll_error"]
+    search, converge, aggr, start = p["search"], p["converge"], p["aggressive"], p["start"]
+    set_max_score(p["max_score"])                   # per process: workers do not share module state
+    set_lazy(p.get("lazy", 0.0))                    # laziness (methods.set_lazy)
     rng = np.random.default_rng([seed, e])
     u, voters, cands = electorate_positions(sc, rng)
     C = u.shape[1]
@@ -289,9 +301,8 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"],
                   p["cand_dispersion"], p["cand_shift"])
     todo = [e for e in range(elections) if e not in set(skip)]
-    jobs = [(sc, p["seed"], e, rounds, p["samples"], p["group_size"], p["strategic"], p["max_score"],
-             p["exits"], p["clones"], p["poll_size"], p["poll_error"], p["search"], p["converge"], p["aggressive"],
-             names, participation) for e in todo]
+    jobs = [{"sc": sc, "p": p, "e": e, "rounds": rounds, "names": names, "participation": participation}
+            for e in todo]
     meta = {k: p[k] for k in PARAMS if k != "rounds"} | {"version": VERSION}
     rows = []
     if not todo:
@@ -302,7 +313,7 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
             dummy = None
             if p["start"] == "previous":          # one previous election for the whole batch, per method
                 dummy = dict(zip(names, pool.map(previous_election, [(sc, p, max(rounds), n) for n in names])))
-            jobs = [j + (p["start"], dummy, p.get("lazy", 0.0)) for j in jobs]
+            jobs = [{**j, "dummy": dummy} for j in jobs]
             for batch in pool.imap(one_election, jobs, chunksize=1):   # in order: the file stays reproducible
                 batch = [{**meta, **r} for r in batch]
                 batch = [{k: r[k] for k in PARAMS} | r for r in batch]      # parameters first, as columns

@@ -352,10 +352,19 @@ print("IRV-3 ok", np.round(P, 3))
 # Methods that agree on every field must agree with nomination on too: the candidates' order of moves
 # is the same for every method (it once was keyed by method name, so such pairs differed honestly).
 from run import one_election
+
+
+def _p(**change):
+    """Run parameters for one_election in the tests (the keys of run.PARAMS)."""
+    return {"seed": 3, "samples": 5, "group_size": 10, "strategic": 0.5, "max_score": 5, "exits": 0, "clones": 0,
+            "poll_size": 0, "poll_error": 2.0, "search": 2, "converge": 0, "aggressive": 0.5, "start": "honest",
+            "lazy": 0.0, **change}
+
+
 rows = []
 for e in range(6):
-    rows += one_election((Scenario(n_voters=31, n_cands=5), 3, e, [1], 5, 10, 0.5, 5, 1, 2, 0, 2.0, 2, 0, 0.5,
-                          ["Borda", "Borda-ER", "IRV", "ER-IRV"], False, "honest", None))
+    rows += one_election({"sc": Scenario(n_voters=31, n_cands=5), "p": _p(exits=1, clones=2), "e": e, "rounds": [1],
+                          "names": ["Borda", "Borda-ER", "IRV", "ER-IRV"]})
 hon = {}
 for row in rows:
     if row["ballots"] == "sincere":
@@ -525,8 +534,8 @@ print("geometric median ok")
 def _run(names):
     out = []
     for e in range(3):
-        out += one_election((Scenario(n_voters=31, n_cands=4), 5, e, [1, 2], 5, 10, 0.5, 5, 0, 0, 0, 2.0, 3, 0, 0.5,
-                             names, False, "honest", None))
+        out += one_election({"sc": Scenario(n_voters=31, n_cands=4), "p": _p(seed=5, search=3), "e": e,
+                             "rounds": [1, 2], "names": names})
     return {(r["election"], r["rounds"], r["ballots"]): (r["U_method"], r["sincerity"]) for r in out if r["method"] == "STAR"}
 assert _run(["STAR"]) == _run(["Plurality", "STAR", "Minimax"])
 print("method results independent of the other methods ok")
