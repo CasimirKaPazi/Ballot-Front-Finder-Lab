@@ -39,7 +39,7 @@ import numpy as np
 
 from scenario import Scenario, electorate_positions
 from nomination import nominate, clone_setup, utilities, to_original
-from methods import METHODS, select, set_max_score, set_lazy, sincerity_defined
+from methods import METHODS, select, run_selection, set_max_score, set_lazy, sincerity_defined
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet
 import participation as part
@@ -138,7 +138,8 @@ def run_dir(name, kind, overwrite=False, resume=False):
     if not name:
         name = f"{kind}-{time.strftime('%Y%m%d-%H%M%S')}"
     path = name if os.path.dirname(name) else os.path.join(OUTPUT_DIR, name)
-    has = os.path.exists(os.path.join(path, "elections.csv"))
+    runs = os.path.join(path, "runs")
+    has = os.path.exists(os.path.join(path, "elections.csv")) or (os.path.isdir(runs) and bool(os.listdir(runs)))
     if resume and not has:
         raise SystemExit(f"{path} holds no run to resume")
     if has and not overwrite and not resume:
@@ -453,8 +454,8 @@ def main():
                          "dummy election under the same settings, its candidates relabelled at random)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=None)
-    ap.add_argument("--methods", nargs="+", default=None, help="run only these methods (start from none)")
-    ap.add_argument("--exclude", nargs="+", default=None, help="run all methods except these")
+    ap.add_argument("--methods", nargs="+", default=None, help="run only these methods or groups (start from none); \"all\" for every method")
+    ap.add_argument("--exclude", nargs="+", default=None, help="leave out these methods or groups (from the default: all but the references and inverse groups)")
     ap.add_argument("--participation", action="store_true",
                     help="also check participation (no-show paradox) on sincere and learned ballots; slower")
     ap.add_argument("--out", default=None,
@@ -468,7 +469,7 @@ def main():
     out = run_dir(a.out, "run", a.overwrite, a.resume)
     write_command(out, a.resume)
     p = {k: getattr(a, k) for k in PARAMS}
-    names = select(a.methods, a.exclude)
+    names = run_selection(a.methods, a.exclude)
     path = os.path.join(out, "elections.csv")
     key = run_key(p, PARAMS)
     done, header = resume_state(path, names, {key: [a.rounds]}) if a.resume else ({}, None)

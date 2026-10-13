@@ -34,15 +34,21 @@ python analyze.py rounds --compare "BTR-score:STAR"      # -> output/rounds/anal
 **One folder per run.** Every run or sweep writes into its own folder, and its analysis goes into an `analysis/` folder inside it, so results and their analysis stay together and can be copied or published as one unit:
 
 ```
-output/rounds/
+output/base/                     run.py --out base
     elections.csv      one row per election, method and ballot set (the data)
+    summary.csv        one row per method
+    table.txt          the printed table
     command.txt        the exact command, simulator version and start time
-    summary.csv        run.py only: one row per method
-    table.txt          run.py only: the printed table
-    analysis/          written by python analyze.py rounds: report.md, summary.csv, plots, command.txt
+    analysis/          written by python analyze.py base: report.md, summary.csv, plots, command.txt
+output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
+    runs/01-lazy=0.0-seed=1.csv  one elections CSV per run: its number and the varied parameters
+    runs/02-lazy=0.0-seed=2.csv  (poll rounds of one run share its file)
+    ...
+    command.txt
+    analysis/          written by python analyze.py lazy (all files in runs/)
 ```
 
-`--out` names the folder; a name without a directory goes into `output/` (created when needed), one with a directory (`--out runs/test`) is used as given. Without `--out` the folder is named by the time (`run-20261011-143000`, `sweep-…`), so nothing is overwritten by accident; an existing run is only replaced with `--overwrite`. `analyze.py` takes run folders (or elections CSV files) and looks up bare names in `output/`. With several inputs (combining runs) it needs `--out` for the analysis folder.
+`--out` names the folder; a name without a directory goes into `output/` (created when needed), one with a directory (`--out runs/test`) is used as given. Without `--out` the folder is named by the time (`run-20261011-143000`, `sweep-…`), so nothing is overwritten by accident; an existing run is only replaced with `--overwrite`. `analyze.py` takes run or sweep folders (a sweep folder means all its run files) or elections CSV files, and looks up bare names in `output/`. Since a sweep keeps one file per run, single runs can be analysed alone, moved, or mixed with runs of other sweeps (see Combining runs). With several inputs (combining runs) it needs `--out` for the analysis folder.
 
 **Progress, saving and resuming.** While a run or sweep works, a line shows the elections done, the time so far and an estimate of the time left (redrawn in place after every election in a terminal; when the output goes to a file, a new line at every tenth of the way). Each election is written to `elections.csv` as soon as it is done, so nothing finished is lost, and a run in progress can already be analysed. If a run stops (Ctrl-C, a crash, the computer shut down), the same command with `--resume` (and the same `--out`) continues it: complete elections are kept, an incomplete last one is dropped, and only the missing ones are run. Since every election depends only on its parameters, seed and number, the result is identical to an uninterrupted run, row for row. After Ctrl-C the exact command to continue is printed. `--resume` stops if the command differs (other methods, parameters or simulator version).
 
@@ -179,13 +185,13 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--start` | honest | what the first poll shows: `honest` ballots, or `previous`: the result of a previous election (see Starting information) |
 | `--participation` | off | also check participation (no-show paradox) on sincere and learned ballots (see Participation); slower |
 | `--workers` | all cores | parallel processes |
-| `--methods` | all | run only these methods (start from none); method or group names (see Methods), case ignored |
-| `--exclude` | none | run all methods except these |
+| `--methods` | all but references and inverse | run only these methods (start from none); method or group names (see Methods), case ignored; `all` for every method |
+| `--exclude` | none | leave these out (from the default, or from `--methods`) |
 | `--out` | time-stamped | folder of the run: `output/<out>/` (see One folder per run) |
 | `--overwrite` | off | replace an existing run in `--out` |
 | `--resume` | off | continue an interrupted run in `--out` with the same command (see Progress, saving and resuming) |
 
-`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--converge`, `--group-size`, `--strategic`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid and writes `output/<out>/elections.csv`, one run after another. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--converge`, `--group-size`, `--strategic`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid, one run after another, and writes one elections CSV per run into `output/<out>/runs/`. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
 
 `analyze.py`:
 
@@ -388,7 +394,7 @@ In the ER variants (rankings with ties) a tie at level 0 of two or more candidat
 
 ## Methods
 
-72 methods, listed by group (see Groups below). "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
+72 methods, listed by group (see Groups below); 61 run by default (all but the references and inverse groups). "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
 
 **condorcet**
 
@@ -524,12 +530,12 @@ In the ER variants (rankings with ties) a tie at level 0 of two or more candidat
 | `rated` | Score, MJ, MCA, Reciprocal score, INS, Geometric median |
 | `hybrid` | STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D (ratings combined with pairwise comparisons or runoffs) |
 | `positional` | Borda, Borda-ER, Dowdall |
-| `references` | Random pair runoff, Anti-plurality, TRASH (benchmarks, not proposals; hidden in the plots by default) |
-| `inverse` | Inverse-Plurality, Inverse-Approval, Inverse-Minimax, Inverse-IRV, Inverse-ER-IRV, Inverse-TTR, Inverse-Borda, Inverse-Score (tests of the strategy model, below; hidden in the plots by default) |
+| `references` | Random pair runoff, Anti-plurality, TRASH (benchmarks, not proposals; not run unless named, e.g. `--methods all` or `--methods references STAR`, and hidden in the plots by default) |
+| `inverse` | Inverse-Plurality, Inverse-Approval, Inverse-Minimax, Inverse-IRV, Inverse-ER-IRV, Inverse-TTR, Inverse-Borda, Inverse-Score (tests of the strategy model, below; not run unless named; hidden in the plots by default) |
 
 **Comparison sets**, selection names across groups (not plot panels): `er-pairs`, each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Ranked Robin-SR/Ranked Robin. Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.
 
-Example: `--methods condorcet STAR`, `--methods er-pairs` or `--exclude references`.
+Example: `--methods condorcet STAR`, `--methods er-pairs`, `--methods all --exclude inverse`. Without `--methods`, run.py and sweep.py run every method except the groups references and inverse (benchmarks and model tests); the inverse group, too, is only run when named.
 
 Pairwise preferences always come from the ballot itself, so equal ratings count as no preference. All ties are broken uniformly among the tied candidates and counted exactly.
 

@@ -1,4 +1,4 @@
-"""Run a grid of conditions and seeds into one elections CSV, for analyze.py.
+"""Run a grid of conditions and seeds, one elections CSV per run, for analyze.py.
 
 Every flag that takes several values spans one dimension of the grid; all combinations run.
 With --one-at-a-time, the first value of every flag is the base condition, and each other value
@@ -16,8 +16,10 @@ Conditions that differ only in --rounds come from one run (see strategy.respond)
 
 Output, in one folder per sweep (--out; a name without a directory goes into output/; default
 sweep-<date>-<time>). `python analyze.py <folder>` puts its analysis into <folder>/analysis/.
-    elections.csv   rows from all runs, each carrying its parameters as columns
-                    (written run by run, so a long sweep can be inspected while it runs)
+    runs/NN-<varied parameters>.csv   one elections CSV per run (a combination of the varied
+                    parameters; poll rounds of one run share its file), each row carrying its
+                    parameters as columns; files can be moved, mixed with other runs' files or
+                    analysed alone
     command.txt     the command, simulator version and start time (a resumed run adds its own)
 Every election is saved as soon as it is done; after an interruption the same command with
 --resume continues where it stopped (see README, Progress, saving and resuming).
@@ -30,7 +32,7 @@ import time
 
 from run import (simulate, PARAMS, run_dir, write_command, group_size_arg, check_params, run_key,
                  resume_state, CsvSink, interrupted)
-from methods import select
+from methods import select, run_selection
 
 
 def main():
@@ -61,8 +63,8 @@ def main():
     ap.add_argument("--converge", type=int, nargs="+", default=[0])
     ap.add_argument("--seeds", type=int, nargs="+", default=[1])
     ap.add_argument("--workers", type=int, default=None)
-    ap.add_argument("--methods", nargs="+", default=None, help="run only these methods (start from none)")
-    ap.add_argument("--exclude", nargs="+", default=None, help="run all methods except these")
+    ap.add_argument("--methods", nargs="+", default=None, help="run only these methods or groups (start from none); \"all\" for every method")
+    ap.add_argument("--exclude", nargs="+", default=None, help="leave out these methods or groups (from the default: all but the references and inverse groups)")
     ap.add_argument("--one-at-a-time", action="store_true",
                     help="vary one parameter at a time around the base (the first value of every flag)")
     ap.add_argument("--participation", action="store_true",
@@ -73,7 +75,7 @@ def main():
     ap.add_argument("--resume", action="store_true",
                     help="continue an interrupted sweep in --out (same command): finished elections are kept")
     a = ap.parse_args()
-    names = select(a.methods, a.exclude)
+    names = run_selection(a.methods, a.exclude)
     check_params(a, ap.error)
     out = run_dir(a.out, "sweep", a.overwrite, a.resume)
     write_command(out, a.resume)
@@ -108,31 +110,45 @@ def main():
     grid = list(runs.values())
     print(f"{len(grid)} runs x {a.elections} elections, {len(names)} methods"
           + (f" (poll rounds {', '.join(map(str, values['rounds']))} from one run each)" if len(values["rounds"]) > 1 else ""))
-    path = os.path.join(out, "elections.csv")
+    runs_dir = os.path.join(out, "runs")
+    os.makedirs(runs_dir, exist_ok=True)
     keys = [run_key(p, PARAMS) for p in grid]
-    done, header = resume_state(path, names, {k: p["rounds"] for k, p in zip(keys, grid)}) \
-        if a.resume else ({}, None)
-    if a.resume:
-        print(f"resuming: {sum(len(v) for v in done.values())} of {len(grid) * a.elections} elections already done")
-    sink = CsvSink(path, header)
+    files = [os.path.join(runs_dir, run_file(i, p, values)) for i, p in enumerate(grid, 1)]
     try:
-        for i, (p, key) in enumerate(zip(grid, keys), 1):
+        for i, (p, key, path) in enumerate(zip(grid, keys, files), 1):
+            done, header = (resume_state(path, names, {key: p["rounds"]}) if a.resume and os.path.exists(path)
+                            else ({}, None))
             skip = done.get(key, set())
             if len(skip) >= a.elections:
                 print(f"[{i}/{len(grid)}] done before")
                 continue
             t = time.time()
             varying = ", ".join(f"{k}={p[k]}" for k in PARAMS if len(values[k]) > 1)
-            simulate(p, a.elections, a.workers, names, a.participation, sink=sink, skip=skip,
-                     label=f"[{i}/{len(grid)}] ")
+            sink = CsvSink(path, header)
+            try:
+                simulate(p, a.elections, a.workers, names, a.participation, sink=sink, skip=skip,
+                         label=f"[{i}/{len(grid)}] ")
+            finally:
+                sink.close()
             print(f"[{i}/{len(grid)}] {varying or 'single run'}: {time.time() - t:.0f}s")
     except KeyboardInterrupt:
-        sink.close()
-        with open(path, newline="") as f:
-            n = len({(run_key(r, PARAMS), r["election"]) for r in csv.DictReader(f)})
+        n = 0
+        for path in files:
+            if os.path.exists(path):
+                with open(path, newline="") as f:
+                    n += len({r["election"] for r in csv.DictReader(f)})
         interrupted(out, n)
-    sink.close()
-    print(f"wrote {out}/elections.csv and command.txt; analyse with: python analyze.py {out}")
+    print(f"wrote {out}/runs/ ({len(grid)} file(s), one per run) and command.txt; "
+          f"analyse with: python analyze.py {out}")
+
+
+def run_file(i, p, values):
+    """File name of one run of the sweep: its number and the parameters that vary, e.g.
+    03-lazy=0.5-seed=2.csv (single run: 01.csv)."""
+    parts = [f"{k}={'-'.join(map(str, p[k])) if isinstance(p[k], list) else p[k]}"
+             for k in PARAMS if len(values[k]) > 1 and k != "rounds"]
+    name = "-".join([f"{i:02d}"] + parts)
+    return "".join(ch if ch.isalnum() or ch in "=-._" else "_" for ch in name) + ".csv"
 
 
 if __name__ == "__main__":

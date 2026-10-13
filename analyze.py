@@ -64,21 +64,36 @@ TYPES = ["compromise", "burial", "pushover"]
 PARAMS = [k for k in RUN_PARAMS if k != "seed"]      # condition parameters, as run.py writes them
 NOM = ["nom_changed", "nom_exits", "nom_clones", "nom_settled"]     # per method and election (sincere rows)
 PART = ["noshow", "noshow_voters", "noshow_gain"]   # participation check (run.py --participation), both ballot sets
-def input_path(p):
-    """A run or sweep folder, or an elections CSV; a bare name not found here is looked up in output/."""
+def input_paths(p):
+    """The elections CSVs of one input: a run folder (its elections.csv), a sweep folder (every CSV in
+    its runs/ folder, one per run; also an older sweep's elections.csv), or a CSV file. A bare name
+    not found here is looked up in output/. Returns (files, folder for the default analysis)."""
     if not os.path.exists(p) and not os.path.dirname(p):
         p = os.path.join(OUTPUT_DIR, p)
     if os.path.isdir(p):
-        p = os.path.join(p, "elections.csv")
+        files = []
+        if os.path.exists(os.path.join(p, "elections.csv")):
+            files.append(os.path.join(p, "elections.csv"))
+        runs = os.path.join(p, "runs")
+        if os.path.isdir(runs):
+            files += sorted(os.path.join(runs, f) for f in os.listdir(runs) if f.endswith(".csv"))
+        if not files:
+            raise SystemExit(f"no elections CSV in {p} (elections.csv or runs/*.csv)")
+        return files, p
     if not os.path.exists(p):
         raise SystemExit(f"no elections CSV at {p}")
-    return p
+    return [p], os.path.dirname(p) or "."
 
 
 def source_name(p):
-    """How an input is named in notes and the report: its folder for elections.csv, else the file."""
+    """How an input is named in notes and the report: its folder for elections.csv, folder/file for a
+    sweep's run file, else the file."""
     d, f = os.path.split(os.path.abspath(p))
-    return os.path.basename(d) if f == "elections.csv" else f
+    if f == "elections.csv":
+        return os.path.basename(d)
+    if os.path.basename(d) == "runs":
+        return f"{os.path.basename(os.path.dirname(d))}/{f[:-4]}"
+    return f
 
 
 OPTIONAL_PARAMS = {"lazy": "0.0"}   # parameters added after 1.0.0, with the value older runs implied
@@ -553,11 +568,12 @@ def main():
                     help="methods (or groups) to follow across all conditions: track-<method>.png each")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
-    a.csv = [input_path(p) for p in a.csv]
+    found = [input_paths(p) for p in a.csv]
+    a.csv = [f for files, _ in found for f in files]
     if a.out is None:
-        if len(a.csv) > 1:
+        if len(found) > 1:
             ap.error("with several inputs, name the analysis folder with --out")
-        a.out = os.path.join(os.path.dirname(a.csv[0]) or ".", "analysis")
+        a.out = os.path.join(found[0][1], "analysis")
     else:
         a.out = out_path(a.out)
     os.makedirs(a.out, exist_ok=True)

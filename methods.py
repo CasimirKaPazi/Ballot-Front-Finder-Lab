@@ -1527,11 +1527,15 @@ def group_of(method):
     return next((g for g, ms in GROUPS.items() if method in ms), "other")
 
 
+DEFAULT_LEFT_OUT = ("references", "inverse")   # groups run.py and sweep.py leave out unless asked for
+
+
 def select(include=None, exclude=None):
     """Method names: `include` starts from none, `exclude` from all. Names are methods, groups (see
-    GROUPS) or comparison sets (COMPARISONS); matching ignores case."""
+    GROUPS), comparison sets (COMPARISONS) or "all"; matching ignores case."""
     lookup = {k.lower(): [k] for k in METHODS}
     lookup.update({g: ms for g, ms in {**GROUPS, **COMPARISONS}.items()})
+    lookup["all"] = list(METHODS)
 
     def resolve(names):
         bad = [x for x in names if x.lower() not in lookup]
@@ -1543,3 +1547,12 @@ def select(include=None, exclude=None):
     chosen = resolve(include) if include else set(METHODS)
     chosen -= resolve(exclude or [])
     return [k for k in METHODS if k in chosen]
+
+
+def run_selection(include=None, exclude=None):
+    """The methods a run uses: as select, but without --methods the default is every method except
+    the groups in DEFAULT_LEFT_OUT (references, inverse: benchmarks and model tests, not proposals).
+    Name them, or "all", in --methods to run them."""
+    if not include:
+        exclude = list(exclude or []) + list(DEFAULT_LEFT_OUT)
+    return select(include, exclude)
