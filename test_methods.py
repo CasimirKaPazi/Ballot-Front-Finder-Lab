@@ -629,6 +629,28 @@ for _ in range(300):                                                            
     assert np.allclose(pos, np.arange(4, 4 - len(pos), -1)) and 1 <= len(pos) <= 4
 print("truncated rankings and laziness ok")
 
+# Renamed methods and groups: old names lead to existing current ones, in selection and in analysis
+for _old in _mm.RENAMED:
+    assert _mm.current_name(_old) in METHODS, _old
+    assert _mm.select([_old]) == [_mm.current_name(_old)], _old
+for _old in _mm.RENAMED_GROUPS:
+    assert _mm.select([_old]) == _mm.select([_mm.current_name(_old, _mm.RENAMED_GROUPS)]), _old
+assert _mm.current_name("IRV") == "IRV"
+import analyze as _an, csv as _csv, tempfile as _tf, os as _os
+with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "regression.csv"), newline="") as _f:
+    _old_rows = [r for r in _csv.DictReader(_f) if r["method"] == "TTR"]
+for r in _old_rows:
+    r["method"] = "Top-two runoff"                                     # as a run from before 2026-10-07
+with _tf.TemporaryDirectory() as _d:
+    _p = _os.path.join(_d, "elections.csv")
+    with open(_p, "w", newline="") as _f:
+        _w = _csv.DictWriter(_f, list(_old_rows[0]))
+        _w.writeheader()
+        _w.writerows(_old_rows)
+    assert {r["method"] for r in _an.load([_p])} == {"TTR"}
+    assert _an.RENAMED_SEEN == {"Top-two runoff": "TTR"}
+print("renamed methods ok")
+
 # Add-ons (addons/*.py): each file's own test(), and the template as a check of the loader contract
 import methods as _ma, importlib.util as _iu, os as _os
 for _fn in sorted(set(_ma.ADDONS.values())):

@@ -580,6 +580,16 @@ python run.py --methods "My method" --out mine          # added to methods.py; s
 python analyze.py reference mine --out compare            # reference: the folder of the existing run
 ```
 
+**Renamed methods.** The results files store each method by its name. When a method is renamed, the old name goes into `RENAMED` in methods.py (old name → current name; groups in `RENAMED_GROUPS`), so older runs keep combining with newer ones: `analyze.py` reads old names as the current ones and says so in the report, and the old names still work in `--methods`, `--exclude`, `--show`, `--hide` and `--track`. This is only for a pure rename, with the same rule and the same results. A method whose rule changes gets a new name and no entry, so old and new results are never mixed. A removed method gets no entry either: its rows in old runs stay under their old name. An add-on may not use an old name.
+
+| Old name | Current name |
+|---|---|
+| Top-two runoff | TTR |
+| Approval runoff if needed | Approval cond. runoff |
+| Minimax-wv | MMWV |
+| MARA | ARA |
+| condorcet-hybrid (group) | condorcet-based |
+
 How the files are combined (the report lists what was done, and `analyze.py` prints it):
 - **Same elections:** rows of the same election (same parameters, seed and election number) must describe the same electorate. If they do not, the files come from incompatible simulator versions and the analysis stops.
 - **Duplicates:** a method that appears in several files keeps its rows from the last file, for the elections both have. The report says whether its results changed, which shows whether the method (or the simulator) was changed between the runs.

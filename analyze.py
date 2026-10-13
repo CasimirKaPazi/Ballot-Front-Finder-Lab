@@ -55,7 +55,7 @@ import numpy as np
 import plots
 from metrics import pareto
 from run import out_path, write_command, group_text, strategy_text, cand_text, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
-from methods import GROUPS, METHODS, select, group_of, sincerity_defined
+from methods import GROUPS, METHODS, select, group_of, sincerity_defined, current_name
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
 FRONT = ["VSE*", "WME*", "sincerity"]   # the axes dominance is judged on
@@ -98,6 +98,7 @@ def source_name(p):
 
 OPTIONAL_PARAMS = {"lazy": "0.0"}   # parameters added after 1.0.0, with the value older runs implied
 OLD_SINCERITY = []     # inputs written before the current sincerity measure (no fidelity column)
+RENAMED_SEEN = {}      # old method name -> current name, for names renamed since the input was written
 
 
 def load(paths):
@@ -114,6 +115,10 @@ def load(paths):
                 OLD_SINCERITY.append(source_name(p))
             for r in reader:
                 r.update(fill)                   # parameters added later, at their default (older CSVs)
+                new = current_name(r["method"])  # methods renamed since (methods.RENAMED)
+                if new != r["method"]:
+                    RENAMED_SEEN[r["method"]] = new
+                    r["method"] = new
                 r["_file"] = source_name(p)
                 rows.append(r)
     if not rows:
@@ -588,6 +593,9 @@ def main():
     rows_all, combined, cover = combine(load(a.csv))
     for line in combined:
         print("note:", line)
+    if RENAMED_SEEN:
+        print("note: old method names read as the current ones: "
+              + ", ".join(f"{o} -> {n}" for o, n in sorted(RENAMED_SEEN.items())))
     if OLD_SINCERITY:
         print(f"note: {', '.join(OLD_SINCERITY)} predate(s) the current sincerity measure: their sincerity is an "
               "earlier one, and fidelity is missing; rerun for the current measures")
@@ -656,6 +664,9 @@ def main():
     L += [f"Input: {', '.join(source_name(p) for p in a.csv)} (simulator version {', '.join(versions)}"
           + ("; mixed versions" if len(versions) > 1 else "") + f"; analysis version {VERSION}). "
           f"Bootstrap: {a.boot} paired replicates over elections. Brackets are 95% intervals.", ""]
+    if RENAMED_SEEN:
+        L += ["Methods renamed since the input was written, reported under their current names: "
+              + ", ".join(f"{o} → {n}" for o, n in sorted(RENAMED_SEEN.items())) + ".", ""]
     if OLD_SINCERITY:
         L += [f"**Note:** {', '.join(OLD_SINCERITY)} predate(s) the current sincerity measure (2026-10-12): the "
               "Sincerity values from there are an earlier measure (not comparable), and so is the sincerity axis of "

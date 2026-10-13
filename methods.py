@@ -1505,6 +1505,33 @@ GROUPS = {
     "inverse": ["Inverse-Plurality", "Inverse-Approval", "Inverse-Minimax", "Inverse-IRV", "Inverse-ER-IRV", "Inverse-TTR",
                 "Inverse-Borda", "Inverse-Score"],
 }
+# Renamed methods and groups: old name -> current name. Results files store method names, so a run
+# from before a rename would otherwise no longer combine with newer runs. analyze.py reads old names
+# as the current ones, and old names work wherever methods are selected (--methods, --hide, ...).
+# Only for a pure rename (the same rule, the same results); a method whose rule changed gets a new
+# name and no entry here. A removed method gets no entry either: its old rows stay as they are.
+RENAMED = {
+    "Top-two runoff": "TTR",                                 # 2026-10-07
+    "Approval runoff if needed": "Approval cond. runoff",    # 2026-10-07
+    "Minimax-wv": "MMWV",                                    # 2026-10-07
+    "MARA": "ARA",
+}
+RENAMED_GROUPS = {
+    "condorcet-hybrid": "condorcet-based",                   # 2026-10-12
+}
+
+
+def current_name(name, table=None):
+    """The current name of a method (or, with table=RENAMED_GROUPS, a group): follows RENAMED,
+    also over several renames; a name that was never renamed comes back unchanged."""
+    table = RENAMED if table is None else table
+    seen = set()
+    while name in table and name not in seen:
+        seen.add(name)
+        name = table[name]
+    return name
+
+
 # ---------- add-ons: methods in separate files ----------
 ADDON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "addons")
 ADDONS = {}          # method name -> add-on file it comes from
@@ -1536,6 +1563,8 @@ def _load_addons(folder=ADDON_DIR):
         for k, m in new.items():
             if k in METHODS:
                 raise SystemExit(f"add-on {fn}: method {k!r} exists already (built in or in another add-on)")
+            if k in RENAMED:
+                raise SystemExit(f"add-on {fn}: {k!r} is the old name of {current_name(k)!r}; choose another name")
             METHODS[k] = m
             ADDONS[k] = fn
         GROUPS.setdefault(getattr(mod, "GROUP", "addons"), []).extend(new)
@@ -1545,6 +1574,8 @@ _load_addons()
 _grouped = [m for ms in GROUPS.values() for m in ms]
 assert sorted(_grouped) == sorted(METHODS), "every method must be in exactly one group"
 assert not {g.lower() for g in GROUPS} & {m.lower() for m in METHODS}, "group names must differ from method names"
+assert not set(RENAMED) & set(METHODS), "an old name (RENAMED) must not be a current method"
+assert not set(RENAMED_GROUPS) & set(GROUPS), "an old group name (RENAMED_GROUPS) must not be a current group"
 
 # Comparison sets: selection names like the groups, across groups (not plot panels)
 COMPARISONS = {
@@ -1573,7 +1604,10 @@ DEFAULT_LEFT_OUT = ("references", "inverse")   # groups run.py and sweep.py leav
 def select(include=None, exclude=None):
     """Method names: `include` starts from none, `exclude` from all. Names are methods, groups (see
     GROUPS), comparison sets (COMPARISONS) or "all"; matching ignores case."""
-    lookup = {k.lower(): [k] for k in METHODS}
+    lookup = {k.lower(): [current_name(k)] for k in RENAMED if current_name(k) in METHODS}   # old names
+    lookup.update({g.lower(): GROUPS[current_name(g, RENAMED_GROUPS)] for g in RENAMED_GROUPS
+                   if current_name(g, RENAMED_GROUPS) in GROUPS})
+    lookup.update({k.lower(): [k] for k in METHODS})
     lookup.update({g: ms for g, ms in {**GROUPS, **COMPARISONS}.items()})
     lookup["all"] = list(METHODS)
 
