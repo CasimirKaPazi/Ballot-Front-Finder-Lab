@@ -20,6 +20,7 @@ Condorcet efficiency (CE), reported alongside: among elections with a sincere Co
 the average probability that the method elects it.
 """
 import numpy as np
+from ballots import BALLOTS
 
 def worst_margins(u):
     """m[c]: candidate c's smallest pairwise margin against any other, as a share of voters."""
@@ -68,7 +69,6 @@ def election_row(u, P, m):
     }
 
 
-ORDERED_BALLOTS = ("rank", "strict", "weak", "trunc", "trunc3", "score", "grade3")   # ballots that record an order
 
 
 def condorcet_winner(gt):
@@ -90,7 +90,7 @@ def ballot_condorcet(method, B, u, back, P):
     ballots although there is a real one), spurious (one in the ballots, none in reality), neither;
     empty for other ballot types. p_bcw: probability that the method elects the ballots' Condorcet
     winner (empty without one): its Condorcet efficiency as ballot data would show it."""
-    if method.ballot not in ORDERED_BALLOTS:
+    if not BALLOTS[method.ballot].ordered:              # ballots that record an order (ballots.py)
         return {"bcw": "", "p_bcw": ""}
     X = -B if method.inverse else B
     gt_b = (X[:, :, None] > X[:, None, :]).sum(axis=0)

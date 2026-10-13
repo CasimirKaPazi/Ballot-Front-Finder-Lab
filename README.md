@@ -60,7 +60,8 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | File | Contents |
 |---|---|
 | `scenario.py` | Electorate generator: spatial clusters, Zipf dimensions, absolute utilities `exp(-distance / width)` |
-| `methods.py` | Ballot types, sincere ballots, exact tallies on ballot matrices (ties shared), method groups, add-on loader |
+| `ballots.py` | Ballot types: encodings, sincere ballots, laziness (one entry per type in `BALLOTS`) |
+| `methods.py` | Exact tallies on ballot matrices (ties shared), method groups, renamed methods, add-on loader |
 | `addons/` | Methods in separate files, loaded at start (see Methods, Add-ons); `_template.py` to start from |
 | `ADDONS.md` | Tutorial: writing your own method as an add-on |
 | `strategy.py` | Learning engine, sincerity and strategy types |
@@ -540,7 +541,7 @@ In the ER variants (rankings with ties) a tie at level 0 of two or more candidat
 | `GROUP` | no | the group its methods join: an existing one (e.g. `rated`) or a new one; default `addons` |
 | `test()` | no | its own checks (a small profile with a known winner), run by test_methods.py |
 
-The ballot type (one of the built-in ones) decides the sincere ballots, laziness, the strategic moves and the measures, so a new method gets all of these for free. Results of add-on methods can be combined with existing runs like any other method (Combining runs): run only the new method with the same parameters and seed.
+The ballot type (one of the built-in ones in ballots.py) decides the sincere ballots, laziness, the strategic moves and the measures, so a new method gets all of these for free. Results of add-on methods can be combined with existing runs like any other method (Combining runs): run only the new method with the same parameters and seed.
 
 **Current add-ons:**
 

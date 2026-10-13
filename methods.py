@@ -1,6 +1,7 @@
-"""Voting methods: ballot types, sincere ballots, and exact tallies on ballot matrices.
+"""Voting methods: exact tallies on ballot matrices, method groups, add-ons.
 
-A ballot matrix B has one row per voter and one column per candidate:
+The ballot types (their encodings, sincere ballots, laziness) are defined in ballots.py; in short,
+a ballot matrix B has one row per voter and one column per candidate:
   "fav"      one-hot: 1 for the named candidate
   "rank"     rank points: best C-1 ... worst 0. Truncated rankings: the k ranked candidates get
              C-1 ... C-k, the unranked ones 0 (tied last; a full ranking is k = C-1). Voters may
@@ -53,7 +54,7 @@ LAZY = 0.0        # laziness of honest rankings, 0..1; change it with set_lazy, 
 
 
 def set_lazy(x):
-    """Laziness of honest ballots (rankings, approval, scores, grades; LAZY_BALLOTS): a voter ranks a candidate only
+    """Laziness of honest ballots (rankings, approval, scores, grades: the ballot types with lazy=True in ballots.py): a voter ranks a candidate only
     if its utility, stretched to 0..1 between the voter's least and most liked candidate, is at least x
     (0 = full rankings, 1 = only the favourite; the favourite is always ranked). It is only the honest
     starting point: strategic voters may rank more or less. Call it in every process."""
@@ -61,22 +62,6 @@ def set_lazy(x):
     if not 0 <= float(x) <= 1:
         raise ValueError("laziness must be between 0 and 1")
     LAZY = float(x)
-
-
-def cares(u, lazy):
-    """Per voter and candidate: True if a lazy voter (laziness `lazy`) ranks the candidate."""
-    mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
-    p = (u - mn) / np.where(mx - mn > 1e-12, mx - mn, 1)
-    return (p >= lazy - 1e-12) | (u >= mx)
-
-
-def truncate(R, keep):
-    """Rank points R (C-1 ... 0, strict) truncated to the candidates in `keep` (a top segment of the
-    ranking): those keep their points C-1 ... C-k, the others get 0 (unranked, tied last)."""
-    C = R.shape[1]
-    k = keep.sum(axis=1, keepdims=True)
-    full = k >= C - 1                                        # ranking all but one = the full ranking
-    return np.where(keep | full, R, 0.0)
 
 
 def set_max_score(m):
@@ -97,102 +82,12 @@ def _keepnorm_scale():
     return float(L * MAXS) if L <= 10 ** 6 else 1.0
 
 
-# ---------- sincere ballots ----------
-def fav_ballots(u):
-    B = np.zeros_like(u)
-    B[np.arange(u.shape[0]), u.argmax(axis=1)] = 1
-    return B
-
-
-def rank_ballots(u):
-    order = np.argsort(-u, axis=1, kind="stable")
-    B = np.empty_like(u)
-    C = u.shape[1]
-    B[np.arange(u.shape[0])[:, None], order] = np.arange(C - 1, -1, -1)
-    return B
-
-
-def approval_ballots(u, lazy=0.0):
-    """Every candidate above the voter's mean utility (at least the favourite); with laziness only
-    those the voter also cares about (cares): at 1 a bullet vote for the favourite."""
-    a = u > u.mean(axis=1, keepdims=True) + 1e-12
-    if lazy > 0:
-        a &= cares(u, lazy)
-    none = ~a.any(axis=1)
-    a[none, u[none].argmax(axis=1)] = True
-    return a.astype(float)
-
-
-def score_ballots(u, lazy=0.0):
-    """0..MAXS stretched to the voter's own utility range, rounded; with laziness the candidates the
-    voter does not care about (cares) are left blank, which counts as 0: at 1 only the favourite
-    gets a score."""
-    mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
-    d = np.where(mx - mn > 1e-12, mx - mn, 1.0)
-    B = np.rint(MAXS * (u - mn) / d)
-    return np.where(cares(u, lazy), B, 0.0) if lazy > 0 else B
-
-
-def fav_run_ballots(u):
-    return rank_ballots(u) + u.shape[1] * fav_ballots(u)
-
-
-def app_run_ballots(u, lazy=0.0):
-    return rank_ballots(u) + u.shape[1] * approval_ballots(u, lazy)     # laziness: round-1 approvals only
-
-
-def veto_ballots(u):
-    B = np.zeros_like(u)
-    B[np.arange(u.shape[0]), u.argmin(axis=1)] = -1
-    return B
-
-
-def lazy_rank_ballots(u, lazy=None):
-    """Honest rankings with laziness: the candidates the voter cares about (cares) keep their rank
-    points, the rest are unranked (0)."""
-    lazy = LAZY if lazy is None else lazy
-    R = rank_ballots(u)
-    return R if lazy <= 0 else truncate(R, cares(u, lazy))
-
-
-def trunc_ballots(u, lazy=None):
-    lazy = LAZY if lazy is None else lazy
-    R, A = rank_ballots(u), approval_ballots(u)
-    if lazy > 0:
-        A = A * cares(u, lazy)
-    k = A.sum(axis=1, keepdims=True)
-    return np.where(A > 0, R - (u.shape[1] - k) + 1, 0.0)   # top k get k ... 1
-
-
+# ---------- sincere ballots: in ballots.py ----------
 TRUNC3 = 3       # most candidates ranked on a "trunc3" ballot
 
-
-def trunc3_ballots(u, lazy=None):
-    lazy = LAZY if lazy is None else lazy
-    C = u.shape[1]
-    k = min(TRUNC3, C)
-    R = rank_ballots(u)
-    keep = R >= C - k
-    if lazy > 0:
-        keep = keep & cares(u, lazy)
-        kk = keep.sum(axis=1, keepdims=True)
-        return np.where(keep, R - (C - kk) + 1, 0.0)            # the kept top kk get kk ... 1
-    return np.where(keep, R - (C - k) + 1, 0.0)              # top k get k ... 1
-
-
-def grade3_ballots(u, lazy=0.0):
-    mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
-    d = np.where(mx - mn > 1e-12, mx - mn, 1.0)
-    B = np.rint(2 * (u - mn) / d)
-    return np.where(cares(u, lazy), B, 0.0) if lazy > 0 else B         # blank = bad (0), as for scores
-
-
-SINCERE = {"fav": fav_ballots, "rank": lazy_rank_ballots, "strict": rank_ballots, "approval": approval_ballots, "score": score_ballots,
-           "fav_run": fav_run_ballots, "app_run": app_run_ballots, "veto": veto_ballots, "weak": lazy_rank_ballots, "trunc": trunc_ballots, "trunc3": trunc3_ballots,
-           "grade3": grade3_ballots}
-
-
-LAZY_BALLOTS = ("rank", "weak", "trunc", "trunc3", "approval", "app_run", "score", "grade3")   # laziness applies
+from ballots import (BALLOTS, cares, truncate, fav_ballots, rank_ballots, approval_ballots,  # noqa: E402
+                     score_ballots, fav_run_ballots, app_run_ballots, veto_ballots, lazy_rank_ballots,
+                     trunc_ballots, trunc3_ballots, grade3_ballots)
 
 
 # ---------- helpers ----------
@@ -1389,9 +1284,8 @@ class Method:
         return -u if self.inverse else u
 
     def sincere(self, u):
-        if self.ballot in LAZY_BALLOTS:              # laziness: not for the Inverse-* methods
-            return SINCERE[self.ballot](self.pref(u), 0.0 if self.inverse else LAZY)
-        return SINCERE[self.ballot](self.pref(u))
+        b = BALLOTS[self.ballot]
+        return b.sincere(self.pref(u), LAZY if b.lazy and not self.inverse else 0.0)   # Inverse-*: never lazy
 
     def honest(self, u):
         return self.tally(self.sincere(u))
@@ -1563,6 +1457,9 @@ def _load_addons(folder=ADDON_DIR):
         for k, m in new.items():
             if k in METHODS:
                 raise SystemExit(f"add-on {fn}: method {k!r} exists already (built in or in another add-on)")
+            if m.ballot not in BALLOTS:
+                raise SystemExit(f"add-on {fn}: method {k!r} uses an unknown ballot type {m.ballot!r} "
+                                 f"(the types are in ballots.py: {', '.join(BALLOTS)})")
             if k in RENAMED:
                 raise SystemExit(f"add-on {fn}: {k!r} is the old name of {current_name(k)!r}; choose another name")
             METHODS[k] = m
@@ -1574,6 +1471,7 @@ _load_addons()
 _grouped = [m for ms in GROUPS.values() for m in ms]
 assert sorted(_grouped) == sorted(METHODS), "every method must be in exactly one group"
 assert not {g.lower() for g in GROUPS} & {m.lower() for m in METHODS}, "group names must differ from method names"
+assert all(m.ballot in BALLOTS for m in METHODS.values()), "every method's ballot type must be in ballots.BALLOTS"
 assert not set(RENAMED) & set(METHODS), "an old name (RENAMED) must not be a current method"
 assert not set(RENAMED_GROUPS) & set(GROUPS), "an old group name (RENAMED_GROUPS) must not be a current group"
 
