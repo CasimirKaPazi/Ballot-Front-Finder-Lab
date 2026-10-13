@@ -19,7 +19,7 @@ The lab then adds what criteria cannot say: how often a weakness matters in real
 
 A method has two parts:
 
-1. **A ballot type**, chosen from the built-in ones: `"rank"`, `"score"`, `"approval"` and so on (list below). The ballot type tells the simulator how honest voters fill in a ballot, how lazy voters cut it short, which strategic changes they can try, and how sincerity and fidelity are measured. You don't write any of that; you pick the type.
+1. **A ballot type**, chosen from the built-in ones: `"rank"`, `"score"`, `"approval"` and so on (list below). The ballot type tells the simulator how honest voters fill in a ballot, how lazy voters cut it short, which strategic changes they can try, and how sincerity and fidelity are measured. You don't write any of that; you pick the type. (All of it is defined per type in `ballots.py`; a genuinely new ballot format can be added there or in an add-on, but that is rarely needed and not covered here.)
 2. **A counting rule**: given everyone's ballots, who wins.
 
 The counting rule is split in two, for speed. During strategy every method is tallied thousands of times, on many poll samples. So a method doesn't look at all ballots at once. Instead:

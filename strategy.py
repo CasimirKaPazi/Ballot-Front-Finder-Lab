@@ -53,7 +53,7 @@ electorate, drawn in run.py, the same voters for every method). The others alway
 """
 import numpy as np
 import methods
-from ballots import BALLOTS
+from ballots import BALLOTS, _max_separated  # noqa: F401 (_max_separated: for the tests)
 
 BACK_TO_SINCERE = 0.15  # share of proposals that return a deviating group to sincere
 
@@ -64,12 +64,9 @@ def mutate(b, ballot, rng):
 
 
 def _marks(method, X):
-    """Two-round ballots (fav_run, app_run): only the round-1 marks are the voter's choice (the runoff
-    ranking is the sincere one), so sincerity and fidelity look at the marks, as a plurality / approval
-    ballot."""
-    if method.ballot in ("fav_run", "app_run"):
-        return (X >= X.shape[1]).astype(float)
-    return X
+    """The part of the ballots the voter chooses (ballots.py, Ballot.marks): the round-1 marks of
+    two-round ballots, else the whole ballot."""
+    return BALLOTS[method.ballot].chosen(X)
 
 
 def _reversal_mass(X, P):
@@ -78,62 +75,13 @@ def _reversal_mass(X, P):
     return (w * (X[:, None, :] > X[:, :, None])).sum(axis=(1, 2))
 
 
-def _within_cost(s):
-    """cost[i, j] (per voter): sum of differences over all pairs inside the sorted segment s[i..j]."""
-    n, C = s.shape
-    cost = np.zeros((n, C, C))
-    for i in range(C):
-        for j in range(i + 1, C):
-            seg = s[:, i:j + 1]
-            m = j - i + 1
-            k = np.arange(m)
-            cost[:, i, j] = (seg * (2 * k - m + 1)).sum(axis=1)   # sum_{p<q} (s_q - s_p) for sorted values
-    return cost
-
-
-def _max_separated(P, levels):
-    """Per voter: the largest reversal mass a ballot with at most `levels` levels can reach. The worst
-    such ballot reverses the order with candidates grouped into contiguous blocks of the sorted
-    utilities; reversal mass = all pairs minus the pairs inside blocks, so minimise the mass inside
-    blocks (dynamic programme over the sorted candidates)."""
-    s = np.sort(P, axis=1)
-    n, C = s.shape
-    total = _within_cost(s)[:, 0, C - 1] if C > 1 else np.zeros(n)
-    if levels >= C:
-        return total
-    cost = _within_cost(s)
-    INF = np.full(n, np.inf)
-    best = [cost[:, 0, j] for j in range(C)]                     # one block covering 0..j
-    for _ in range(levels - 1):                                  # one more block each time
-        best = [np.minimum(best[j], np.min(np.stack([best[i] + cost[:, i + 1, j] if i + 1 <= j else INF
-                                                     for i in range(j)] or [INF]), axis=0))
-                for j in range(C)]
-    return total - best[C - 1]
-
-
 def worst_reversal(method, P):
     """Per voter: the reversal mass of the most dishonest ballot the method's format allows (the scale
-    of sincerity). Plurality / two-round with plurality: a vote for the last choice; veto: against the
-    favourite; rankings (strict, weak, truncated): the reversed ranking; approval: the most damaging
-    cut; score / three grades: the reversed order in as many levels as there are; at most 3 ranked
-    (trunc3): the 3 least liked ranked in reverse, the rest unranked."""
-    b = method.ballot
-    C = P.shape[1]
-    if b in ("fav", "fav_run"):
-        return (P - P.min(axis=1, keepdims=True)).sum(axis=1)
-    if b == "veto":
-        return (P.max(axis=1, keepdims=True) - P).sum(axis=1)
-    if b in ("approval", "app_run"):
-        return _max_separated(P, 2)
-    if b == "score":
-        return _max_separated(P, methods.MAXS + 1)
-    if b == "grade3":
-        return _max_separated(P, 3)
-    if b == "trunc3":
-        k = min(methods.TRUNC3, C)
-        s = np.sort(P, axis=1)                                  # ranked: the k least liked; tied: the rest
-        return _within_cost(s)[:, 0, C - 1] - (_within_cost(s)[:, k, C - 1] if k < C - 1 else 0)
-    return _max_separated(P, C)                                  # rank, weak, trunc: full reversal
+    of sincerity; its `worst` in ballots.py). Plurality / two-round with plurality: a vote for the last
+    choice; veto: against the favourite; rankings (strict, weak, truncated): the reversed ranking;
+    approval: the most damaging cut; score / three grades: the reversed order in as many levels as
+    there are; at most 3 ranked (trunc3): the 3 least liked ranked in reverse, the rest unranked."""
+    return BALLOTS[method.ballot].worst(P)
 
 
 def sincerity(method, B, u):
@@ -150,25 +98,11 @@ def sincerity(method, B, u):
 
 
 def implied_values(method, X):
-    """What a ballot says about the voter's utilities, on 0..1: scores and grades by their value,
-    rankings evenly spaced (best 1, worst 0), approval / plurality marks 1 and 0, veto 0 for the
-    vetoed candidate and 1 for the rest, truncated rankings evenly spaced with the unranked at 0.
-    Two-round ballots by their round-1 marks (see _marks)."""
-    b = method.ballot
-    C = X.shape[1]
-    X = _marks(method, X)
-    if b == "score":
-        return X / methods.MAXS
-    if b == "grade3":
-        return X / 2
-    if b in ("rank", "weak", "strict"):
-        return X / max(C - 1, 1)
-    if b == "veto":
-        return X + 1
-    if b in ("trunc", "trunc3"):
-        mx = X.max(axis=1, keepdims=True)
-        return X / np.where(mx > 0, mx, 1)
-    return X                                                     # fav, approval, fav_run / app_run marks
+    """What a ballot says about the voter's utilities, on 0..1 (its `implied` in ballots.py): scores
+    and grades by their value, rankings evenly spaced (best 1, worst 0), approval / plurality marks
+    1 and 0, veto 0 for the vetoed candidate and 1 for the rest, truncated rankings evenly spaced with
+    the unranked at 0. Two-round ballots by their round-1 marks (see _marks)."""
+    return BALLOTS[method.ballot].implied(_marks(method, X))
 
 
 def fidelity(method, B, u):

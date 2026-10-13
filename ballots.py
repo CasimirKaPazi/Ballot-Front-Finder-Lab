@@ -11,8 +11,17 @@ Ballot entry in BALLOTS (name -> Ballot), and a method names its type by that na
     exaggerate  the naive exaggerations a group tries around the two poll leaders: function
               (Ug, A, Bo) -> list of ballots (Ug: the group's summed utilities, A: the leader it
               prefers, Bo: the other; strategy.exaggerations)
+    implied   what the ballots say about the voters' utilities, on 0..1: function (X) -> values
+              (fidelity; X after marks)
+    worst     per voter, the reversal mass of the most dishonest ballot the format allows: function
+              (P) -> values (the scale of sincerity; P the voters' preferences)
+    marks     optional: the part of the ballot the voter chooses, function (X) -> X (two-round
+              ballots: the round-1 marks; the runoff ranking is fixed). None: the whole ballot
     ordered   True if the ballot records an order of the candidates (used for the Condorcet winner
               in the ballots, metrics.ballot_condorcet)
+
+A new ballot type (in ballots.py, or in an add-on file as BALLOTS = {name: Ballot(...)}) needs all
+of these; see the built-in ones below.
 
 The encodings (see also methods.py):
   "fav"      one-hot: 1 for the named candidate
@@ -419,6 +428,113 @@ def _exag_veto(Ug, A, Bo):
     return [v]
 
 
+# ---------- what a ballot says: marks, implied values, the worst ballot ----------
+# Used by the sincerity and fidelity measures (strategy.sincerity, strategy.fidelity).
+def _marks_run(X):
+    """Two-round ballots (fav_run, app_run): only the round-1 marks are the voter's choice (the runoff
+    ranking is the sincere one), so sincerity and fidelity look at the marks, as a plurality / approval
+    ballot."""
+    return (X >= X.shape[1]).astype(float)
+
+
+def _implied_score(X):
+    return X / methods.MAXS
+
+
+def _implied_grade3(X):
+    return X / 2
+
+
+def _implied_rank(X):
+    """Rankings evenly spaced: best 1, worst 0 (unranked candidates at 0)."""
+    return X / max(X.shape[1] - 1, 1)
+
+
+def _implied_veto(X):
+    return X + 1
+
+
+def _implied_trunc(X):
+    """Truncated rankings evenly spaced, the unranked at 0."""
+    mx = X.max(axis=1, keepdims=True)
+    return X / np.where(mx > 0, mx, 1)
+
+
+def _implied_marks(X):
+    """Plurality / approval marks: 1 and 0."""
+    return X
+
+
+def _within_cost(s):
+    """cost[i, j] (per voter): sum of differences over all pairs inside the sorted segment s[i..j]."""
+    n, C = s.shape
+    cost = np.zeros((n, C, C))
+    for i in range(C):
+        for j in range(i + 1, C):
+            seg = s[:, i:j + 1]
+            m = j - i + 1
+            k = np.arange(m)
+            cost[:, i, j] = (seg * (2 * k - m + 1)).sum(axis=1)   # sum_{p<q} (s_q - s_p) for sorted values
+    return cost
+
+
+def _max_separated(P, levels):
+    """Per voter: the largest reversal mass a ballot with at most `levels` levels can reach. The worst
+    such ballot reverses the order with candidates grouped into contiguous blocks of the sorted
+    utilities; reversal mass = all pairs minus the pairs inside blocks, so minimise the mass inside
+    blocks (dynamic programme over the sorted candidates)."""
+    s = np.sort(P, axis=1)
+    n, C = s.shape
+    total = _within_cost(s)[:, 0, C - 1] if C > 1 else np.zeros(n)
+    if levels >= C:
+        return total
+    cost = _within_cost(s)
+    INF = np.full(n, np.inf)
+    best = [cost[:, 0, j] for j in range(C)]                     # one block covering 0..j
+    for _ in range(levels - 1):                                  # one more block each time
+        best = [np.minimum(best[j], np.min(np.stack([best[i] + cost[:, i + 1, j] if i + 1 <= j else INF
+                                                     for i in range(j)] or [INF]), axis=0))
+                for j in range(C)]
+    return total - best[C - 1]
+
+
+def _worst_fav(P):
+    """A vote for the last choice."""
+    return (P - P.min(axis=1, keepdims=True)).sum(axis=1)
+
+
+def _worst_veto(P):
+    """A veto against the favourite."""
+    return (P.max(axis=1, keepdims=True) - P).sum(axis=1)
+
+
+def _worst_approval(P):
+    """The most damaging cut."""
+    return _max_separated(P, 2)
+
+
+def _worst_score(P):
+    """The reversed order in as many levels as there are."""
+    return _max_separated(P, methods.MAXS + 1)
+
+
+def _worst_grade3(P):
+    return _max_separated(P, 3)
+
+
+def _worst_ranking(P):
+    """Rankings (strict, weak, truncated): the reversed ranking."""
+    return _max_separated(P, P.shape[1])
+
+
+def _worst_trunc3(P):
+    """At most TRUNC3 ranked: the 3 least liked ranked in reverse, the rest unranked (tied)."""
+    C = P.shape[1]
+    k = min(methods.TRUNC3, C)
+    s = np.sort(P, axis=1)
+    return _within_cost(s)[:, 0, C - 1] - (_within_cost(s)[:, k, C - 1] if k < C - 1 else 0)
+
+
 # ---------- the ballot types ----------
 @dataclass
 class Ballot:
@@ -427,23 +543,39 @@ class Ballot:
     sincere: Callable           # (u, lazy) -> ballot matrix
     mutate: Callable            # (b, rng) -> one small random change of ballot vector b (strategy search)
     exaggerate: Callable        # (Ug, A, Bo) -> list of naive exaggerations around the poll leaders
+    implied: Callable           # (X) -> what the ballots (after marks) say about utilities, on 0..1
+    worst: Callable             # (P) -> per voter: reversal mass of the most dishonest ballot allowed
+    marks: Callable = None      # (X) -> the part the voter chooses (None: the whole ballot)
     lazy: bool = False          # laziness applies
     ordered: bool = False       # records an order of the candidates
 
+    def chosen(self, X):
+        """The part of the ballots the voter chooses (marks), as sincerity and fidelity look at it."""
+        return X if self.marks is None else self.marks(X)
+
 
 BALLOTS = {b.name: b for b in [
-    Ballot("fav", fav_ballots, _mutate_fav, _exag_fav),
-    Ballot("rank", lazy_rank_ballots, _mutate_rank, _exag_rank, lazy=True, ordered=True),
-    Ballot("strict", rank_ballots, _mutate_strict, _exag_strict, ordered=True),
-    Ballot("approval", approval_ballots, _mutate_approval, _exag_approval, lazy=True),
-    Ballot("score", score_ballots, _mutate_score, _exag_score, lazy=True, ordered=True),
-    Ballot("fav_run", fav_run_ballots, _mutate_fav_run, _exag_fav_run),
-    Ballot("app_run", app_run_ballots, _mutate_app_run, _exag_app_run, lazy=True),
-    Ballot("veto", veto_ballots, _mutate_veto, _exag_veto),
-    Ballot("weak", lazy_rank_ballots, _mutate_weak, _exag_weak, lazy=True, ordered=True),   # honest: strict
-    Ballot("trunc", trunc_ballots, _mutate_trunc, _exag_trunc, lazy=True, ordered=True),
-    Ballot("trunc3", trunc3_ballots, _mutate_trunc3, _exag_trunc3, lazy=True, ordered=True),
-    Ballot("grade3", grade3_ballots, _mutate_grade3, _exag_grade3, lazy=True, ordered=True),
+    Ballot("fav", fav_ballots, _mutate_fav, _exag_fav, _implied_marks, _worst_fav),
+    Ballot("rank", lazy_rank_ballots, _mutate_rank, _exag_rank, _implied_rank, _worst_ranking,
+           lazy=True, ordered=True),
+    Ballot("strict", rank_ballots, _mutate_strict, _exag_strict, _implied_rank, _worst_ranking, ordered=True),
+    Ballot("approval", approval_ballots, _mutate_approval, _exag_approval, _implied_marks, _worst_approval,
+           lazy=True),
+    Ballot("score", score_ballots, _mutate_score, _exag_score, _implied_score, _worst_score,
+           lazy=True, ordered=True),
+    Ballot("fav_run", fav_run_ballots, _mutate_fav_run, _exag_fav_run, _implied_marks, _worst_fav,
+           marks=_marks_run),
+    Ballot("app_run", app_run_ballots, _mutate_app_run, _exag_app_run, _implied_marks, _worst_approval,
+           marks=_marks_run, lazy=True),
+    Ballot("veto", veto_ballots, _mutate_veto, _exag_veto, _implied_veto, _worst_veto),
+    Ballot("weak", lazy_rank_ballots, _mutate_weak, _exag_weak, _implied_rank, _worst_ranking,
+           lazy=True, ordered=True),                                      # honest: strict; ties only strategic
+    Ballot("trunc", trunc_ballots, _mutate_trunc, _exag_trunc, _implied_trunc, _worst_ranking,
+           lazy=True, ordered=True),
+    Ballot("trunc3", trunc3_ballots, _mutate_trunc3, _exag_trunc3, _implied_trunc, _worst_trunc3,
+           lazy=True, ordered=True),
+    Ballot("grade3", grade3_ballots, _mutate_grade3, _exag_grade3, _implied_grade3,
+           _worst_grade3, lazy=True, ordered=True),
 ]}
 
 

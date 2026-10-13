@@ -1434,7 +1434,7 @@ ADDONS = {}          # method name -> add-on file it comes from
 def _load_addons(folder=ADDON_DIR):
     """Load every add-on file in `folder` (addons/*.py, except names starting with _). An add-on file
     defines METHODS = {name: Method(...)}, and may define FEATURES = {name: (per-voter function,
-    shape)} for new ballot features, GROUP = "a group name" (default "addons"; an existing group or
+    shape)} for new ballot features, BALLOTS = {name: ballots.Ballot(...)} for new ballot types, GROUP = "a group name" (default "addons"; an existing group or
     a new one) and test() for its own checks (run by test_methods.py). Its methods are then used like
     the built-in ones. Deleting the file removes them. See addons/_template.py and README, Add-ons."""
     if not os.path.isdir(folder):
@@ -1447,6 +1447,10 @@ def _load_addons(folder=ADDON_DIR):
         mod = importlib.util.module_from_spec(spec)
         sys.modules[name] = mod                     # so worker processes and pickling find it
         spec.loader.exec_module(mod)
+        for k, v in getattr(mod, "BALLOTS", {}).items():     # new ballot types (ballots.Ballot entries)
+            if k in BALLOTS:
+                raise SystemExit(f"add-on {fn}: ballot type {k!r} exists already")
+            BALLOTS[k] = v
         for k, v in getattr(mod, "FEATURES", {}).items():
             if k in FEATURES:
                 raise SystemExit(f"add-on {fn}: feature {k!r} exists already")

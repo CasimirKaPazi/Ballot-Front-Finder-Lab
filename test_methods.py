@@ -638,6 +638,26 @@ for _ in range(300):                                                            
     assert np.allclose(pos, np.arange(4, 4 - len(pos), -1)) and 1 <= len(pos) <= 4
 print("truncated rankings and laziness ok")
 
+# Ballot types (ballots.py, also those from add-ons): every entry is complete and consistent
+from ballots import BALLOTS as _BT
+from strategy import worst_reversal as _wr, implied_values as _iv, exaggerations as _ex
+_rb = np.random.default_rng(11)
+for _name, _b in _BT.items():
+    for C in (2, 3, 5):
+        _u = _rb.random((30, C))
+        _m = Method(_name, d_minimax)                       # any decide: only the ballot type matters here
+        _B = _m.sincere(_u)
+        assert _B.shape == _u.shape, _name
+        _v = _iv(_m, _B)
+        assert _v.min() >= -1e-9 and _v.max() <= 1 + 1e-9, _name                 # implied values on 0..1
+        assert (_wr(_m, _u) >= -1e-9).all(), _name
+        for _row in _B[:5]:
+            _x = _b.mutate(_row.copy(), _rb)
+            assert _x.shape == _row.shape, _name
+        for _x in _ex(_name, _u[:4].sum(axis=0), 0, 1):
+            assert _x.shape == (C,), _name
+print(f"ballot types ok: {', '.join(_BT)}")
+
 # Renamed methods and groups: old names lead to existing current ones, in selection and in analysis
 for _old in _mm.RENAMED:
     assert _mm.current_name(_old) in METHODS, _old

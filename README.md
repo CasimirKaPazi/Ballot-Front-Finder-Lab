@@ -60,7 +60,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | File | Contents |
 |---|---|
 | `scenario.py` | Electorate generator: spatial clusters, Zipf dimensions, absolute utilities `exp(-distance / width)` |
-| `ballots.py` | Ballot types: encodings, sincere ballots, laziness (one entry per type in `BALLOTS`) |
+| `ballots.py` | Ballot types, one entry per type in `BALLOTS`: encoding, sincere ballots, laziness, strategic changes and exaggerations, implied values and the worst ballot (for fidelity and sincerity) |
 | `methods.py` | Exact tallies on ballot matrices (ties shared), method groups, renamed methods, add-on loader |
 | `addons/` | Methods in separate files, loaded at start (see Methods, Add-ons); `_template.py` to start from |
 | `ADDONS.md` | Tutorial: writing your own method as an add-on |
@@ -538,6 +538,7 @@ In the ER variants (rankings with ties) a tie at level 0 of two or more candidat
 |---|---|---|
 | `METHODS` | yes | `{name: Method(ballot, decide, feats)}` (or `Method(ballot, full=tally)` for a rule that needs the whole ballot matrix); names must not clash with existing ones |
 | `FEATURES` | no | new per-voter ballot features, `{name: (function(B) -> array per voter, shape of the sum given C)}`; they are summed over voters and poll samples, which keeps tallies fast |
+| `BALLOTS` | no | new ballot types, `{name: ballots.Ballot(...)}`: honest ballots, strategic changes, exaggerations, implied values and the worst ballot (see ballots.py; rarely needed) |
 | `GROUP` | no | the group its methods join: an existing one (e.g. `rated`) or a new one; default `addons` |
 | `test()` | no | its own checks (a small profile with a known winner), run by test_methods.py |
 
