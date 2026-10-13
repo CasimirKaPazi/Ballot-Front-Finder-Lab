@@ -26,6 +26,7 @@ Python 3.9 or newer + NumPy; the analysis also needs matplotlib (`pip install -r
 
 ```
 python test_methods.py                                   # hand-built checks
+python regression.py                                     # same numbers as before? (after a code change)
 python run.py --out base                                 # one condition at the defaults -> output/base/
 python sweep.py --rounds 1 2 3 --aggressive 0 0.5 1 --out rounds   # grid of conditions -> output/rounds/
 python analyze.py rounds --compare "BTR-score:STAR"      # -> output/rounds/analysis/
@@ -71,7 +72,17 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `analyze.py` | Paired bootstrap, intervals, dominance pointers, paired comparisons, rank stability, Markdown report |
 | `plots.py` | The analysis plots |
 | `test_methods.py` | Hand-built checks |
+| `regression.py`, `regression.csv` | Regression check: a few tiny fixed runs compared with the stored reference (see Checking changes) |
 | `FINDINGS.md` | Results so far and their interpretation |
+
+## Checking changes
+
+Two checks, both quick:
+
+- `python test_methods.py`: hand-built checks. Each method on small profiles with a known winner, the ballot types, truncation and laziness, sincerity and fidelity, the add-ons.
+- `python regression.py`: does the simulator still give the same numbers? It runs six tiny conditions (two elections each: the defaults, five candidates, laziness with scores 0..10, convergent learning, strategic nomination, the first poll from a previous election) with every method, including the references, the Inverse-* methods and the add-ons, and compares every column of every row with `regression.csv`. About a minute or less.
+
+A change that only reorganises the code (moving, renaming, splitting files) must leave `regression.py` at "all equal". A change meant to alter results (a fixed bug, a new rule) shows up as differences, listed by method and column; once they are understood, `python regression.py --update` writes the new reference, and `regression.csv` is committed together with that change, so the history shows which commit changed which numbers. New methods (a new add-on) are listed but not counted as differences; `--update` adds them. Numbers count as equal within a relative tolerance of 1e-9, since the last digits can differ between numpy versions or machines.
 
 ## Strategy engine
 
