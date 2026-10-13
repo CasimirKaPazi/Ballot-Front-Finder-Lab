@@ -53,96 +53,14 @@ electorate, drawn in run.py, the same voters for every method). The others alway
 """
 import numpy as np
 import methods
+from ballots import BALLOTS
 
 BACK_TO_SINCERE = 0.15  # share of proposals that return a deviating group to sincere
 
 
 def mutate(b, ballot, rng):
-    """One small change to a single ballot vector (length C)."""
-    b = b.copy()
-    C = len(b)
-    if ballot == "fav":
-        cur = int(b.argmax())
-        new = (cur + 1 + rng.integers(C - 1)) % C
-        b[:] = 0
-        b[new] = 1
-    elif ballot == "strict":
-        i, j = rng.choice(C, 2, replace=False)
-        b[i], b[j] = b[j], b[i]
-    elif ballot == "rank":                       # truncatable: swap two places, or rank one more / fewer
-        ranked = [int(c) for c in np.argsort(-b, kind="stable") if b[c] > 0]
-        k = len(ranked)                          # a full ranking has C-1 candidates above 0
-        order = ranked + list(rng.permutation([c for c in range(C) if b[c] <= 0]))
-        if rng.random() < 0.5:
-            i, j = rng.choice(C, 2, replace=False)
-            order[i], order[j] = order[j], order[i]
-        else:
-            k = min(C - 1, max(1, k + (1 if rng.random() < 0.5 else -1)))
-        b = np.zeros(C)
-        for pos, c in enumerate(order[:k]):
-            b[c] = C - 1 - pos
-    elif ballot == "approval":
-        if C == 2:              # the only valid ballots are A or B: no single flip stays valid, so swap
-            return b[::-1].copy()
-        while True:
-            c = rng.integers(C)
-            b[c] = 1 - b[c]
-            if 0 < b.sum() < C:
-                break
-            b[c] = 1 - b[c]
-    elif ballot in ("fav_run", "app_run"):          # only the round-1 marks change; the runoff ranking stays
-        pts, mark = np.mod(b, C), b >= C
-        if ballot == "fav_run":
-            cur = int(mark.argmax())
-            mark[:] = False
-            mark[(cur + 1 + rng.integers(C - 1)) % C] = True
-        elif C == 2:
-            mark = mark[::-1].copy()
-        else:
-            while True:
-                c = rng.integers(C)
-                mark[c] = not mark[c]
-                if 0 < mark.sum() < C:
-                    break
-                mark[c] = not mark[c]
-        b = pts + C * mark
-    elif ballot == "veto":
-        cur = int(b.argmin())
-        new = (cur + 1 + rng.integers(C - 1)) % C
-        b[:] = 0
-        b[new] = -1
-    elif ballot == "weak":
-        c = rng.integers(C)
-        b[c] = (b[c] + 1 + rng.integers(C - 1)) % C          # any other level; equal levels are ties
-    elif ballot in ("trunc", "trunc3"):
-        kmax = C - 1 if ballot == "trunc" else min(methods.TRUNC3, C)
-        ranked = [int(c) for c in np.argsort(-b, kind="stable") if b[c] > 0]
-        order = ranked + list(rng.permutation([c for c in range(C) if b[c] == 0]))
-        k = len(ranked)
-        if rng.random() < 0.5:
-            i, j = rng.choice(C, 2, replace=False)
-            order[i], order[j] = order[j], order[i]
-        else:
-            k = min(kmax, max(1, k + (1 if rng.random() < 0.5 else -1)))
-        b = np.zeros(C)
-        for pos, c in enumerate(order[:k]):
-            b[c] = k - pos
-    elif ballot == "score":
-        # Any other level, uniformly. For ranges above 0..5, half of the proposals instead use the
-        # six levels of the 0..5 scale stretched to the range (0, 20, 40, ... 100 for 0..100), so
-        # the chance of trying an extreme or a coarse step does not shrink with the range and
-        # learning is not slowed artificially. 0..5 and below: unchanged.
-        S = methods.MAXS
-        c = rng.integers(C)
-        if S > 5 and rng.random() < 0.5:
-            levels = [x for x in np.rint(np.arange(6) * S / 5) if x != b[c]]
-            b[c] = levels[rng.integers(len(levels))]
-        else:
-            b[c] = (b[c] + 1 + rng.integers(S)) % (S + 1)
-    elif ballot == "grade3":
-        c = rng.integers(C)
-        b[c] = (b[c] + 1 + rng.integers(2)) % 3
-    return b
+    """One small change to a single ballot vector (length C) of type `ballot` (ballots.py)."""
+    return BALLOTS[ballot].mutate(b.copy(), rng)
 
 
 def _marks(method, X):
@@ -531,79 +449,12 @@ def _gain_full(method, B, mem, sincere_rows, polls, Ug):
 
 def exaggerations(ballot, Ug, a, b):
     """Naive exaggerations of a group's ballot around the two poll leaders a, b (Ug: the group's
-    summed utilities; A = the leader it prefers, B = the other). Most complete first."""
-    C = len(Ug)
+    summed utilities; A = the leader it prefers, B = the other). Most complete first. What they are
+    depends on the ballot type: its `exaggerate` in ballots.py."""
     if b is None:                                  # no runner-up (exact polls): no race to exaggerate for
         return []
     A, Bo = (a, b) if Ug[a] >= Ug[b] else (b, a)
-    order = [int(c) for c in np.argsort(-Ug, kind="stable")]      # the group's sincere ranking
-    up = Ug >= Ug[A]                                                 # liked at least as much as A
-    k = int(up.sum())
-    out = []
-
-    def rank_points(o):
-        r = np.empty(C)
-        r[o] = np.arange(C - 1, -1, -1)
-        return r
-
-    comp = [A] + [c for c in order if c != A]                       # A moved to the top
-
-    def truncated(order, comp, k):
-        """Truncated rankings (rank points C-1 ... for the ranked, 0 for the rest): the sincere order
-        down to A (if that leaves two or more unranked), and a bullet vote for A."""
-        res = []
-        for o, kk in ((order, k), (comp, 1)):
-            if kk < C - 1:
-                t = np.zeros(C)
-                t[o[:kk]] = np.arange(C - 1, C - 1 - kk, -1)
-                res.append(t)
-        return res
-    bury = [c for c in order if c != Bo] + [Bo]
-    both = [A] + [c for c in bury if c != A]
-    if ballot == "fav":
-        out = [np.eye(C)[A]]
-    elif ballot == "approval":
-        if 0 < k < C:
-            out = [up.astype(float)]
-    elif ballot in ("score", "grade3"):
-        S = methods.MAXS if ballot == "score" else 2
-        lo = Ug[Bo]
-        x = np.clip((Ug - lo) / max(Ug[A] - lo, 1e-12), 0, 1)       # top at A and above, 0 at B and below
-        out = [np.rint(S * x), S * up.astype(float)]
-    elif ballot == "strict":
-        out = [rank_points(both), rank_points(comp), rank_points(bury)]
-    elif ballot == "rank":                                           # also truncated: rank only down to A, or A alone
-        out = [rank_points(both), rank_points(comp), rank_points(bury)] + truncated(order, comp, k)
-    elif ballot == "weak":                                           # levels, equal = tied
-        tied = np.empty(C)
-        tied[up] = C - 1                                             # A tied with everyone above it, at the top
-        rest = [c for c in order if not up[c]]
-        tied[rest] = np.arange(C - 2, C - 2 - len(rest), -1)
-        tb = tied.copy()
-        if not up[Bo]:
-            tb[Bo] = tb[rest].min() - 1 if len(rest) > 1 else tb[Bo]
-        out = [tb - tb.min(), tied - tied.min(), rank_points(both), rank_points(bury)] + truncated(order, comp, k)
-    elif ballot == "trunc":                                          # rank only down to A
-        if 0 < k < C:
-            t1 = np.zeros(C); t1[[c for c in order if up[c]]] = np.arange(k, 0, -1)
-            t2 = np.zeros(C); t2[[c for c in comp[:k]]] = np.arange(k, 0, -1)
-            out = [t1, t2]
-    elif ballot == "trunc3":                                         # at most 3 ranked
-        K = min(methods.TRUNC3, C)
-        t1 = [c for c in order if up[c]][:K]                          # rank only down to A
-        t2 = [A] + [c for c in order if c not in (A, Bo)][:K - 1]     # A first, B never ranked
-        for o in (t2, t1):
-            t = np.zeros(C); t[o] = np.arange(len(o), 0, -1)
-            out.append(t)
-    elif ballot == "fav_run":                                        # mark A; the runoff ranking stays sincere
-        out = [rank_points(order) + C * np.eye(C)[A]]
-    elif ballot == "app_run":                                        # approve down to A; runoff ranking sincere
-        if 0 < k < C:
-            out = [rank_points(order) + C * up]
-    elif ballot == "veto":
-        v = np.zeros(C); v[Bo] = -1
-        out = [v]
-    return out
+    return BALLOTS[ballot].exaggerate(Ug, A, Bo)
 
 
 def _answer(gain, ballot_type, ref, cands, search, rng, eager=True):
