@@ -96,7 +96,22 @@ def source_name(p):
     return f
 
 
-OPTIONAL_PARAMS = {"lazy": "0.0"}   # parameters added after 1.0.0, with the value older runs implied
+# Older results files. When run.py gets a new column (a parameter or a measure), it goes into
+# ADDED_COLUMNS, so files written before it can still be read and combined with newer ones:
+#   a text value   what older runs implied (a parameter at the value it had before it could be set):
+#                  filled in, and older rows count as that condition
+#   None           not measured in older runs: left blank (tables show it as missing), and the report
+#                  says which inputs lack it
+# The note says when and what. Columns in REQUIRED_COLUMNS (or a run parameter not listed here) must
+# be present; a file without them is too old and has to be regenerated.
+ADDED_COLUMNS = {
+    "lazy": ("0.0", "2026-10-13, laziness: older runs had full ballots"),
+    "fidelity": (None, "2026-10-12, fidelity, with the current sincerity measure"),
+    "bcw": (None, "2026-10-12, Condorcet winner in the ballots"),
+    "p_bcw": (None, "2026-10-12, Condorcet winner in the ballots"),
+}
+REQUIRED_COLUMNS = ["WM_best", "U_rb", "sincerity", "U_cands", "nom_changed", "noshow"]
+LACKING = {}           # input -> added columns it lacks (filled as in ADDED_COLUMNS)
 OLD_SINCERITY = []     # inputs written before the current sincerity measure (no fidelity column)
 RENAMED_SEEN = {}      # old method name -> current name, for names renamed since the input was written
 
@@ -106,15 +121,17 @@ def load(paths):
     for p in paths:
         with open(p, newline="") as f:
             reader = csv.DictReader(f)
-            fill = {k: v for k, v in OPTIONAL_PARAMS.items() if k not in (reader.fieldnames or [])}
-            missing = [k for k in RUN_PARAMS + ["WM_best", "U_rb", "sincerity", "U_cands", "nom_changed", "noshow"]
-                       if k not in (reader.fieldnames or []) and k not in fill]
+            have = reader.fieldnames or []
+            fill = {k: v if v is not None else "" for k, (v, _) in ADDED_COLUMNS.items() if k not in have}
+            missing = [k for k in RUN_PARAMS + REQUIRED_COLUMNS if k not in have and k not in fill]
             if missing:
                 raise SystemExit(f"{p} lacks {', '.join(missing)}; regenerate it with the current run.py or sweep.py")
-            if "fidelity" not in reader.fieldnames:
+            if fill:
+                LACKING[source_name(p)] = list(fill)
+            if "fidelity" not in have:          # the sincerity column then holds the earlier measure
                 OLD_SINCERITY.append(source_name(p))
             for r in reader:
-                r.update(fill)                   # parameters added later, at their default (older CSVs)
+                r.update(fill)                   # columns added later (ADDED_COLUMNS)
                 new = current_name(r["method"])  # methods renamed since (methods.RENAMED)
                 if new != r["method"]:
                     RENAMED_SEEN[r["method"]] = new
@@ -124,6 +141,21 @@ def load(paths):
     if not rows:
         raise SystemExit("no rows in the input CSVs")
     return rows
+
+
+def lacking_lines():
+    """One line per input that lacks added columns: which were filled with an implied value, which left blank."""
+    out = []
+    for name, cols in LACKING.items():
+        groups = {}                                       # note -> its columns, in ADDED_COLUMNS order
+        for k in cols:
+            groups.setdefault(ADDED_COLUMNS[k][1], []).append(k)
+        parts = []
+        for note, ks in groups.items():
+            v = ADDED_COLUMNS[ks[0]][0]
+            parts.append(f"{', '.join(ks)} {'read as ' + v if v is not None else 'blank'} ({note})")
+        out.append(f"{name} lacks columns added later: {'; '.join(parts)}")
+    return out
 
 
 ELECTORATE_COLS = ["U_best", "U_rb", "WM_best", "WM_rb"]   # the same in every row of an election
@@ -593,6 +625,8 @@ def main():
     rows_all, combined, cover = combine(load(a.csv))
     for line in combined:
         print("note:", line)
+    for line in lacking_lines():
+        print("note:", line)
     if RENAMED_SEEN:
         print("note: old method names read as the current ones: "
               + ", ".join(f"{o} -> {n}" for o, n in sorted(RENAMED_SEEN.items())))
@@ -664,6 +698,9 @@ def main():
     L += [f"Input: {', '.join(source_name(p) for p in a.csv)} (simulator version {', '.join(versions)}"
           + ("; mixed versions" if len(versions) > 1 else "") + f"; analysis version {VERSION}). "
           f"Bootstrap: {a.boot} paired replicates over elections. Brackets are 95% intervals.", ""]
+    if LACKING:
+        L += ["Older inputs (columns added since are filled with the value those runs implied, or left blank where "
+              "they were not measured):", ""] + [f"- {x}" for x in lacking_lines()] + [""]
     if RENAMED_SEEN:
         L += ["Methods renamed since the input was written, reported under their current names: "
               + ", ".join(f"{o} → {n}" for o, n in sorted(RENAMED_SEEN.items())) + ".", ""]

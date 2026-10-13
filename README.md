@@ -580,6 +580,19 @@ python run.py --methods "My method" --out mine          # added to methods.py; s
 python analyze.py reference mine --out compare            # reference: the folder of the existing run
 ```
 
+**Older results files.** New columns (a parameter or a measure) are added to the results files over time. So that older files can still be read and combined with newer ones, each new column goes into `ADDED_COLUMNS` in analyze.py when it is added, with one of two entries:
+
+- the value older runs implied, for a parameter that could not be set before. For example `lazy`: older runs had full ballots, so they are read as `lazy = 0.0` and count as that condition.
+- blank, for a measure older runs did not record (e.g. `fidelity`, the Condorcet winner in the ballots). Tables show it as missing for those runs.
+
+The terminal and the report list each older input and what was filled in or left blank. A file that lacks a column without such an entry (in `REQUIRED_COLUMNS`, or a run parameter) is too old and has to be regenerated; `analyze.py` says which columns are missing. When adding a run parameter: put it into `PARAMS` in run.py, read it in `one_election` from `p`, and add it to `ADDED_COLUMNS` with the value it had before.
+
+| Column | Added | Older files |
+|---|---|---|
+| lazy | 2026-10-13 | read as 0.0 (full ballots) |
+| fidelity | 2026-10-12 | blank; their sincerity column holds the earlier measure (the report warns) |
+| bcw, p_bcw | 2026-10-12 | blank |
+
 **Renamed methods.** The results files store each method by its name. When a method is renamed, the old name goes into `RENAMED` in methods.py (old name → current name; groups in `RENAMED_GROUPS`), so older runs keep combining with newer ones: `analyze.py` reads old names as the current ones and says so in the report, and the old names still work in `--methods`, `--exclude`, `--show`, `--hide` and `--track`. This is only for a pure rename, with the same rule and the same results. A method whose rule changes gets a new name and no entry, so old and new results are never mixed. A removed method gets no entry either: its rows in old runs stay under their old name. An add-on may not use an old name.
 
 | Old name | Current name |
