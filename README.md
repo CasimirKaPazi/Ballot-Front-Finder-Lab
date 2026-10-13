@@ -59,13 +59,15 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | File | Contents |
 |---|---|
 | `scenario.py` | Electorate generator: spatial clusters, Zipf dimensions, absolute utilities `exp(-distance / width)` |
-| `methods.py` | Ballot types, sincere ballots, exact tallies on ballot matrices (ties shared), method groups |
+| `methods.py` | Ballot types, sincere ballots, exact tallies on ballot matrices (ties shared), method groups, add-on loader |
+| `addons/` | Methods in separate files, loaded at start (see Methods, Add-ons); `_template.py` to start from |
+| `ADDONS.md` | Tutorial: writing your own method as an add-on |
 | `strategy.py` | Learning engine, sincerity and strategy types |
 | `nomination.py` | Strategic nomination: exits, re-entry and clones from the initial field |
 | `participation.py` | Participation check (no-show paradox) |
 | `metrics.py` | Efficiencies for three baselines, winner's worst margin, Condorcet efficiency, electorate properties, Pareto front |
 | `run.py` | Tallies every electorate with sincere and learned ballots, runs in parallel, writes CSV with the run's parameters as columns |
-| `sweep.py` | Runs a grid of conditions (or one parameter at a time) and seeds into one CSV |
+| `sweep.py` | Runs a grid of conditions (or one parameter at a time) and seeds, one CSV per run |
 | `analyze.py` | Paired bootstrap, intervals, dominance pointers, paired comparisons, rank stability, Markdown report |
 | `plots.py` | The analysis plots |
 | `test_methods.py` | Hand-built checks |
@@ -257,7 +259,7 @@ Run time falls less than in proportion to p: halving the strategic voters remove
 
 ## Score range
 
-`--max-score m` sets the range of the score ballot to 0–m for every method that uses it (Score, MJ, STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, Reciprocal score, Smith//Score, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D, INS, Geometric median). The default 0–5 is an implementation choice, not part of these methods; other simulations (e.g. Quinn's VSE) also run 0–10 and 0–100. With a coarse range, sincere voters must give candidates they like differently the same score, so pairwise preferences are lost: this is the cap on WME seen for the rated and hybrid methods. A wider range reduces it. MCA and 321 keep their three grades, and methods on other ballots are unaffected; the electorates are the same for every value, so a sweep (`sweep.py --max-score 5 10 100`) isolates the effect of the range, and its chain plot draws the reachable frontier.
+`--max-score m` sets the range of the score ballot to 0–m for every method that uses it (Score, MJ, STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, Reciprocal score, Smith//Score, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D, INS, Geometric median, and add-ons on score ballots). The default 0–5 is an implementation choice, not part of these methods; other simulations (e.g. Quinn's VSE) also run 0–10 and 0–100. With a coarse range, sincere voters must give candidates they like differently the same score, so pairwise preferences are lost: this is the cap on WME seen for the rated and hybrid methods. A wider range reduces it. MCA and 321 keep their three grades, and methods on other ballots are unaffected; the electorates are the same for every value, so a sweep (`sweep.py --max-score 5 10 100`) isolates the effect of the range, and its chain plot draws the reachable frontier.
 
 Rules that refer to the range scale with it: ARA approves ratings above the middle, ARA-Top only the top score, Score+ stretches to the full range, Reciprocal score measures support as a share of the top score. Learning: see the score mutation in Strategy engine.
 
@@ -394,7 +396,7 @@ In the ER variants (rankings with ties) a tie at level 0 of two or more candidat
 
 ## Methods
 
-72 methods, listed by group (see Groups below); 61 run by default (all but the references and inverse groups). "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
+72 built-in methods, listed by group (see Groups below), plus any add-ons (see Add-ons); all but the references and inverse groups run by default. "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
 
 **condorcet**
 
@@ -518,6 +520,23 @@ In the ER variants (rankings with ties) a tie at level 0 of two or more candidat
 | Inverse-Borda | ranking | Borda; the sincere ballot ranks upside down |
 | Inverse-Score | 0–5 | Score; the sincere ballot scores upside down (the least liked gets the top score) |
 
+**Add-ons: methods in separate files.** A new method does not have to go into methods.py: put a Python file into the folder `addons/`, and its methods are loaded at start and used like the built-in ones, by name or group, in run.py, sweep.py and analyze.py. Delete the file to remove them; to share a method, share the file. Files starting with `_` are not loaded. `addons/_template.py` is a commented starting point; `addons/ids.py` (IDS, iterated dropped score) is a working example. [ADDONS.md](ADDONS.md) is a tutorial for writing one with little Python: a line-by-line walkthrough of IDS, and a new method (Bucklin) built step by step. A file defines:
+
+| Name | Required | Meaning |
+|---|---|---|
+| `METHODS` | yes | `{name: Method(ballot, decide, feats)}` (or `Method(ballot, full=tally)` for a rule that needs the whole ballot matrix); names must not clash with existing ones |
+| `FEATURES` | no | new per-voter ballot features, `{name: (function(B) -> array per voter, shape of the sum given C)}`; they are summed over voters and poll samples, which keeps tallies fast |
+| `GROUP` | no | the group its methods join: an existing one (e.g. `rated`) or a new one; default `addons` |
+| `test()` | no | its own checks (a small profile with a known winner), run by test_methods.py |
+
+The ballot type (one of the built-in ones) decides the sincere ballots, laziness, the strategic moves and the measures, so a new method gets all of these for free. Results of add-on methods can be combined with existing runs like any other method (Combining runs): run only the new method with the same parameters and seed.
+
+**Current add-ons:**
+
+| Method | Ballot | File | Description |
+|---|---|---|---|
+| IDS | 0–5 | `addons/ids.py` | iterated dropped score, a score elimination: each round every ballot's lowest-rated remaining candidates are struck out (count 0; a ballot rating them all the same counts for none), the other scores stay as given; the lowest total is eliminated (ties for last split the win), until one is left. Unlike INS a ballot only changes where its own lowest remaining rating is, and it can be counted by hand. Group: rated |
+
 **Groups.** Every method belongs to exactly one group. Groups can be used wherever methods are named (`--methods`, `--exclude` in run.py and sweep.py; `--show`, `--hide`, `--track` in analyze.py), they are the panels of the chain plots, and the report and summary.csv show each method's group.
 
 | Group | Methods |
@@ -527,7 +546,7 @@ In the ER variants (rankings with ties) a tie at level 0 of two or more candidat
 | `condorcet-based` | Black, Baldwin, Baldwin-ER, Nanson, BTR-Borda, BTR-IRV, Benham, Smith//Score (Condorcet methods built on a Borda, IRV or score count) |
 | `plurality-based` | Plurality, TTR, Supplementary vote, IRV, ER-IRV, IRV-3, Coombs, DSC, DAC (first choices, eliminations and coalitions of top preferences; Coombs eliminates by last places) |
 | `approval-based` | Approval, Approval runoff, Approval cond. runoff, MDDA, MAMPO |
-| `rated` | Score, MJ, MCA, Reciprocal score, INS, Geometric median |
+| `rated` | Score, MJ, MCA, Reciprocal score, INS, Geometric median (add-ons can join groups, see Add-ons) |
 | `hybrid` | STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D (ratings combined with pairwise comparisons or runoffs) |
 | `positional` | Borda, Borda-ER, Dowdall |
 | `references` | Random pair runoff, Anti-plurality, TRASH (benchmarks, not proposals; not run unless named, e.g. `--methods all` or `--methods references STAR`, and hidden in the plots by default) |

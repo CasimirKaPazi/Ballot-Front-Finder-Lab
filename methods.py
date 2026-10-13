@@ -39,6 +39,9 @@ to 0..1 between the voter's least and most liked candidate, is at least LAZY; sc
 the others are left blank = 0. 0 = full ballots, 1 = only the favourite. Not for the Inverse-* methods.
   grade3   - 0..2, stretched to the voter's own utility range, rounded (as score, with 3 levels)
 """
+import importlib.util
+import os
+import sys
 from dataclasses import dataclass
 from itertools import permutations, product
 from typing import Callable
@@ -1003,10 +1006,10 @@ def d_stlr(s):
     return P
 
 
-def d_iterated_normalized_score(s):
+def d_iterated_normalized_score(s, key="nscore_sub"):
     """Score, but each round every ballot is stretched to the full range over the remaining candidates;
     the lowest total is eliminated (ties for last split the win), until one is left."""
-    sub = s["nscore_sub"]
+    sub = s[key]
     C = sub.shape[1]
     P = np.zeros(C)
 
@@ -1502,6 +1505,43 @@ GROUPS = {
     "inverse": ["Inverse-Plurality", "Inverse-Approval", "Inverse-Minimax", "Inverse-IRV", "Inverse-ER-IRV", "Inverse-TTR",
                 "Inverse-Borda", "Inverse-Score"],
 }
+# ---------- add-ons: methods in separate files ----------
+ADDON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "addons")
+ADDONS = {}          # method name -> add-on file it comes from
+
+
+def _load_addons(folder=ADDON_DIR):
+    """Load every add-on file in `folder` (addons/*.py, except names starting with _). An add-on file
+    defines METHODS = {name: Method(...)}, and may define FEATURES = {name: (per-voter function,
+    shape)} for new ballot features, GROUP = "a group name" (default "addons"; an existing group or
+    a new one) and test() for its own checks (run by test_methods.py). Its methods are then used like
+    the built-in ones. Deleting the file removes them. See addons/_template.py and README, Add-ons."""
+    if not os.path.isdir(folder):
+        return
+    for fn in sorted(os.listdir(folder)):
+        if not fn.endswith(".py") or fn.startswith("_"):
+            continue
+        name = "vpl_addon_" + fn[:-3]
+        spec = importlib.util.spec_from_file_location(name, os.path.join(folder, fn))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod                     # so worker processes and pickling find it
+        spec.loader.exec_module(mod)
+        for k, v in getattr(mod, "FEATURES", {}).items():
+            if k in FEATURES:
+                raise SystemExit(f"add-on {fn}: feature {k!r} exists already")
+            FEATURES[k] = v
+        new = getattr(mod, "METHODS", {})
+        if not new:
+            raise SystemExit(f"add-on {fn} defines no METHODS")
+        for k, m in new.items():
+            if k in METHODS:
+                raise SystemExit(f"add-on {fn}: method {k!r} exists already (built in or in another add-on)")
+            METHODS[k] = m
+            ADDONS[k] = fn
+        GROUPS.setdefault(getattr(mod, "GROUP", "addons"), []).extend(new)
+
+
+_load_addons()
 _grouped = [m for ms in GROUPS.values() for m in ms]
 assert sorted(_grouped) == sorted(METHODS), "every method must be in exactly one group"
 assert not {g.lower() for g in GROUPS} & {m.lower() for m in METHODS}, "group names must differ from method names"

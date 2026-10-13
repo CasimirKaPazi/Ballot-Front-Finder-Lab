@@ -483,7 +483,6 @@ p = METHODS["INS"].tally(ins)
 # A out: ballots over {B,C}: A-voters B5 C0, C-voters B0 C5, B-voter B5 C0 -> B 15, C 10 -> B.
 # C out: over {A,B}: A-voters A5 B0, C-voters A0 B5, B-voter A0 B5 -> B 15 -> B.
 check("INS", p, [0, 1, 0])
-
 # MAMPO: 4 voters A>B (A, B approved), 3 voters B>C, 2 voters C (truncated). Approvals A 4, B 7, C 5 of
 # 9: B and C have a majority. Largest opposition: B 4 (A over B), C 7 (B over C: 4 + 3) -> B.
 # Without a majority approval the most approved wins.
@@ -629,3 +628,18 @@ for _ in range(300):                                                            
     pos = np.sort(b[b > 0])[::-1]
     assert np.allclose(pos, np.arange(4, 4 - len(pos), -1)) and 1 <= len(pos) <= 4
 print("truncated rankings and laziness ok")
+
+# Add-ons (addons/*.py): each file's own test(), and the template as a check of the loader contract
+import methods as _ma, importlib.util as _iu, os as _os
+for _fn in sorted(set(_ma.ADDONS.values())):
+    _mod = __import__("sys").modules["vpl_addon_" + _fn[:-3]]
+    if hasattr(_mod, "test"):
+        _mod.test()
+    print(f"add-on {_fn} ok: {', '.join(k for k, v in _ma.ADDONS.items() if v == _fn)}")
+_spec = _iu.spec_from_file_location("vpl_template", _os.path.join(_ma.ADDON_DIR, "_template.py"))
+_tm = _iu.module_from_spec(_spec)
+_spec.loader.exec_module(_tm)
+_ma.FEATURES.update(_tm.FEATURES)
+_tm.test()
+del _ma.FEATURES["my_feature"]
+print("add-on template ok")
