@@ -25,7 +25,7 @@ POLL ROUNDS (default; respond): a single election with a few polls before it.
     exaggerations of its ballot type around the two leaders (A = the one it prefers, B = the
     other; `exaggerations`): approve everyone liked at least as much as A; top score down to A,
     0 from B down, stretched in between; vote A; A to the top and/or B to the bottom of a
-    ranking; and the like. Aggressive voters take the best if it does not lose in the polls:
+    ranking; a ranking truncated after A, or A alone; and the like. Aggressive voters take the best if it does not lose in the polls:
     exaggeration wins ties, they exaggerate when it cannot hurt, whatever the gap. Kind voters
     take it only if it strictly gains (honesty wins ties). `aggressive` marks the aggressive
     voters (None = all; drawn in run.py); aggressive and kind voters form separate groups. Then random
@@ -66,9 +66,21 @@ def mutate(b, ballot, rng):
         new = (cur + 1 + rng.integers(C - 1)) % C
         b[:] = 0
         b[new] = 1
-    elif ballot == "rank":
+    elif ballot == "strict":
         i, j = rng.choice(C, 2, replace=False)
         b[i], b[j] = b[j], b[i]
+    elif ballot == "rank":                       # truncatable: swap two places, or rank one more / fewer
+        ranked = [int(c) for c in np.argsort(-b, kind="stable") if b[c] > 0]
+        k = len(ranked)                          # a full ranking has C-1 candidates above 0
+        order = ranked + list(rng.permutation([c for c in range(C) if b[c] <= 0]))
+        if rng.random() < 0.5:
+            i, j = rng.choice(C, 2, replace=False)
+            order[i], order[j] = order[j], order[i]
+        else:
+            k = min(C - 1, max(1, k + (1 if rng.random() < 0.5 else -1)))
+        b = np.zeros(C)
+        for pos, c in enumerate(order[:k]):
+            b[c] = C - 1 - pos
     elif ballot == "approval":
         if C == 2:              # the only valid ballots are A or B: no single flip stays valid, so swap
             return b[::-1].copy()
@@ -231,7 +243,7 @@ def implied_values(method, X):
         return X / methods.MAXS
     if b == "grade3":
         return X / 2
-    if b in ("rank", "weak"):
+    if b in ("rank", "weak", "strict"):
         return X / max(C - 1, 1)
     if b == "veto":
         return X + 1
@@ -535,6 +547,17 @@ def exaggerations(ballot, Ug, a, b):
         return r
 
     comp = [A] + [c for c in order if c != A]                       # A moved to the top
+
+    def truncated(order, comp, k):
+        """Truncated rankings (rank points C-1 ... for the ranked, 0 for the rest): the sincere order
+        down to A (if that leaves two or more unranked), and a bullet vote for A."""
+        res = []
+        for o, kk in ((order, k), (comp, 1)):
+            if kk < C - 1:
+                t = np.zeros(C)
+                t[o[:kk]] = np.arange(C - 1, C - 1 - kk, -1)
+                res.append(t)
+        return res
     bury = [c for c in order if c != Bo] + [Bo]
     both = [A] + [c for c in bury if c != A]
     if ballot == "fav":
@@ -547,8 +570,10 @@ def exaggerations(ballot, Ug, a, b):
         lo = Ug[Bo]
         x = np.clip((Ug - lo) / max(Ug[A] - lo, 1e-12), 0, 1)       # top at A and above, 0 at B and below
         out = [np.rint(S * x), S * up.astype(float)]
-    elif ballot == "rank":
+    elif ballot == "strict":
         out = [rank_points(both), rank_points(comp), rank_points(bury)]
+    elif ballot == "rank":                                           # also truncated: rank only down to A, or A alone
+        out = [rank_points(both), rank_points(comp), rank_points(bury)] + truncated(order, comp, k)
     elif ballot == "weak":                                           # levels, equal = tied
         tied = np.empty(C)
         tied[up] = C - 1                                             # A tied with everyone above it, at the top
@@ -557,7 +582,7 @@ def exaggerations(ballot, Ug, a, b):
         tb = tied.copy()
         if not up[Bo]:
             tb[Bo] = tb[rest].min() - 1 if len(rest) > 1 else tb[Bo]
-        out = [tb - tb.min(), tied - tied.min(), rank_points(both), rank_points(bury)]
+        out = [tb - tb.min(), tied - tied.min(), rank_points(both), rank_points(bury)] + truncated(order, comp, k)
     elif ballot == "trunc":                                          # rank only down to A
         if 0 < k < C:
             t1 = np.zeros(C); t1[[c for c in order if up[c]]] = np.arange(k, 0, -1)

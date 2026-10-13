@@ -167,6 +167,7 @@ Each election draws a fresh electorate (`scenario.py`):
 | `--samples` | 10 | polls per round (they stand for the uncertainty); with `--converge`, bootstrap resamples per round |
 | `--poll-error` | 2 | voters treat polls as this many times less precise than their sampling error |
 | `--aggressive` | 0.5 | share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) only when the polls show a gain (poll rounds only) |
+| `--lazy` | 0 | laziness of honest rankings, 0–1 (see Truncation and laziness) |
 | `--poll-size` | 0 | voters per poll; 0 = half the electorate, rounded to an odd number |
 | `--search` | 10 | random ballot changes a group tries per poll round, after the naive exaggerations |
 | `--converge` | 0 | N > 0: convergent learning with N rounds instead of poll rounds (e.g. `--converge 20 --samples 10`) |
@@ -355,16 +356,33 @@ The exaggerated score ballot and the approval ballot say the same and get the sa
 | Ballot | Form | Sincere ballot |
 |---|---|---|
 | one name | one candidate | the favourite |
-| ranking | full strict ranking | by utility |
-| approval | approve or not | every candidate above the voter's mean utility (at least the favourite) |
-| score 0–max | integer score per candidate (`--max-score`, default 5) | stretched to the voter's own utility range, rounded |
+| ranking | ranking; may be truncated (the top k ranked, the rest unranked, tied last) | by utility, complete (truncated with `--lazy`) |
+| approval | approve or not | every candidate above the voter's mean utility (at least the favourite; with `--lazy` only those the voter cares about) |
+| score 0–max | integer score per candidate (`--max-score`, default 5) | stretched to the voter's own utility range, rounded (with `--lazy` the others blank = 0) |
 | two-round, plurality first round | one candidate marked for round 1, plus a ranking for the separate runoff | the favourite marked; ranking by utility |
 | two-round, approval first round | approvals for round 1, plus a ranking for the separate runoff | every candidate above the mean approved; ranking by utility |
 | veto | one candidate against | the least liked |
-| ranking, ties allowed | levels, equal = tied | strict ranking by utility (ties only arise from learning) |
-| truncated ranking | the top k ranked, the rest unranked (tied last) | rank every candidate above the mean |
-| ranking of at most 3 | up to 3 ranked, the rest unranked (tied last) | the 3 best-liked (all, with 3 or fewer candidates) |
+| ranking, ties allowed | levels, equal = tied; level 0 shared by two or more = unranked (truncation) | strict ranking by utility (ties only arise from learning; truncated with `--lazy`) |
+| truncated ranking | the top k ranked, the rest unranked (tied last) | rank every candidate above the mean (with `--lazy`: only those the voter also cares about) |
+| ranking of at most 3 | up to 3 ranked, the rest unranked (tied last) | the 3 best-liked (all, with 3 or fewer candidates; with `--lazy`: only those the voter also cares about) |
+| full ranking (Inverse-\* methods) | full strict ranking, never truncated | by the reversed preferences |
 | three grades | good / OK / bad per candidate | stretched to the voter's own utility range, rounded to 0–2 (as the score ballot, with three levels; not affected by `--max-score`) |
+
+**Truncation and laziness.** Rankings may be truncated: the voter ranks the top k candidates and leaves the rest unranked, tied last (a ranking of all but one is the full ranking). Strategic voters can truncate (rank only down to the leader they prefer, or bullet-vote for it) and the random search can rank one candidate more or fewer. Truncation reverses no preference, so it does not lower sincerity; it lowers fidelity (less is said). How the methods treat unranked candidates:
+
+| Methods | Unranked candidates |
+|---|---|
+| pairwise (Schulze, Ranked pairs, Minimax family, Kemeny-Young, Copeland, Ranked Robin, Baldwin, Nanson, SICT, Condorcet-random-drop, …) | below every ranked candidate, tied with each other (no preference between them) |
+| IRV, ER-IRV, Benham, BTR-IRV, Coombs (first choices) | a ballot with no ranked candidate left is exhausted and counts for nobody; majorities are of the continuing ballots |
+| Coombs (last places) | the unranked share the last place equally |
+| Borda, Black, BTR-Borda | 0 points; ranked candidates keep their full points (C−1, C−2, …), so truncating can pay |
+| Dowdall | 0 points |
+| Supplementary vote | a ballot with only one candidate ranked has no second preference |
+| TRASH (last places) | shared, as in Coombs |
+
+In the ER variants (rankings with ties) a tie at level 0 of two or more candidates means unranked; ties higher up keep the equal-ranking rules (in ER-IRV each candidate tied at the top among the remaining gets a whole vote). The Inverse-\* methods keep full strict rankings: their honest ballot is the reversed one, and truncating it has no clear meaning.
+
+`--lazy λ` (0–1) makes honest rankings truncated: a voter ranks a candidate only if its utility, stretched to 0–1 between the voter's least and most liked candidate, is at least λ (the favourite always). λ = 0 gives full rankings, λ = 1 bullet votes; in between the length depends on the voter's preferences (a voter with one clear favourite ranks fewer than one who likes several about equally), so it is neither a share of voters nor a fixed number of ranks. It applies to every ballot that can say more than one thing: rankings (ranking, ranking with ties, truncated ranking, ranking of at most 3; for the last two on top of their own cut) are truncated; approval ballots (also the round-1 approvals of the approval runoffs) approve only the candidates above the mean that the voter cares about, so λ = 1 is a bullet vote; score and grade ballots leave the other candidates blank, which counts as 0, so λ = 1 scores only the favourite. Plurality, veto and the TTR mark already name a single candidate. The Inverse-\* methods are never lazy. The lazy ballot is the voter's honest ballot: what non-strategic voters cast, round 0, and the base of VSE and WME. Strategic voters may rank more or fewer when it pays; kind voters only for a strict gain, so laziness persists unless strategy rewards completing the ranking.
 
 **Two-round elections** (TTR, Approval runoff, Approval cond. runoff) have a real, separate runoff: voters come back and vote between the two finalists, independently of their first vote. With two candidates, voting for the preferred one is always best, so the runoff is decided by everyone's sincere preference between the finalists (turnout changes between the rounds are not modelled). The ballot carries that sincere ranking as a fixed part; strategy changes only the round-1 marks. Methods that read the runoff from the same ballot (Supplementary vote, STAR, the BTR methods) are automated runoffs, where strategic voters can also misrank the finalists.
 

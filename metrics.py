@@ -68,7 +68,7 @@ def election_row(u, P, m):
     }
 
 
-ORDERED_BALLOTS = ("rank", "weak", "trunc", "trunc3", "score", "grade3")   # ballots that record an order
+ORDERED_BALLOTS = ("rank", "strict", "weak", "trunc", "trunc3", "score", "grade3")   # ballots that record an order
 
 
 def condorcet_winner(gt):

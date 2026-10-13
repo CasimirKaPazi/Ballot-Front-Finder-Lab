@@ -589,3 +589,43 @@ Bb[:4] = [3, 1, 2, 0]                                  # the 4 A-voters put C ab
 assert ballot_condorcet(Bor, Bb, u2, lambda P: P, Bor.tally(Bb))["bcw"] in ("false", "none")
 assert ballot_condorcet(METHODS["Plurality"], METHODS["Plurality"].sincere(u2), u2, lambda P: P, np.ones(4) / 4)["bcw"] == ""
 print("ballot Condorcet winner ok")
+
+# Truncated rankings (unranked = 0, tied last) and laziness
+import methods as _mm
+from strategy import mutate as _mutate
+Bt = np.array([[0, 0, 2]] * 3 + [[2, 1, 0]] * 4 + [[1, 2, 0]] * 4, dtype=float)   # 3 bullet votes for C
+check("IRV: bullet ballots are exhausted once their candidate is out", METHODS["IRV"].tally(Bt), [0.5, 0.5, 0])
+check("ER-IRV: the same with level-0 ties", METHODS["ER-IRV"].tally(Bt), [0.5, 0.5, 0])
+assert np.allclose(METHODS["Borda"].features(np.array([[3., 0, 0, 0]])), [[3, 0, 0, 0]])   # unranked: 0 points
+assert np.allclose(_mm.FEATURES["dowdall"][0](np.array([[3., 0, 0, 0], [3., 2, 1, 0]])),
+                   [[12, 0, 0, 0], [12, 6, 4, 3]])                                          # unranked: 0 (lcm 12)
+L = _mm.FEATURES["lasts"][0](np.array([[3., 0, 0, 0]])).reshape(16, 4)
+assert np.allclose(L[15], [0, 1 / 3, 1 / 3, 1 / 3])                                         # Coombs: last place shared
+FS = _mm.FEATURES["firstsecond"][0](np.array([[3., 0, 0, 0], [3., 2, 0, 0]])).reshape(2, 4, 4)
+assert FS[0, 0, 0] == 1 and FS[1, 0, 1] == 1                                                 # bullet: no second preference
+ul = np.array([[1.0, 0.6, 0.3, 0.0]])
+assert np.allclose(_mm.lazy_rank_ballots(ul, 0.0), [[3, 2, 1, 0]])
+assert np.allclose(_mm.lazy_rank_ballots(ul, 0.5), [[3, 2, 0, 0]])
+assert np.allclose(_mm.lazy_rank_ballots(ul, 1.0), [[3, 0, 0, 0]])
+assert np.allclose(_mm.lazy_rank_ballots(ul, 0.3), [[3, 2, 1, 0]])                           # all but one = full ranking
+_mm.set_lazy(1.0)
+assert np.allclose(METHODS["IRV"].sincere(ul), [[3, 0, 0, 0]])
+assert np.allclose(METHODS["MDDA"].sincere(ul), [[1, 0, 0, 0]])                                # trunc: lazy cuts further
+assert np.allclose(METHODS["Inverse-IRV"].sincere(ul), [[0, 1, 2, 3]])                         # inverse: never lazy
+assert np.allclose(METHODS["Approval"].sincere(ul), [[1, 0, 0, 0]])                            # bullet approval
+assert np.allclose(METHODS["Score"].sincere(ul), [[5, 0, 0, 0]])                               # others blank = 0
+assert np.allclose(METHODS["MCA"].sincere(ul), [[2, 0, 0, 0]])
+assert np.allclose(METHODS["Inverse-Approval"].sincere(ul), [[0, 0, 1, 1]])                   # inverse: never lazy
+for name in METHODS:                                                                           # lazy honest ballots never reverse
+    m = METHODS[name]
+    uu = r.random((20, 5))
+    if sincerity_defined(name):
+        assert np.allclose(sincerity(m, m.sincere(uu), uu), 1), name
+_mm.set_lazy(0.0)
+rg = np.random.default_rng(3)
+b = np.array([4., 3, 2, 1, 0])
+for _ in range(300):                                                                           # mutations stay valid rankings
+    b = _mutate(b, "rank", rg)
+    pos = np.sort(b[b > 0])[::-1]
+    assert np.allclose(pos, np.arange(4, 4 - len(pos), -1)) and 1 <= len(pos) <= 4
+print("truncated rankings and laziness ok")

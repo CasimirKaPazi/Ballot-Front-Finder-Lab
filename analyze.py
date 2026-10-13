@@ -81,6 +81,7 @@ def source_name(p):
     return os.path.basename(d) if f == "elections.csv" else f
 
 
+OPTIONAL_PARAMS = {"lazy": "0.0"}   # parameters added after 1.0.0, with the value older runs implied
 OLD_SINCERITY = []     # inputs written before the current sincerity measure (no fidelity column)
 
 
@@ -89,13 +90,15 @@ def load(paths):
     for p in paths:
         with open(p, newline="") as f:
             reader = csv.DictReader(f)
+            fill = {k: v for k, v in OPTIONAL_PARAMS.items() if k not in (reader.fieldnames or [])}
             missing = [k for k in RUN_PARAMS + ["WM_best", "U_rb", "sincerity", "U_cands", "nom_changed", "noshow"]
-                       if k not in (reader.fieldnames or [])]
+                       if k not in (reader.fieldnames or []) and k not in fill]
             if missing:
                 raise SystemExit(f"{p} lacks {', '.join(missing)}; regenerate it with the current run.py or sweep.py")
             if "fidelity" not in reader.fieldnames:
                 OLD_SINCERITY.append(source_name(p))
             for r in reader:
+                r.update(fill)                   # parameters added later, at their default (older CSVs)
                 r["_file"] = source_name(p)
                 rows.append(r)
     if not rows:
@@ -462,10 +465,10 @@ def label(key, varying, first):
 PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error", "converge": "convergent rounds",
                "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion",
-               "cand_shift": "candidate shift"}
+               "cand_shift": "candidate shift", "lazy": "laziness"}
 LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "poll_size", "poll_error", "search", "converge",
                  "aggressive", "start"}   # same electorates
-SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones"}  # same electorates (honest results may differ)
+SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)
 
 
 def param_order(k, v):

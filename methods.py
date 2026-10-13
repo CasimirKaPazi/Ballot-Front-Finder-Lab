@@ -2,7 +2,10 @@
 
 A ballot matrix B has one row per voter and one column per candidate:
   "fav"      one-hot: 1 for the named candidate
-  "rank"     rank points: best C-1 ... worst 0
+  "rank"     rank points: best C-1 ... worst 0. Truncated rankings: the k ranked candidates get
+             C-1 ... C-k, the unranked ones 0 (tied last; a full ranking is k = C-1). Voters may
+             truncate strategically, and lazy voters truncate their honest ballot (set_lazy)
+  "strict"   as rank, but always a full ranking (the Inverse-* methods on rankings)
   "approval" 0/1
   "score"    0..MAXS (default 0..5; set_max_score changes the range)
   "fav_run"  two-round election, plurality first round: the sincere ranking as rank points
@@ -19,15 +22,21 @@ Every tally returns exact winner probabilities; ties are split uniformly among
 the tied candidates and counted exactly.
 
 Sincere ballots from utilities u[v, c]:
-  rank     - order by utility
+  rank     - order by utility; with laziness (set_lazy) only the candidates the voter cares about
+  strict   - order by utility, always complete
   approval - every candidate above the voter's mean utility
   score    - 0..MAXS, stretched to the voter's own utility range, rounded
   fav_run  - mark the favourite; ranking by utility
   app_run  - approve every candidate above the voter's mean utility; ranking by utility
   veto     - against the least liked candidate
-  weak     - strict ranking by utility (ties are only used strategically)
+  weak     - strict ranking by utility (ties are only used strategically); laziness as rank, the
+             unranked at level 0
   trunc    - rank every candidate above the voter's mean utility, leave the rest unranked
   trunc3   - rank the 3 best-liked candidates (all, with 3 or fewer), leave the rest unranked
+  (trunc and trunc3 with laziness: only those of them the voter also cares about)
+Laziness (LAZY, 0..1): a voter ranks (approves, scores) a candidate only if its utility, stretched
+to 0..1 between the voter's least and most liked candidate, is at least LAZY; scores and grades of
+the others are left blank = 0. 0 = full ballots, 1 = only the favourite. Not for the Inverse-* methods.
   grade3   - 0..2, stretched to the voter's own utility range, rounded (as score, with 3 levels)
 """
 from dataclasses import dataclass
@@ -37,6 +46,34 @@ import numpy as np
 
 EPS = 1e-9
 MAXS = 5          # top of the score range; change it with set_max_score, not directly
+LAZY = 0.0        # laziness of honest rankings, 0..1; change it with set_lazy, not directly
+
+
+def set_lazy(x):
+    """Laziness of honest ballots (rankings, approval, scores, grades; LAZY_BALLOTS): a voter ranks a candidate only
+    if its utility, stretched to 0..1 between the voter's least and most liked candidate, is at least x
+    (0 = full rankings, 1 = only the favourite; the favourite is always ranked). It is only the honest
+    starting point: strategic voters may rank more or less. Call it in every process."""
+    global LAZY
+    if not 0 <= float(x) <= 1:
+        raise ValueError("laziness must be between 0 and 1")
+    LAZY = float(x)
+
+
+def cares(u, lazy):
+    """Per voter and candidate: True if a lazy voter (laziness `lazy`) ranks the candidate."""
+    mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
+    p = (u - mn) / np.where(mx - mn > 1e-12, mx - mn, 1)
+    return (p >= lazy - 1e-12) | (u >= mx)
+
+
+def truncate(R, keep):
+    """Rank points R (C-1 ... 0, strict) truncated to the candidates in `keep` (a top segment of the
+    ranking): those keep their points C-1 ... C-k, the others get 0 (unranked, tied last)."""
+    C = R.shape[1]
+    k = keep.sum(axis=1, keepdims=True)
+    full = k >= C - 1                                        # ranking all but one = the full ranking
+    return np.where(keep | full, R, 0.0)
 
 
 def set_max_score(m):
@@ -72,25 +109,33 @@ def rank_ballots(u):
     return B
 
 
-def approval_ballots(u):
+def approval_ballots(u, lazy=0.0):
+    """Every candidate above the voter's mean utility (at least the favourite); with laziness only
+    those the voter also cares about (cares): at 1 a bullet vote for the favourite."""
     a = u > u.mean(axis=1, keepdims=True) + 1e-12
+    if lazy > 0:
+        a &= cares(u, lazy)
     none = ~a.any(axis=1)
     a[none, u[none].argmax(axis=1)] = True
     return a.astype(float)
 
 
-def score_ballots(u):
+def score_ballots(u, lazy=0.0):
+    """0..MAXS stretched to the voter's own utility range, rounded; with laziness the candidates the
+    voter does not care about (cares) are left blank, which counts as 0: at 1 only the favourite
+    gets a score."""
     mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
     d = np.where(mx - mn > 1e-12, mx - mn, 1.0)
-    return np.rint(MAXS * (u - mn) / d)
+    B = np.rint(MAXS * (u - mn) / d)
+    return np.where(cares(u, lazy), B, 0.0) if lazy > 0 else B
 
 
 def fav_run_ballots(u):
     return rank_ballots(u) + u.shape[1] * fav_ballots(u)
 
 
-def app_run_ballots(u):
-    return rank_ballots(u) + u.shape[1] * approval_ballots(u)
+def app_run_ballots(u, lazy=0.0):
+    return rank_ballots(u) + u.shape[1] * approval_ballots(u, lazy)     # laziness: round-1 approvals only
 
 
 def veto_ballots(u):
@@ -99,8 +144,19 @@ def veto_ballots(u):
     return B
 
 
-def trunc_ballots(u):
+def lazy_rank_ballots(u, lazy=None):
+    """Honest rankings with laziness: the candidates the voter cares about (cares) keep their rank
+    points, the rest are unranked (0)."""
+    lazy = LAZY if lazy is None else lazy
+    R = rank_ballots(u)
+    return R if lazy <= 0 else truncate(R, cares(u, lazy))
+
+
+def trunc_ballots(u, lazy=None):
+    lazy = LAZY if lazy is None else lazy
     R, A = rank_ballots(u), approval_ballots(u)
+    if lazy > 0:
+        A = A * cares(u, lazy)
     k = A.sum(axis=1, keepdims=True)
     return np.where(A > 0, R - (u.shape[1] - k) + 1, 0.0)   # top k get k ... 1
 
@@ -108,22 +164,32 @@ def trunc_ballots(u):
 TRUNC3 = 3       # most candidates ranked on a "trunc3" ballot
 
 
-def trunc3_ballots(u):
+def trunc3_ballots(u, lazy=None):
+    lazy = LAZY if lazy is None else lazy
     C = u.shape[1]
     k = min(TRUNC3, C)
     R = rank_ballots(u)
-    return np.where(R >= C - k, R - (C - k) + 1, 0.0)        # top k get k ... 1
+    keep = R >= C - k
+    if lazy > 0:
+        keep = keep & cares(u, lazy)
+        kk = keep.sum(axis=1, keepdims=True)
+        return np.where(keep, R - (C - kk) + 1, 0.0)            # the kept top kk get kk ... 1
+    return np.where(keep, R - (C - k) + 1, 0.0)              # top k get k ... 1
 
 
-def grade3_ballots(u):
+def grade3_ballots(u, lazy=0.0):
     mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
     d = np.where(mx - mn > 1e-12, mx - mn, 1.0)
-    return np.rint(2 * (u - mn) / d)
+    B = np.rint(2 * (u - mn) / d)
+    return np.where(cares(u, lazy), B, 0.0) if lazy > 0 else B         # blank = bad (0), as for scores
 
 
-SINCERE = {"fav": fav_ballots, "rank": rank_ballots, "approval": approval_ballots, "score": score_ballots,
-           "fav_run": fav_run_ballots, "app_run": app_run_ballots, "veto": veto_ballots, "weak": rank_ballots, "trunc": trunc_ballots, "trunc3": trunc3_ballots,
+SINCERE = {"fav": fav_ballots, "rank": lazy_rank_ballots, "strict": rank_ballots, "approval": approval_ballots, "score": score_ballots,
+           "fav_run": fav_run_ballots, "app_run": app_run_ballots, "veto": veto_ballots, "weak": lazy_rank_ballots, "trunc": trunc_ballots, "trunc3": trunc3_ballots,
            "grade3": grade3_ballots}
+
+
+LAZY_BALLOTS = ("rank", "weak", "trunc", "trunc3", "approval", "app_run", "score", "grade3")   # laziness applies
 
 
 # ---------- helpers ----------
@@ -245,14 +311,19 @@ def _subset_id(top):
 
 
 def _firsts(B):
-    """For every subset A of candidates: one-hot of the voter's highest-rated candidate in A
-    (first index on ties). Used for elimination methods: first choices among the remaining."""
+    """For every subset A of candidates: one-hot of the voter's highest-ranked candidate in A. Used for
+    elimination methods: first choices among the remaining. Truncated rankings: a ballot whose
+    candidates left in A are all unranked (0, two or more tied) is exhausted and counts for nobody."""
     n, C = B.shape
     m = masks(C)
     Bm = np.where(m[None], B[:, None, :], -np.inf)             # (n, 2^C, C)
     out = np.zeros((n, 2 ** C, C))
+    top = Bm[:, 1:].max(axis=2, keepdims=True)
     idx = Bm[:, 1:].argmax(axis=2)
-    out[np.arange(n)[:, None], np.arange(1, 2 ** C)[None, :], idx] = 1
+    ntop = (Bm[:, 1:] == top).sum(axis=2)
+    live = (top[:, :, 0] > 0) | (ntop == 1)
+    v, s_ = np.nonzero(live)
+    out[v, s_ + 1, idx[v, s_]] = 1
     return out.reshape(n, -1)
 
 
@@ -271,22 +342,27 @@ def _firsts_ex(B):
 
 
 def _lasts(B):
-    """For every subset A: one-hot of the voter's lowest-ranked candidate in A (Coombs)."""
+    """For every subset A: the voter's lowest-ranked candidate in A (Coombs). Candidates tied at the
+    bottom (unranked on a truncated ranking) share the last place equally."""
     n, C = B.shape
-    m = masks(C)
-    Bm = np.where(m[None], B[:, None, :], np.inf)
-    out = np.zeros((n, 2 ** C, C))
-    idx = Bm[:, 1:].argmin(axis=2)
-    out[np.arange(n)[:, None], np.arange(1, 2 ** C)[None, :], idx] = 1
-    return out.reshape(n, -1)
+    m = masks(C)[None]
+    Bm = np.where(m, B[:, None, :], np.inf)
+    low = (Bm == Bm.min(axis=2, keepdims=True)) & m
+    low[:, 0] = False
+    return (low / np.maximum(low.sum(axis=2, keepdims=True), 1)).reshape(n, -1)
 
 
 def _firsts_eq(B):
-    """As _firsts, but every candidate tied at the top among A gets a whole vote (rankings with ties)."""
+    """As _firsts, but every candidate tied at the top among A gets a whole vote (rankings with ties).
+    Candidates at level 0 tied with others are unranked (truncation): a ballot with only those left
+    in A is exhausted, as on a truncated ranking, rather than giving each a whole vote."""
     n, C = B.shape
     m = masks(C)[None]
     Bm = np.where(m, B[:, None, :], -np.inf)
-    return ((Bm == Bm.max(axis=2, keepdims=True)) & m).reshape(n, -1)
+    top = Bm.max(axis=2, keepdims=True)
+    at = (Bm == top) & m
+    live = (top > 0) | (at.sum(axis=2, keepdims=True) == 1)
+    return (at & live).reshape(n, -1)
 
 
 def _coalitions(B, strict):
@@ -344,17 +420,28 @@ def _lcm_upto(C):
 
 
 def _dowdall(B):
-    """Dowdall points on a strict ranking, 1, 1/2, 1/3, ..., times lcm(1..C) so they are integers."""
+    """Dowdall points, 1, 1/2, 1/3, ..., times lcm(1..C) so they are integers; unranked candidates on a
+    truncated ranking (0, two or more tied) get 0."""
     C = B.shape[1]
     pos = (C - 1) - B                                   # 0 = first place
-    return _lcm_upto(C) // (pos.astype(int) + 1)
+    pts = _lcm_upto(C) // (pos.astype(int) + 1)
+    return np.where(_unranked(B), 0, pts)
+
+
+def _unranked(B):
+    """Truncated rankings: the candidates at 0 when two or more share it (a lone 0 is the last place of
+    a full ranking)."""
+    z = B == 0
+    return z & (z.sum(axis=1, keepdims=True) > 1)
 
 
 def _firstsecond(B):
-    """One-hot of the (first, second) pair of a strict ranking, as a C x C matrix."""
+    """One-hot of the (first, second) pair of a ranking, as a C x C matrix. A truncated ranking with
+    only one candidate ranked has no second preference: (first, first)."""
     n, C = B.shape
     order = np.argsort(-B, axis=1, kind="stable")
-    return _onehot(order[:, 0] * C + order[:, 1], C * C)
+    second = np.where(_unranked(B)[np.arange(n), order[:, 1]], order[:, 0], order[:, 1])
+    return _onehot(order[:, 0] * C + second, C * C)
 
 
 def _keepnorm(B):
@@ -378,7 +465,8 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "n": (lambda B: np.ones((len(B), 1)), lambda C: ()),
     "sum": (lambda B: B, lambda C: (C,)),
     "first": (lambda B: _onehot(B.argmax(axis=1), B.shape[1]), lambda C: (C,)),
-    "last": (lambda B: _onehot(B.argmin(axis=1), B.shape[1]), lambda C: (C,)),
+    "last": (lambda B: (lambda lo: lo / lo.sum(axis=1, keepdims=True))(B == B.min(axis=1, keepdims=True)),
+             lambda C: (C,)),                                                 # ties at the bottom share
     "gt": (lambda B: (B[:, :, None] > B[:, None, :]).reshape(len(B), -1), lambda C: (C, C)),
     "app": (lambda B: B >= B.shape[1], lambda C: (C,)),                       # fav_run / app_run: round-1 marks
     "runoff_gt": (lambda B: (lambda R: (R[:, :, None] > R[:, None, :]).reshape(len(B), -1))(np.mod(B, B.shape[1])),
@@ -1298,6 +1386,8 @@ class Method:
         return -u if self.inverse else u
 
     def sincere(self, u):
+        if self.ballot in LAZY_BALLOTS:              # laziness: not for the Inverse-* methods
+            return SINCERE[self.ballot](self.pref(u), 0.0 if self.inverse else LAZY)
         return SINCERE[self.ballot](self.pref(u))
 
     def honest(self, u):
@@ -1385,11 +1475,11 @@ METHODS = {
     # their ballot get the original method back.
     "Inverse-Plurality": M_("fav", d_sum, ("sum",), inverse=True),
     "Inverse-Approval": M_("approval", d_sum, ("sum",), inverse=True),
-    "Inverse-Minimax": M_("rank", d_minimax, ("gt",), inverse=True),
-    "Inverse-IRV": M_("rank", d_irv, ("firsts",), inverse=True),
+    "Inverse-Minimax": M_("strict", d_minimax, ("gt",), inverse=True),
+    "Inverse-IRV": M_("strict", d_irv, ("firsts",), inverse=True),
     "Inverse-ER-IRV": M_("weak", d_er_irv, ("firsts_eq",), inverse=True),
     "Inverse-TTR": M_("fav_run", d_inverse_two_round, ("n", "app", "runoff_gt"), inverse=True),
-    "Inverse-Borda": M_("rank", d_sum, ("sum",), inverse=True),
+    "Inverse-Borda": M_("strict", d_sum, ("sum",), inverse=True),
     "Inverse-Score": M_("score", d_sum, ("sum",), inverse=True),
 }
 

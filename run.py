@@ -39,7 +39,7 @@ import numpy as np
 
 from scenario import Scenario, electorate_positions
 from nomination import nominate, clone_setup, utilities, to_original
-from methods import METHODS, select, set_max_score, sincerity_defined
+from methods import METHODS, select, set_max_score, set_lazy, sincerity_defined
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet
 import participation as part
@@ -47,8 +47,10 @@ import participation as part
 
 def one_election(args):
     (sc, seed, e, rounds, samples, group_size, share, max_score, exits, clones, poll_size, poll_error, search,
-     converge, aggr, names, participation, start, dummy) = args
+     converge, aggr, names, participation, start, dummy) = args[:19]
+    lazy = args[19] if len(args) > 19 else 0.0           # laziness (methods.set_lazy)
     set_max_score(max_score)                        # per process: workers do not share module state
+    set_lazy(lazy)
     rng = np.random.default_rng([seed, e])
     u, voters, cands = electorate_positions(sc, rng)
     C = u.shape[1]
@@ -160,7 +162,7 @@ def check_params(a, error):
     for k, lo in (("rounds", 0), ("samples", 1), ("search", 0), ("poll_size", 0), ("converge", 0), ("clones", 0)):
         if any(v < lo for v in vals(k)):
             error(f"--{k.replace('_', '-')} must be at least {lo}")
-    for k in ("strategic", "aggressive"):
+    for k in ("strategic", "aggressive", "lazy"):
         if any(not 0 <= v <= 1 for v in vals(k)):
             error(f"--{k} must be between 0 and 1")
     if any(v < 0 for v in vals("poll_error")):
@@ -186,6 +188,7 @@ def strategy_text(p, n):
     ps = int(g("poll_size")) or default_poll_size(int(n))
     return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
             f"search {g('search')}, aggressive share {g('aggressive')}"
+            + (f", laziness {g('lazy')}" if float(g("lazy")) > 0 else "")
             + ("; first poll from a previous election" if g("start") == "previous" else ""))
 
 
@@ -210,7 +213,7 @@ def group_text(g):
 
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
-          "strategic", "aggressive", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
+          "strategic", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
           "start", "seed"]
 
 
@@ -219,6 +222,7 @@ def previous_election(args):
     same settings, through the same number of poll rounds; returns its final ballots."""
     sc, p, rounds, name = args
     set_max_score(p["max_score"])
+    set_lazy(p.get("lazy", 0.0))
     rng = np.random.default_rng([p["seed"], zlib.crc32(b"previous")])
     u = electorate_positions(sc, rng)[0]
     strategic = rng.random(len(u)) < p["strategic"]
@@ -297,7 +301,7 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
             dummy = None
             if p["start"] == "previous":          # one previous election for the whole batch, per method
                 dummy = dict(zip(names, pool.map(previous_election, [(sc, p, max(rounds), n) for n in names])))
-            jobs = [j + (p["start"], dummy) for j in jobs]
+            jobs = [j + (p["start"], dummy, p.get("lazy", 0.0)) for j in jobs]
             for batch in pool.imap(one_election, jobs, chunksize=1):   # in order: the file stays reproducible
                 batch = [{**meta, **r} for r in batch]
                 batch = [{k: r[k] for k in PARAMS} | r for r in batch]      # parameters first, as columns
@@ -422,6 +426,10 @@ def main():
     ap.add_argument("--aggressive", type=float, default=0.5,
                     help="share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) "
                          "only when the polls show a gain (poll rounds only)")
+    ap.add_argument("--lazy", type=float, default=0.0,
+                    help="laziness of honest ballots, 0..1: a voter ranks, approves or scores only candidates whose "
+                         "utility, stretched to 0..1 between least and most liked, is at least this (0 = full "
+                         "ballots, 1 = bullet votes); strategic voters may deviate (see README)"),
     ap.add_argument("--poll-error", type=float, default=2.0,
                     help="poll rounds only: voters treat polls as this many times less precise than their "
                          "sampling error")
