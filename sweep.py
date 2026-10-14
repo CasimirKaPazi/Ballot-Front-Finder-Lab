@@ -48,6 +48,7 @@ def main():
     ap.add_argument("--spread", type=float, nargs="+", default=[0.5])
     ap.add_argument("--ks-alpha", type=float, nargs="+", default=[1.5])
     ap.add_argument("--ks-cut", type=float, nargs="+", default=[0.2])
+    ap.add_argument("--ks-shared", type=int, nargs="+", default=[0], choices=[0, 1])
     ap.add_argument("--width", type=float, nargs="+", default=[1.0])
     ap.add_argument("--cand-dispersion", type=float, nargs="+", default=[1.0])
     ap.add_argument("--cand-shift", type=float, nargs="+", default=[0.0])

@@ -21,6 +21,7 @@ class Scenario:
     model: str = "clusters"        # electorate model (models.MODELS); dims, n_clusters, spread, zipf: "clusters"
     ks_alpha: float = 1.5          # "ks": faction alpha (Chinese restaurant process)
     ks_cut: float = 0.2            # "ks": importance below which no further bundles / dimensions
+    ks_shared: int = 0             # "ks": 1 = the same factions in every bundle (no cross-cutting)
 
 
 def electorate(sc: Scenario, rng: np.random.Generator):

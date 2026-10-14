@@ -702,6 +702,13 @@ def _spread(alpha):
     el = _md.draw_electorate(Scenario(n_voters=201, n_cands=3, model="ks", ks_alpha=alpha), np.random.default_rng(4))
     return el.voters.std(axis=0).mean()
 assert _spread(1e-6) < _spread(1e6)
+# ks_shared: the same factions in every bundle; without it, factions differ between bundles
+for _sh in (0, 1):
+    _f = []
+    for _e in range(10):
+        _f += [_md._ks_structure(Scenario(n_voters=51, n_cands=4, model="ks", ks_shared=_sh), np.random.default_rng([6, _e]))[2]]
+    _same = [all(np.array_equal(fs[0], x) for x in fs[1:]) for fs in _f if len(fs) > 1]
+    assert _same and (all(_same) if _sh else not all(_same)), _sh
 print("electorate models ok")
 
 # Sweep order of parameter values (analyze.param_order): numbers by value, words in their listed order

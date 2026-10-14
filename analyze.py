@@ -109,6 +109,7 @@ ADDED_COLUMNS = {
     "model": ("clusters", "2026-10-14, electorate models: older runs used the clusters model"),
     "ks_alpha": ("1.5", "2026-10-14, parameters of the ks model (not used by older runs)"),
     "ks_cut": ("0.2", "2026-10-14, parameters of the ks model (not used by older runs)"),
+    "ks_shared": ("0", "2026-10-14, parameters of the ks model (not used by older runs)"),
     "lazy": ("0.0", "2026-10-13, laziness: older runs had full ballots"),
     "fidelity": (None, "2026-10-12, fidelity, with the current sincerity measure"),
     "bcw": (None, "2026-10-12, Condorcet winner in the ballots"),
@@ -522,7 +523,8 @@ PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error", "converge": "convergent rounds",
                "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion",
                "cand_shift": "candidate shift", "lazy": "laziness", "model": "electorate model",
-               "ks_alpha": "ks faction alpha", "ks_cut": "ks cut"}
+               "ks_alpha": "ks faction alpha", "ks_cut": "ks cut",
+               "ks_shared": "ks shared factions"}
 LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "poll_size", "poll_error", "search", "converge",
                  "aggressive", "start"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)

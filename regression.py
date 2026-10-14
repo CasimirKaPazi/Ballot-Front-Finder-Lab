@@ -38,7 +38,7 @@ IGNORE = {"version"}
 
 # The run parameters every condition starts from (small and fast), then what each condition changes.
 BASE = {"voters": 25, "cands": 4, "model": "clusters", "dims": 3, "zipf": 1, "clusters": 3, "spread": 0.5,
-        "ks_alpha": 1.5, "ks_cut": 0.2, "width": 1.0,
+        "ks_alpha": 1.5, "ks_cut": 0.2, "ks_shared": 0, "width": 1.0,
         "cand_dispersion": 1.0, "cand_shift": 0.0, "rounds": 2, "samples": 3, "group_size": 10,
         "strategic": 0.5, "aggressive": 0.5, "lazy": 0.0, "max_score": 5, "exits": 0, "clones": 0,
         "poll_size": 0, "poll_error": 2.0, "search": 4, "converge": 0, "start": "honest", "seed": 7}

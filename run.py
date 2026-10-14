@@ -233,7 +233,7 @@ def group_text(g):
 
 
 # Run parameters written into every row of the elections CSV
-PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "ks_alpha", "ks_cut", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
+PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "ks_alpha", "ks_cut", "ks_shared", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
           "strategic", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
           "start", "seed"]
 
@@ -309,7 +309,7 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     rounds = list(p["rounds"]) if isinstance(p["rounds"], (list, tuple)) else [p["rounds"]]
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"],
                   p["cand_dispersion"], p["cand_shift"], p.get("model", "clusters"), p.get("ks_alpha", 1.5),
-                  p.get("ks_cut", 0.2))
+                  p.get("ks_cut", 0.2), p.get("ks_shared", 0))
     todo = [e for e in range(elections) if e not in set(skip)]
     jobs = [{"sc": sc, "p": p, "e": e, "rounds": rounds, "names": names, "participation": participation}
             for e in todo]
@@ -440,6 +440,8 @@ def main():
     ap.add_argument("--ks-cut", type=float, default=0.2,
                     help="model ks: issue importance below which no further bundles or dimensions are drawn "
                          "(lower: more dimensions)")
+    ap.add_argument("--ks-shared", type=int, default=0, choices=[0, 1],
+                    help="model ks: 1 = the same factions in every issue bundle (no cross-cutting cleavages)")
     ap.add_argument("--width", type=float, default=1.0)
     ap.add_argument("--cand-dispersion", type=float, default=1.0,
                     help="candidates' distance from the electorate's centre x this (< 1: clustered in the centre, "

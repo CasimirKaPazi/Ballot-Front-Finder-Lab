@@ -32,7 +32,8 @@ MODEL "clusters" (default): voter clusters in a space of `dims` dimensions.
 
 MODEL "ks": Jameson Quinn's hierarchical ("kitchen sink") model, from vse-sim (voter_models.py,
 KSModel), with the parameters of its published results. Written anew from the algorithm, with one
-change (4. below). Parameters: ks_alpha (faction alpha), ks_cut (where importance stops); --dims,
+change (4. below). Parameters: ks_alpha (faction alpha), ks_cut (where importance stops), ks_shared
+(1: the same factions in every bundle, a test variant without cross-cutting cleavages); --dims,
 --clusters, --spread and --zipf do not apply.
     1. Issue bundles: the first bundle weighs 1, each further one a Beta(1, 3) fraction of the one
        before, until the weight falls below ks_cut (0.2). Within a bundle, its first dimension has
@@ -95,7 +96,17 @@ KS_CARING = (3.0, 1.5)           # Beta parameters of a faction's caring (and of
 def _draw_ks(sc, rng):
     """Quinn's hierarchical model, written from the description of vse-sim's KSModel (published
     parameters; see the README, Electorates). Persons = voters, then candidates, drawn alike."""
+    pos, W, _ = _ks_structure(sc, rng)
+    nv = sc.n_voters
+    return pos[:nv], pos[nv:], W[:nv], W[nv:]
+
+
+def _ks_structure(sc, rng):
+    """The ks draw: positions (n, D) and weights of all persons (voters, then candidates), and each
+    bundle's faction of every person (list of arrays; for the tests)."""
     n = sc.n_voters + sc.n_cands
+    shared = None                          # ks_shared: the factions of the first bundle, for all bundles
+    factions = []
     # 1. Issue bundles and their dimensions, with decaying importance
     bundles, dim_w = [], []
     bw = 1.0
@@ -115,16 +126,23 @@ def _draw_ks(sc, rng):
     for k in bundles:
         # 2. Factions in this bundle, independently of other bundles (Chinese restaurant process:
         #    each person starts a new faction with probability alpha / (i + alpha), else joins the
-        #    faction of a random earlier person)
-        fac = np.empty(n, dtype=int)
-        nf = 0
-        for i in range(n):
-            r = (i + sc.ks_alpha) * rng.random()
-            if r > i:
-                fac[i] = nf
-                nf += 1
-            else:
-                fac[i] = fac[int(r)]
+        #    faction of a random earlier person). ks_shared = 1: the same factions in every bundle
+        #    (no cross-cutting; positions and caring are still drawn per bundle)
+        if shared is not None:
+            fac, nf = shared
+        else:
+            fac = np.empty(n, dtype=int)
+            nf = 0
+            for i in range(n):
+                r = (i + sc.ks_alpha) * rng.random()
+                if r > i:
+                    fac[i] = nf
+                    nf += 1
+                else:
+                    fac[i] = fac[int(r)]
+            if getattr(sc, "ks_shared", 0):
+                shared = (fac, nf)
+        factions.append(fac)
         # 3. Each faction: a position (spread sqrt(c) for a random c) and a caring level
         means = np.empty((nf, k))
         caring = np.empty(nf)
@@ -142,8 +160,7 @@ def _draw_ks(sc, rng):
     #    sqrt(sum((x - p)^2 (w c)^2) / sum((w c)^2)) as in vse-sim
     W = dim_w[None, :] * care
     W = W / np.sqrt((W ** 2).sum(axis=1, keepdims=True))
-    nv = sc.n_voters
-    return pos[:nv], pos[nv:], W[:nv], W[nv:]
+    return pos, W, factions
 
 
 MODELS = {m.name: m for m in [
@@ -152,7 +169,7 @@ MODELS = {m.name: m for m in [
                     f"spread {g('spread')}"),
     Model("ks", _draw_ks,
           lambda g: f"Quinn's hierarchical issue bundles and factions, faction alpha {g('ks_alpha')}, "
-                    f"cut {g('ks_cut')}"),
+                    f"cut {g('ks_cut')}" + (", factions shared across bundles" if int(g("ks_shared")) else "")),
 ]}
 
 
