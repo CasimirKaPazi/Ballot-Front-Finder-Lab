@@ -147,7 +147,9 @@ The earlier model: over N rounds, groups take turns and each sees the others' la
 
 ## Electorates
 
-Each election draws a fresh electorate (`models.py`, model `clusters`):
+Each election draws a fresh electorate from the model chosen with `--model` (`models.py`, one entry per model in `MODELS`). A model draws only the positions of voters and candidates (and, if it has them, how much each person weighs each dimension); distances, utilities and the two candidate parameters below are the same for every model. The model and its own parameters are written into every row and named in the report; runs from before models existed are read as `clusters`.
+
+The default model, `clusters`:
 
 - cluster centres: `--clusters` points, normal in `--dims` dimensions;
 - cluster sizes: random weights from a flat Dirichlet distribution, so some elections have one dominant cluster and others are balanced;
@@ -177,6 +179,7 @@ Each election draws a fresh electorate (`models.py`, model `clusters`):
 | `--elections` | 200 | electorates |
 | `--voters` | 99 | voters per election (odd, so pairwise majorities rarely tie) |
 | `--cands` | 6 | candidates |
+| `--model` | clusters | electorate model (see Electorates; `models.py`); the next four flags belong to `clusters` |
 | `--dims` | 10 | issue-space dimensions |
 | `--zipf` | 1 | 1: dimension i has scale 1/i (Zipf dimensions, above); 0: all dimensions equal |
 | `--clusters` | 5 | voter clusters |
@@ -595,6 +598,7 @@ The terminal and the report list each older input and what was filled in or left
 
 | Column | Added | Older files |
 |---|---|---|
+| model | 2026-10-14 | read as clusters |
 | lazy | 2026-10-13 | read as 0.0 (full ballots) |
 | fidelity | 2026-10-12 | blank; their sincerity column holds the earlier measure (the report warns) |
 | bcw, p_bcw | 2026-10-12 | blank |

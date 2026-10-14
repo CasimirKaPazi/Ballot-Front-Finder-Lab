@@ -41,6 +41,7 @@ class Model:
     as arrays (n, dims) and (C, dims), weights of the same shapes or None (all dimensions alike)."""
     name: str
     draw: Callable
+    describe: Callable          # g -> text of its parameters for reports; g(name) reads a run parameter
 
 
 def _draw_clusters(sc, rng):
@@ -65,8 +66,18 @@ def _draw_clusters(sc, rng):
 
 
 MODELS = {m.name: m for m in [
-    Model("clusters", _draw_clusters),
+    Model("clusters", _draw_clusters,
+          lambda g: f"{g('dims')} dimensions{' (Zipf)' if int(g('zipf')) else ''}, {g('clusters')} clusters, "
+                    f"spread {g('spread')}"),
 ]}
+
+
+def model_text(p):
+    """One-line description of a run's electorate model with its own parameters (p: namespace or dict
+    of run parameters, values as numbers or text)."""
+    g = (lambda k: p[k]) if isinstance(p, dict) else (lambda k: getattr(p, k))
+    name = g("model") if (isinstance(p, dict) and "model" in p) or hasattr(p, "model") else "clusters"
+    return f"model {name}: {MODELS[name].describe(g)}"
 
 
 # ---------- common to all models ----------

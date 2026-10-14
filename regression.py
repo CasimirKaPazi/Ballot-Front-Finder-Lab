@@ -14,6 +14,8 @@ of every row with the stored reference, regression.csv. It takes about a minute.
                                regression.csv together with the change
     new / missing methods      listed, but not counted as differences: a method added (e.g. a new
                                add-on) or removed. --update takes them into the reference.
+    new columns                listed, not counted: a column added to the results files (the values
+                               already there are still compared). --update takes them in.
 
 Numbers count as equal within a relative tolerance of 1e-9 (rounding in the last digits can differ
 between numpy versions or machines); text columns must match exactly. The "version" column is not
@@ -35,7 +37,7 @@ TOL = 1e-9
 IGNORE = {"version"}
 
 # The run parameters every condition starts from (small and fast), then what each condition changes.
-BASE = {"voters": 25, "cands": 4, "dims": 3, "zipf": 1, "clusters": 3, "spread": 0.5, "width": 1.0,
+BASE = {"voters": 25, "cands": 4, "model": "clusters", "dims": 3, "zipf": 1, "clusters": 3, "spread": 0.5, "width": 1.0,
         "cand_dispersion": 1.0, "cand_shift": 0.0, "rounds": 2, "samples": 3, "group_size": 10,
         "strategic": 0.5, "aggressive": 0.5, "lazy": 0.0, "max_score": 5, "exits": 0, "clones": 0,
         "poll_size": 0, "poll_error": 2.0, "search": 4, "converge": 0, "start": "honest", "seed": 7}
@@ -102,6 +104,7 @@ def compare(new, old):
     if removed:
         print(f"methods in the reference but not run any more: {', '.join(removed)}")
     diffs = {}                                     # (method, column) -> list of (row key, old, new)
+    new_cols = set()
     for k, r in new_by.items():
         if r["method"] in added:
             continue
@@ -113,13 +116,17 @@ def compare(new, old):
             if c in IGNORE:
                 continue
             a, b = o.get(c), r.get(c)
-            if a is None or b is None:
+            if a is None:                          # a column added since the reference: not compared
+                new_cols.add(c)
+            elif b is None:
                 diffs.setdefault((r["method"], c), []).append((k, a, b))
             elif not same(a, b):
                 diffs.setdefault((r["method"], c), []).append((k, a, b))
     for k, o in old_by.items():
         if o["method"] not in removed and k not in new_by:
             diffs.setdefault((o["method"], "(row not produced any more)"), []).append((k, "", ""))
+    if new_cols:
+        print(f"new columns (not in the reference, not compared): {', '.join(sorted(new_cols))}")
     n = sum(len(v) for v in diffs.values())
     if not diffs:
         return 0

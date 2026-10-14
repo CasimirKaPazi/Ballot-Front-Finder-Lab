@@ -38,7 +38,7 @@ from multiprocessing import Pool
 import numpy as np
 
 from scenario import Scenario, electorate_positions
-from models import draw_electorate
+from models import draw_electorate, model_text, MODELS
 from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, select, run_selection, set_max_score, set_lazy, sincerity_defined
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
@@ -229,7 +229,7 @@ def group_text(g):
 
 
 # Run parameters written into every row of the elections CSV
-PARAMS = ["voters", "cands", "dims", "zipf", "clusters", "spread", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
+PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
           "strategic", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
           "start", "seed"]
 
@@ -304,7 +304,7 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     names = names or list(METHODS)
     rounds = list(p["rounds"]) if isinstance(p["rounds"], (list, tuple)) else [p["rounds"]]
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"],
-                  p["cand_dispersion"], p["cand_shift"])
+                  p["cand_dispersion"], p["cand_shift"], p.get("model", "clusters"))
     todo = [e for e in range(elections) if e not in set(skip)]
     jobs = [{"sc": sc, "p": p, "e": e, "rounds": rounds, "names": names, "participation": participation}
             for e in todo]
@@ -363,6 +363,10 @@ def resume_state(path, names, rounds_per_run):
         header, rows = reader.fieldnames, list(reader)
     if not rows:
         return {}, header
+    missing = [k for k in PARAMS if k not in header]
+    if missing:
+        raise SystemExit(f"{path} predates the column(s) {', '.join(missing)}: it cannot be resumed; rerun it "
+                         "(it can still be analysed)")
     if {r["method"] for r in rows} - set(names) or {r.get("version") for r in rows} != {VERSION}:
         raise SystemExit(f"{path} was made with other methods or another simulator version; "
                          "--resume needs the same command")
@@ -419,6 +423,8 @@ def main():
     ap.add_argument("--elections", type=int, default=200)
     ap.add_argument("--voters", type=int, default=99)
     ap.add_argument("--cands", type=int, default=6)
+    ap.add_argument("--model", default="clusters", choices=list(MODELS),
+                    help="electorate model (models.py); --dims, --zipf, --clusters, --spread are for 'clusters'")
     ap.add_argument("--dims", type=int, default=10)
     ap.add_argument("--zipf", type=int, default=1, choices=[0, 1],
                     help="1: dimension i has scale 1/i (Zipf dimensions, see scenario.py)")
@@ -523,9 +529,8 @@ def main():
             w.writerow([m] + [f"{summ[m][c]:.4f}" for c in cols] + [int(i in front)])
 
     lines = []
-    lines.append(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {a.dims} dimensions"
-          f"{' (Zipf)' if a.zipf else ''}, {a.clusters} clusters, "
-          f"spread {a.spread}, width {a.width}{cand_text(a.cand_dispersion, a.cand_shift)}; {strategy_text(a, a.voters)}, "
+    lines.append(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {model_text(a)}, "
+          f"width {a.width}{cand_text(a.cand_dispersion, a.cand_shift)}; {strategy_text(a, a.voters)}, "
           f"strategic share {a.strategic}, scores 0..{a.max_score}"
           f"{f', nomination: exits {a.exits}, clones {a.clones}' if a.exits or a.clones else ''}; seed {a.seed}")
     lines.append(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")

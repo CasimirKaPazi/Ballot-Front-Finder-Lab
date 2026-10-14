@@ -30,6 +30,7 @@ import itertools
 import os
 import time
 
+from models import MODELS
 from run import (simulate, PARAMS, run_dir, write_command, group_size_arg, check_params, run_key,
                  resume_state, CsvSink, interrupted)
 from methods import select, run_selection
@@ -40,6 +41,7 @@ def main():
     ap.add_argument("--elections", type=int, default=200, help="elections per run")
     ap.add_argument("--voters", type=int, nargs="+", default=[99])
     ap.add_argument("--cands", type=int, nargs="+", default=[6])
+    ap.add_argument("--model", nargs="+", default=["clusters"], choices=list(MODELS))
     ap.add_argument("--dims", type=int, nargs="+", default=[10])
     ap.add_argument("--zipf", type=int, nargs="+", default=[1], choices=[0, 1])
     ap.add_argument("--clusters", type=int, nargs="+", default=[5])

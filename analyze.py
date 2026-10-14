@@ -55,6 +55,7 @@ import numpy as np
 import plots
 from metrics import pareto
 from run import out_path, write_command, group_text, strategy_text, cand_text, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
+from models import model_text
 from methods import GROUPS, METHODS, select, group_of, sincerity_defined, current_name
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
@@ -105,6 +106,7 @@ def source_name(p):
 # The note says when and what. Columns in REQUIRED_COLUMNS (or a run parameter not listed here) must
 # be present; a file without them is too old and has to be regenerated.
 ADDED_COLUMNS = {
+    "model": ("clusters", "2026-10-14, electorate models: older runs used the clusters model"),
     "lazy": ("0.0", "2026-10-13, laziness: older runs had full ballots"),
     "fidelity": (None, "2026-10-12, fidelity, with the current sincerity measure"),
     "bcw": (None, "2026-10-12, Condorcet winner in the ballots"),
@@ -813,8 +815,7 @@ def main():
         L += [f"## {r['tag']}: {r['label']}", "",
               f"{r['elections']} elections (seeds {', '.join(r['seeds'])}"
               + (f"; {r['cover']}" if r["cover"] else "") + f"), {r['with_cw']} with a Condorcet winner. "
-              f"{p['voters']} voters, {p['cands']} candidates, {p['dims']} dimensions"
-              f"{' (Zipf)' if p['zipf'] == '1' else ''}, {p['clusters']} clusters, spread {p['spread']}, "
+              f"{p['voters']} voters, {p['cands']} candidates, {model_text(p)}, "
               f"width {p['width']}{cand_text(p['cand_dispersion'], p['cand_shift'])}; {strategy_text(p, p['voters'])}, "
               f"strategic share {p['strategic']}, scores 0..{p['max_score']}"
               + (f"; nomination: exits {p['exits']}, clones {p['clones']}" if p['exits'] != '0' or p['clones'] != '0' else "")
