@@ -34,6 +34,7 @@ VSE, WME, the random ballot and the best candidate are the same as without nomin
 change in VSE and WME is the effect of nomination on the outcome.
 """
 import numpy as np
+from models import distances, utility
 from outcomes import value as outcome_value
 
 CLONE_SD = 0.01   # offset of a clone from its original, per dimension (positions are O(1), width about 1)
@@ -139,10 +140,11 @@ def nominate(method, u, u_clone, cu, rng, exits=0, clones=0, rounds=ROUNDS):
                "nom_moves": n_moves}
 
 
-def clone_setup(voters, cands, width, rng):
+def clone_setup(voters, cands, width, rng, voter_weights=None, cand_weights=None):
     """Per election: voters' utilities for each original's clone, and candidates' utilities for
-    every original (cu[i, d]). rng: the election's own clone stream (the same for every method)."""
+    every original (cu[i, d]). rng: the election's own clone stream (the same for every method).
+    Distances and utilities as in models.py (with the model's dimension weights, if any)."""
     cpos = cands + rng.normal(0.0, CLONE_SD, cands.shape)
-    u_clone = np.exp(-np.linalg.norm(voters[:, None, :] - cpos[None, :, :], axis=2) / width)
-    cu = np.exp(-np.linalg.norm(cands[:, None, :] - cands[None, :, :], axis=2) / width)
+    u_clone = utility(distances(voters, cpos, voter_weights), width)
+    cu = utility(distances(cands, cands, cand_weights), width)
     return u_clone, cu

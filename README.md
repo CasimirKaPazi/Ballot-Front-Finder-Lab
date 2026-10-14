@@ -59,7 +59,8 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 
 | File | Contents |
 |---|---|
-| `scenario.py` | Electorate generator: spatial clusters, Zipf dimensions, absolute utilities `exp(-distance / width)` |
+| `models.py` | Electorate models (one entry per model in `MODELS`): positions of voters and candidates; distances and absolute utilities `exp(-distance / width)`, common to all models |
+| `scenario.py` | The settings of a condition's electorates (model and parameters) |
 | `ballots.py` | Ballot types, one entry per type in `BALLOTS`: encoding, sincere ballots, laziness, strategic changes and exaggerations, implied values and the worst ballot (for fidelity and sincerity) |
 | `methods.py` | Exact tallies on ballot matrices (ties shared), method groups, renamed methods, add-on loader |
 | `addons/` | Methods in separate files, loaded at start (see Methods, Add-ons); `_template.py` to start from |
@@ -146,7 +147,7 @@ The earlier model: over N rounds, groups take turns and each sees the others' la
 
 ## Electorates
 
-Each election draws a fresh electorate (`scenario.py`):
+Each election draws a fresh electorate (`models.py`, model `clusters`):
 
 - cluster centres: `--clusters` points, normal in `--dims` dimensions;
 - cluster sizes: random weights from a flat Dirichlet distribution, so some elections have one dominant cluster and others are balanced;

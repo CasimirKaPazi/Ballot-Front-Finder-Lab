@@ -38,6 +38,7 @@ from multiprocessing import Pool
 import numpy as np
 
 from scenario import Scenario, electorate_positions
+from models import draw_electorate
 from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, select, run_selection, set_max_score, set_lazy, sincerity_defined
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
@@ -64,12 +65,14 @@ def one_election(job):
     set_max_score(p["max_score"])                   # per process: workers do not share module state
     set_lazy(p.get("lazy", 0.0))                    # laziness (methods.set_lazy)
     rng = np.random.default_rng([seed, e])
-    u, voters, cands = electorate_positions(sc, rng)
+    ele = draw_electorate(sc, rng)                  # the scenario's model (models.py)
+    u, voters, cands = ele.u, ele.voters, ele.cands
     C = u.shape[1]
     nominating = bool(exits or clones)
     if nominating:   # clones' positions: own random stream, the same for every method
         u_clone, cu = clone_setup(voters, cands, sc.width,
-                                            np.random.default_rng([seed, e, zlib.crc32(b"clones")]))
+                                  np.random.default_rng([seed, e, zlib.crc32(b"clones")]),
+                                  ele.voter_weights, ele.cand_weights)
     m_cand = worst_margins(u)                       # each candidate's worst head-to-head margin
     estats = electorate_stats(u)                    # properties of the electorate, for the report
     # every candidate's total utility and worst margin, for the frontier of what any rule could reach
