@@ -22,6 +22,89 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
 
+## Electorate models: clusters vs Quinn's hierarchical model (2026-10-14)
+
+**Settings.** Two runs at the defaults, differing only in the electorate model: 200 elections, seed 1, 99 voters, 6 candidates, width 1.0, 3 poll rounds, 10 polls of 49 voters, poll error 2, search 10, aggressive share 0.5, strategic share 0.5, scores 0..5, default methods. `clusters`: 10 dimensions (Zipf), 5 clusters, spread 0.5. `ks`: faction alpha 1.5, cut 0.2 (README, Electorates). Analysed together (settings as the report states them; the commands were of the form):
+
+```
+python run.py --model ks --out standard-ks
+python run.py --out standard-clusters
+python analyze.py standard-ks standard-clusters --out cluster-ks
+```
+
+**Every method gains VSE under ks, Condorcet methods most.** VSE* (learned ballots), clusters → ks:
+
+| Method | VSE* | WME* |
+|---|---|---|
+| Ranked pairs | 84.7 → 96.4 | 99.7 → 98.2 |
+| Minimax | 85.3 → 95.2 | 99.1 → 97.8 |
+| Smith//Score | 89.8 → 95.5 | 96.8 → 97.9 |
+| BTR-score | 89.9 → 95.6 | 96.4 → 97.4 |
+| Score | 89.7 → 94.1 | 89.2 → 91.8 |
+| Soft Minimax | 90.1 → 94.6 | 97.0 → 97.2 |
+| Soft Minimax-L | 92.7 → 94.9 | 93.2 → 93.4 |
+| Reciprocal score | 91.3 → 96.4 | 87.5 → 91.8 |
+| IRV | 85.5 → 93.3 | 86.5 → 87.2 |
+| Plurality | 71.8 → 78.2 | 67.6 → 66.1 |
+
+So the picture is sheared: the methods whose edge was trading a little WME for more VSE (the Soft Minimax family, score hybrids) lose that edge, because under ks the two measures hardly pull apart. The reachable corner moves from about VSE 86 / WME 77 (clusters: VSE at the best WME / WME at the best VSE) to about 95 / 91 (ks). With 200 elections VSE* intervals are about ±2 points, and under ks the top fifteen or so methods lie within 2 points on VSE*: their order there is mostly not a finding.
+
+**Fronts.** ks: Pareto front Ranked pairs, Reciprocal score, MARS, MARS-T, Black, BTR-score, Smith//Score, Schulze-ER, Nanson, Soft Minimax-D, SICT, Soft Minimax, IC-MARS, Score; undominated BTR-score, Smith//Score. clusters: undominated Soft Minimax-40, Soft Minimax, Smith//Score, Condorcet-random-drop, Schulze-ER, Minimax-ER. Smith//Score is undominated under both models.
+
+**Rank stability** (Spearman, ks vs clusters; noise reference ks vs itself in brackets): VSE 0.48 (0.55), WME 0.96 (0.98), VSE* 0.13 (0.65), WME* 0.91 (0.87), sincerity 0.94 (0.98). The methods' order on WME* and sincerity hardly depends on the model; their order on VSE* does.
+
+**Electorates** (from the reports): Condorcet winner in 98.5% (ks) and 96.0% (clusters); it also has the highest total utility in 79.2% and 66.1% of those; electing it loses 4.7% and 12.5% of VSE; favourite ÷ least liked 3.4 and 4.3 (median voter). Under ks the Condorcet winner is nearly the utility winner, so Condorcet methods get high VSE almost for free.
+
+**Why: a first probe of the electorates alone** (no methods; 1000 electorates per variant, 600 for the clusters and width variants, seed 1, defaults otherwise). VSE lost by electing the Condorcet winner (ratio of sums, as VSE), and favourite ÷ least liked:
+
+| Variant | CW = utility winner | VSE lost electing CW | fav ÷ least |
+|---|---|---|---|
+| clusters | 68.6% | 13.6% | 4.4 |
+| clusters, 3 dimensions | 73.4% | 9.3% | 4.6 |
+| clusters, 20 clusters | 77.3% | 7.7% | 4.9 |
+| clusters, spread 1.0 | 79.4% | 6.6% | 6.0 |
+| clusters, width 2.0 | 76.4% | 7.1% | 2.1 |
+| clusters, 1 cluster | 88.9% | 1.8% | 2.1 |
+| ks | 78.2% | 4.8% | 3.6 |
+| ks, shared factions (`--ks-shared 1`) | 78.1% | 5.2% | 3.6 |
+| ks, alpha 0.5 | 81.5% | 3.9% | 2.8 |
+| ks, alpha 5 | 77.8% | 4.5% | 4.0 |
+| ks, width 0.5 | 70.4% | 11.1% | 12.0 |
+
+- Cross-cutting factions are not the main reason: with the same factions in every bundle, ks loses 5.2% instead of 4.8%. (The hypothesis was that coherent blocs across all issues make the Condorcet and the utility winner part.)
+- What does matter: how lumpy the electorate is, i.e. a few well-separated blocs. The clusters model loses less with more clusters, wider spread or a single cluster. Its five clusters with Dirichlet weights (often one dominant) and centres twice as far apart as the spread are lumpier than ks factions, whose positions are only about 1.4 times as far apart as their members' spread.
+- And how steep preferences are relative to the distances: ks at width 0.5 loses 11.1%, close to clusters at width 1.0, and clusters at width 2.0 loses 7.1%. So part of the difference between the models is the scale of their distances relative to `--width`, not their structure. A comparison of the two structures at matched steepness (e.g. matched favourite ÷ least liked) would separate the two.
+- A rough probe (ks with every person weighting the dimensions alike, by their average weight, instead of by their faction's caring) changed nothing (4.8%).
+
+**Method runs with the widths swapped.** The probe suggested that ks at width 0.5 resembles clusters at width 1, and clusters at width 2 resembles ks at width 1. Two more runs, otherwise as above (`--exclude references` changes nothing: the references and the Inverse-* methods are left out by default, so all four runs have the same 62 methods):
+
+```
+python run.py --model clusters --out standard-clusters-w2 --exclude references --width 2
+python run.py --model ks --out standard-ks-w0.5 --exclude references --width 0.5
+python analyze.py standard-ks-w0.5 standard-clusters-w2 --out ...
+```
+
+| Run | CW = utility winner | VSE lost electing CW | fav ÷ least | reachable corner (VSE at best WME / WME at best VSE) |
+|---|---|---|---|---|
+| clusters, width 1 | 66.1% | 12.5% | 4.3 | 86 / 77 |
+| ks, width 0.5 | 69.5% | 12.1% | 11.7 | 87.5 / 84 |
+| ks, width 1 | 79.2% | 4.7% | 3.4 | 95 / 91 |
+| clusters, width 2 | 78.1% | 5.7% | 2.1 | 93 / 88.5 |
+
+The electorate measures confirm the probe: by how much electing the Condorcet winner costs, each run matches the other model at the other width (steepness, favourite ÷ least liked, does not match: the ks electorates are steeper at the same cost).
+
+Rank agreement of the methods' VSE* (Spearman over the 62 methods, computed from the two reports' tables; noise reference of a run against itself: 0.65 for ks width 1, 0.70 for ks width 0.5, from the reports):
+
+| | clusters w1 | clusters w2 | ks w0.5 |
+|---|---|---|---|
+| ks w1 | 0.13 | 0.45 | 0.50 |
+| ks w0.5 | 0.68 | 0.70 | |
+| clusters w1 | | 0.79 | |
+
+WME* and sincerity agree between all four runs (0.89–0.98). On VSE*, every pair agrees about as well as noise allows, except the pairs with ks at width 1. So the large reshuffle of the first comparison is mostly a property of ks at width 1, not of ks against clusters as such: ks at width 0.5 orders the methods like clusters at either width. Why ks at width 1 stands apart is open; a second seed of it (`--seed 2`) would show whether its order replicates, since a single run can fall below its noise reference.
+
+**A lead, not yet a finding: strategy moves the Condorcet methods' VSE in opposite directions under the two models.** VSE* − VSE (learned minus honest), averaged over twelve ranked Condorcet methods (Ranked pairs, Schulze, Kemeny-Young, Copeland, Minimax, Black, Baldwin, Nanson, BTR-Borda, Benham, Ranked Robin-SR, BTR-IRV): ks +0.3 (width 1) and +1.0 (width 0.5); clusters −0.5 at both widths. Thirteen rated and hybrid methods lose under both (−0.6 to −2.5). The effects are about a point, at the edge of what 200 elections resolve.
+
 ## Sincerity, fidelity and the Condorcet winner in the ballots (2026-10-12)
 
 Runs (Hive): `python run.py --elections 600` at the defaults (99 voters, 6 candidates, 3 poll rounds, 10 polls, strategic share 0.5, aggressive share 0.5, seed 1), in two parts with `--methods` / `--exclude` by group: `run-20261012-191423` (condorcet, condorcet-based, minimax-family, hybrid, plurality-based, positional) and `run-20261012-195852` (the rest), analysed together (`python analyze.py run-20261012-191423 run-20261012-195852 --out …`; same seed, so the same elections). All 72 methods. 580 elections have a real Condorcet winner, 20 do not. First run with the current sincerity measure, fidelity and the ballot Condorcet winner (README, Sincerity and fidelity; Condorcet winner in the cast ballots). Point estimates; the ballot Condorcet table has no intervals.
