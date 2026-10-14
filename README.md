@@ -164,6 +164,14 @@ The default model, `clusters`:
 - Taken over from Smith: the 1/i scaling and the per-cluster shuffle. Not taken over: his other settings (10 clusters with uniform random weights, cluster centres uniform in ±3/i, a random spread factor per cluster, utility = −distance); our Dirichlet weights, normal centres, one spread and `exp(-distance / width)` stay.
 - `--zipf 0` gives the alternative model: all dimensions with standard deviation 1 (then use few dimensions, e.g. 2). Distances are longer there, so the same width gives steeper preferences.
 
+**Quinn's hierarchical model** (`--model ks`), from Jameson Quinn's VSE simulations ([vse-sim](https://github.com/electionscience/vse-sim), `src/vse_sim/voter_models.py`, `KSModel`, "kitchen sink"), with the parameters of its published results. In the clusters model a voter belongs to one cluster on all dimensions at once, so clusters behave like consistent ideologies or parties. Here the issues come in bundles, and factions form in each bundle separately, so cleavages cut across each other: a voter can be in the big faction on one bundle and a small one on another, and groups differ in how much they care.
+
+- Issue bundles: the first weighs 1, each further one a random fraction (Beta(1, 3)) of the one before, until the weight falls below `--ks-cut` (0.2); within a bundle, each further dimension weighs a random fraction (Beta(1.5, 3)) of the one before, down to the same cut. So the number of bundles and dimensions varies by election (with the defaults mostly 2–4 dimensions in all), and few issues matter much.
+- Factions, in each bundle independently: a Chinese restaurant process over voters and candidates. Each person starts a new faction with probability α / (i + α), i the number of persons before, else joins the faction of a random earlier person (α = `--ks-alpha`, 1.5). A few large factions and a tail of small ones; their number is not fixed.
+- Each faction, per bundle: a position (normal, with a random variance c ~ Beta(3, 1.5)) and a caring level (Beta(3, 1.5)). Its members sit around its position, the tighter the more it cares (offset N(0, 1) × √(1 − caring) per dimension), and weigh that bundle by their caring.
+- Distance: each person weighs each dimension by its importance × their faction's caring on that bundle, normalised per person (as in vse-sim). Utilities use `exp(-distance / width)` like every model here (vse-sim uses −distance), so the models differ only in the electorate's structure. Candidates are drawn exactly like voters; the two candidate parameters below apply as for any model.
+- Written anew from the algorithm, with one change: vse-sim's code gives a person one random offset for all dimensions of a bundle (it reads the offset by bundle number), which looks unintended; here each dimension has its own. With the exp utilities and this change, results are not directly comparable with Quinn's published numbers. `--dims`, `--clusters`, `--spread` and `--zipf` do not apply to this model.
+
 **Candidates unlike the electorate.** Two parameters move the candidates relative to the voters; both act after all random draws, so the voters (and the candidates' own draws) are the same for every value and a sweep compares the same electorates with different fields.
 
 - `--cand-dispersion s` (default 1): each candidate's distance from the voters' mean position is multiplied by s. Below 1 the candidates cluster toward the centre of the electorate; above 1 they are more extreme than the voters. This is the relative candidate dispersion of Merrill (1984), "A comparison of efficiency of multicandidate electoral systems", *American Journal of Political Science* 28, whose Condorcet efficiency of plurality and IRV falls as candidates cluster (centre squeeze: the central candidate is squeezed out of the first choices).
@@ -184,6 +192,8 @@ The default model, `clusters`:
 | `--zipf` | 1 | 1: dimension i has scale 1/i (Zipf dimensions, above); 0: all dimensions equal |
 | `--clusters` | 5 | voter clusters |
 | `--spread` | 0.5 | standard deviation of voters around their cluster centre (centres have 1), before the Zipf scaling |
+| `--ks-alpha` | 1.5 | model `ks`: faction alpha (higher: more, smaller factions); see Electorates |
+| `--ks-cut` | 0.2 | model `ks`: importance below which no further issue bundles or dimensions are drawn (lower: more dimensions) |
 | `--width` | 1.0 | distance scale of the utility fall-off |
 | `--cand-dispersion` | 1.0 | candidates' distance from the electorate's centre × this (< 1 clustered, > 1 spread out); see Electorates |
 | `--cand-shift` | 0.0 | candidates moved along the main dimension by this many voter SDs; see Electorates |
@@ -599,6 +609,7 @@ The terminal and the report list each older input and what was filled in or left
 | Column | Added | Older files |
 |---|---|---|
 | model | 2026-10-14 | read as clusters |
+| ks_alpha, ks_cut | 2026-10-14 | read as 1.5 and 0.2 (unused by the clusters model) |
 | lazy | 2026-10-13 | read as 0.0 (full ballots) |
 | fidelity | 2026-10-12 | blank; their sincerity column holds the earlier measure (the report warns) |
 | bcw, p_bcw | 2026-10-12 | blank |

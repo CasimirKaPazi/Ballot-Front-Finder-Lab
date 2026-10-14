@@ -29,6 +29,27 @@ MODEL "clusters" (default): voter clusters in a space of `dims` dimensions.
     slightly shuffled order of dimensions (each rank perturbed by normal noise with standard
     deviation 0.1 x dims, Smith's ratio of 10 for 100 dimensions), so camps differ in which issues
     they vary on most. Cluster centres keep the global order.
+
+MODEL "ks": Jameson Quinn's hierarchical ("kitchen sink") model, from vse-sim (voter_models.py,
+KSModel), with the parameters of its published results. Written anew from the algorithm, with one
+change (4. below). Parameters: ks_alpha (faction alpha), ks_cut (where importance stops); --dims,
+--clusters, --spread and --zipf do not apply.
+    1. Issue bundles: the first bundle weighs 1, each further one a Beta(1, 3) fraction of the one
+       before, until the weight falls below ks_cut (0.2). Within a bundle, its first dimension has
+       the bundle's weight, each further one a Beta(1.5, 3) fraction of the one before, again down to
+       ks_cut. So the number of bundles and dimensions varies by election; few issues matter much.
+    2. Factions, per bundle and independently across bundles (cross-cutting cleavages): a Chinese
+       restaurant process over voters and candidates; person i starts a new faction with probability
+       alpha / (i + alpha), else joins the faction of a random earlier person (ks_alpha = 1.5). A few
+       large factions and a tail of small ones; their number is not fixed.
+    3. Each faction, per bundle: a position, N(0, c) per dimension with c ~ Beta(3, 1.5), and a caring
+       level ~ Beta(3, 1.5).
+    4. Each person, per dimension: the faction's position plus N(0, 1) x sqrt(1 - caring): the more a
+       faction cares, the tighter it is. Change: an own offset per dimension; vse-sim's code uses one
+       offset for all dimensions of a bundle, which looks unintended.
+    5. Weights: a person weighs each dimension by its importance x the caring of the person's faction
+       on that bundle, normalised (distance = sqrt(sum((x - p)^2 (w c)^2) / sum((w c)^2)), as in
+       vse-sim). Utilities then use exp(-distance / width) like every model here (vse-sim: -distance).
 """
 from dataclasses import dataclass
 from typing import Callable
@@ -65,10 +86,73 @@ def _draw_clusters(sc, rng):
     return voters, cands, None, None
 
 
+# MODEL "ks": Quinn's hierarchical "kitchen sink" model (vse-sim, voter_models.py, KSModel)
+KS_BUNDLE_DECAY = (1.0, 3.0)     # Beta parameters: each issue bundle weighs this fraction of the one before
+KS_DIM_DECAY = (1.5, 3.0)        # Beta parameters: each dimension in a bundle weighs this fraction of the one before
+KS_CARING = (3.0, 1.5)           # Beta parameters of a faction's caring (and of the spread of faction positions)
+
+
+def _draw_ks(sc, rng):
+    """Quinn's hierarchical model, written from the description of vse-sim's KSModel (published
+    parameters; see the README, Electorates). Persons = voters, then candidates, drawn alike."""
+    n = sc.n_voters + sc.n_cands
+    # 1. Issue bundles and their dimensions, with decaying importance
+    bundles, dim_w = [], []
+    bw = 1.0
+    while bw > sc.ks_cut:
+        w, k = bw, 0
+        while w > sc.ks_cut:
+            dim_w.append(w)
+            k += 1
+            w *= rng.beta(*KS_DIM_DECAY)
+        bundles.append(k)
+        bw *= rng.beta(*KS_BUNDLE_DECAY)
+    dim_w = np.array(dim_w)
+    D = len(dim_w)
+    pos = np.empty((n, D))
+    care = np.empty((n, D))
+    start = 0
+    for k in bundles:
+        # 2. Factions in this bundle, independently of other bundles (Chinese restaurant process:
+        #    each person starts a new faction with probability alpha / (i + alpha), else joins the
+        #    faction of a random earlier person)
+        fac = np.empty(n, dtype=int)
+        nf = 0
+        for i in range(n):
+            r = (i + sc.ks_alpha) * rng.random()
+            if r > i:
+                fac[i] = nf
+                nf += 1
+            else:
+                fac[i] = fac[int(r)]
+        # 3. Each faction: a position (spread sqrt(c) for a random c) and a caring level
+        means = np.empty((nf, k))
+        caring = np.empty(nf)
+        for f in range(nf):
+            c = rng.beta(*KS_CARING)
+            means[f] = rng.normal(0.0, np.sqrt(c), k)
+            caring[f] = rng.beta(*KS_CARING)
+        # 4. Persons: around their faction's position, the tighter the more the faction cares
+        #    (an own offset per dimension; vse-sim uses one offset for all dimensions of a bundle)
+        noise = rng.normal(0.0, 1.0, (n, k))
+        pos[:, start:start + k] = means[fac] + noise * np.sqrt(1 - caring[fac])[:, None]
+        care[:, start:start + k] = caring[fac][:, None]
+        start += k
+    # 5. Weights: dimension importance x the person's caring, normalised per person, so a distance is
+    #    sqrt(sum((x - p)^2 (w c)^2) / sum((w c)^2)) as in vse-sim
+    W = dim_w[None, :] * care
+    W = W / np.sqrt((W ** 2).sum(axis=1, keepdims=True))
+    nv = sc.n_voters
+    return pos[:nv], pos[nv:], W[:nv], W[nv:]
+
+
 MODELS = {m.name: m for m in [
     Model("clusters", _draw_clusters,
           lambda g: f"{g('dims')} dimensions{' (Zipf)' if int(g('zipf')) else ''}, {g('clusters')} clusters, "
                     f"spread {g('spread')}"),
+    Model("ks", _draw_ks,
+          lambda g: f"Quinn's hierarchical issue bundles and factions, faction alpha {g('ks_alpha')}, "
+                    f"cut {g('ks_cut')}"),
 ]}
 
 

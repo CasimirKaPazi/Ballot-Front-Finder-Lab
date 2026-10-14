@@ -19,6 +19,8 @@ class Scenario:
     cand_dispersion: float = 1.0   # candidates' distance from the electorate's centre, x this (< 1: clustered)
     cand_shift: float = 0.0        # candidates moved along the first dimension, in voter SDs on it
     model: str = "clusters"        # electorate model (models.MODELS); dims, n_clusters, spread, zipf: "clusters"
+    ks_alpha: float = 1.5          # "ks": faction alpha (Chinese restaurant process)
+    ks_cut: float = 0.2            # "ks": importance below which no further bundles / dimensions
 
 
 def electorate(sc: Scenario, rng: np.random.Generator):

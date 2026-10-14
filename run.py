@@ -182,6 +182,10 @@ def check_params(a, error):
     for k in ("strategic", "aggressive", "lazy"):
         if any(not 0 <= v <= 1 for v in vals(k)):
             error(f"--{k} must be between 0 and 1")
+    if any(v <= 0 for v in vals("ks_alpha")):
+        error("--ks-alpha must be above 0")
+    if any(not 0 < v < 1 for v in vals("ks_cut")):
+        error("--ks-cut must be between 0 and 1")
     if any(v < 0 for v in vals("poll_error")):
         error("--poll-error must be 0 or more")
     if "previous" in vals("start") and (any(vals("exits")) or any(vals("clones"))):
@@ -229,7 +233,7 @@ def group_text(g):
 
 
 # Run parameters written into every row of the elections CSV
-PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
+PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "ks_alpha", "ks_cut", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
           "strategic", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
           "start", "seed"]
 
@@ -304,7 +308,8 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     names = names or list(METHODS)
     rounds = list(p["rounds"]) if isinstance(p["rounds"], (list, tuple)) else [p["rounds"]]
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"],
-                  p["cand_dispersion"], p["cand_shift"], p.get("model", "clusters"))
+                  p["cand_dispersion"], p["cand_shift"], p.get("model", "clusters"), p.get("ks_alpha", 1.5),
+                  p.get("ks_cut", 0.2))
     todo = [e for e in range(elections) if e not in set(skip)]
     jobs = [{"sc": sc, "p": p, "e": e, "rounds": rounds, "names": names, "participation": participation}
             for e in todo]
@@ -430,6 +435,11 @@ def main():
                     help="1: dimension i has scale 1/i (Zipf dimensions, see scenario.py)")
     ap.add_argument("--clusters", type=int, default=5)
     ap.add_argument("--spread", type=float, default=0.5)
+    ap.add_argument("--ks-alpha", type=float, default=1.5,
+                    help="model ks: faction alpha (higher: more, smaller factions)")
+    ap.add_argument("--ks-cut", type=float, default=0.2,
+                    help="model ks: issue importance below which no further bundles or dimensions are drawn "
+                         "(lower: more dimensions)")
     ap.add_argument("--width", type=float, default=1.0)
     ap.add_argument("--cand-dispersion", type=float, default=1.0,
                     help="candidates' distance from the electorate's centre x this (< 1: clustered in the centre, "

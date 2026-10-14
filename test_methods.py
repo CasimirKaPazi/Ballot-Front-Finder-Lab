@@ -683,6 +683,34 @@ _mm.set_max_score(5)                                             # one_election 
 del METHODS["Score-10"]
 print("method settings ok")
 
+# Electorate models (models.py)
+import models as _md
+_sk = Scenario(n_voters=51, n_cands=5, model="ks")
+for _e in range(20):
+    _el = _md.draw_electorate(_sk, np.random.default_rng([3, _e]))
+    assert _el.u.shape == (51, 5) and (_el.u > 0).all() and (_el.u <= 1).all()
+    assert np.allclose(np.linalg.norm(_el.voter_weights, axis=1), 1)            # weights normalised per person
+    assert _el.voters.shape[1] == _el.voter_weights.shape[1] == _el.cands.shape[1]
+_a = _md.draw_electorate(_sk, np.random.default_rng([3, 0])).u
+assert np.array_equal(_a, _md.draw_electorate(_sk, np.random.default_rng([3, 0])).u)   # reproducible
+# ks parameters do not touch the clusters model
+_c1 = _md.draw_electorate(Scenario(n_voters=21, n_cands=4), np.random.default_rng(9)).u
+_c2 = _md.draw_electorate(Scenario(n_voters=21, n_cands=4, ks_alpha=5.0, ks_cut=0.5), np.random.default_rng(9)).u
+assert np.array_equal(_c1, _c2)
+# faction alpha: tiny -> (almost) one faction, every person close to it; huge -> everyone on their own
+def _spread(alpha):
+    el = _md.draw_electorate(Scenario(n_voters=201, n_cands=3, model="ks", ks_alpha=alpha), np.random.default_rng(4))
+    return el.voters.std(axis=0).mean()
+assert _spread(1e-6) < _spread(1e6)
+print("electorate models ok")
+
+# Sweep order of parameter values (analyze.param_order): numbers by value, words in their listed order
+from analyze import param_order as _po
+assert sorted(["ks", "clusters"], key=lambda v: _po("model", v)) == ["clusters", "ks"]
+assert sorted(["0", "5", "1"], key=lambda v: _po("group_size", v)) == ["1", "5", "0"]
+assert sorted(["previous", "honest"], key=lambda v: _po("start", v)) == ["honest", "previous"]
+print("parameter order ok")
+
 # Renamed methods and groups: old names lead to existing current ones, in selection and in analysis
 for _old in _mm.RENAMED:
     assert _mm.current_name(_old) in METHODS, _old

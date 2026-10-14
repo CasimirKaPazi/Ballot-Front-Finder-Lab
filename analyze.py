@@ -55,7 +55,7 @@ import numpy as np
 import plots
 from metrics import pareto
 from run import out_path, write_command, group_text, strategy_text, cand_text, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
-from models import model_text
+from models import model_text, MODELS
 from methods import GROUPS, METHODS, select, group_of, sincerity_defined, current_name
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
@@ -107,6 +107,8 @@ def source_name(p):
 # be present; a file without them is too old and has to be regenerated.
 ADDED_COLUMNS = {
     "model": ("clusters", "2026-10-14, electorate models: older runs used the clusters model"),
+    "ks_alpha": ("1.5", "2026-10-14, parameters of the ks model (not used by older runs)"),
+    "ks_cut": ("0.2", "2026-10-14, parameters of the ks model (not used by older runs)"),
     "lazy": ("0.0", "2026-10-13, laziness: older runs had full ballots"),
     "fidelity": (None, "2026-10-12, fidelity, with the current sincerity measure"),
     "bcw": (None, "2026-10-12, Condorcet winner in the ballots"),
@@ -519,18 +521,24 @@ def label(key, varying, first):
 PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error", "converge": "convergent rounds",
                "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion",
-               "cand_shift": "candidate shift", "lazy": "laziness"}
+               "cand_shift": "candidate shift", "lazy": "laziness", "model": "electorate model",
+               "ks_alpha": "ks faction alpha", "ks_cut": "ks cut"}
 LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "poll_size", "poll_error", "search", "converge",
                  "aggressive", "start"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)
 
 
 def param_order(k, v):
-    """Sort key for a parameter value; group size 0 (whole ranking groups) counts as the largest."""
-    if k == "start":
-        return ["honest", "previous"].index(v)
-    x = float(v)
-    return float("inf") if k == "group_size" and x == 0 else x
+    """Sort key for a parameter value: numbers by value (group size 0, whole ranking groups, counts as
+    the largest); words in their listed order (start: honest, previous; model: as in models.MODELS),
+    other words alphabetically, after the numbers."""
+    words = {"start": ["honest", "previous"], "model": list(MODELS)}
+    try:
+        x = float(v)
+    except ValueError:
+        known = words.get(k, [])
+        return (1, known.index(v) if v in known else len(known), str(v))
+    return (0, float("inf") if k == "group_size" and x == 0 else x, "")
 
 
 def sweep_chains(keys, varying):
