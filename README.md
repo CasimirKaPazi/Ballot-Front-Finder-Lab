@@ -67,6 +67,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `strategy.py` | Learning engine, sincerity and strategy types |
 | `nomination.py` | Strategic nomination: exits, re-entry and clones from the initial field |
 | `participation.py` | Participation check (no-show paradox) |
+| `outcomes.py` | What an outcome is (winner probabilities) and what it is worth, `value(P, v)`: the one place all judging of outcomes goes through |
 | `metrics.py` | Efficiencies for three baselines, winner's worst margin, Condorcet efficiency, electorate properties, Pareto front |
 | `run.py` | Tallies every electorate with sincere and learned ballots, runs in parallel, writes CSV with the run's parameters as columns |
 | `sweep.py` | Runs a grid of conditions (or one parameter at a time) and seeds, one CSV per run |

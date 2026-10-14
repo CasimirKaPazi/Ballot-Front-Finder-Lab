@@ -17,6 +17,7 @@ Returns per election:
                    (favourite minus least liked), 0 when nobody gains
 """
 import numpy as np
+from outcomes import value
 
 TOL = 1e-9
 
@@ -59,7 +60,7 @@ def no_show(method, B, u, value_u, back):
     gaining, best = set(), 0.0
     for (g, k), P in zip(cases, Ps):
         absent = g[:k]
-        d = (back(P) - P0) @ value_u[absent].T     # gain of each absent voter
+        d = value(back(P) - P0, value_u[absent])     # gain of each absent voter
         if d.sum() > TOL:
             gaining.add(int(g[0]))
             best = max(best, float(np.max(d / np.where(rng_u[absent] > 0, rng_u[absent], 1))))

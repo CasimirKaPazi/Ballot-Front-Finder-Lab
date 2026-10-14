@@ -34,6 +34,7 @@ VSE, WME, the random ballot and the best candidate are the same as without nomin
 change in VSE and WME is the effect of nomination on the outcome.
 """
 import numpy as np
+from outcomes import value as outcome_value
 
 CLONE_SD = 0.01   # offset of a clone from its original, per dimension (positions are O(1), width about 1)
 ROUNDS = 20
@@ -116,7 +117,7 @@ def nominate(method, u, u_clone, cu, rng, exits=0, clones=0, rounds=ROUNDS):
 
     def value(i, g):
         e, P = result(g)
-        return float(to_original(P, e, C) @ cu[i])
+        return float(outcome_value(to_original(P, e, C), cu[i]))
 
     settled, n_moves = False, 0
     for _ in range(rounds):

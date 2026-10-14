@@ -53,6 +53,7 @@ electorate, drawn in run.py, the same voters for every method). The others alway
 """
 import numpy as np
 import methods
+from outcomes import value
 from ballots import BALLOTS, _max_separated  # noqa: F401 (_max_separated: for the tests)
 
 BACK_TO_SINCERE = 0.15  # share of proposals that return a deviating group to sincere
@@ -148,7 +149,7 @@ def poll_tallies(tally, B, polls):
 
 def group_value(P, Ug):
     """Expected total utility of a group, averaged over poll samples."""
-    return float(np.mean(P @ Ug))
+    return float(np.mean(value(P, Ug)))
 
 
 def learn(method, u, rng, rounds=20, samples=10, group_size=0, strategic=None):
@@ -352,14 +353,14 @@ def _gain(method, T, F_old, sincere_rows, size, C, Ug):
     group casting this ballot instead of its sincere ballots."""
     F_sin = method.features(sincere_rows).sum(axis=0)
     base = T - F_old + F_sin                       # the polls with the group voting sincerely
-    u_sin = method.decide_many(base, C) @ Ug       # per poll
+    u_sin = value(method.decide_many(base, C), Ug)       # per poll
     cache = {}
 
     def gain(ballot):
         key = ballot.tobytes()
         if key not in cache:
             D = size * method.features(ballot[None])[0] - F_sin
-            cache[key] = float(np.mean(method.decide_many(base + D, C) @ Ug - u_sin))
+            cache[key] = float(np.mean(value(method.decide_many(base + D, C), Ug) - u_sin))
         return cache[key]
     return gain
 
@@ -368,7 +369,7 @@ def _gain_full(method, B, mem, sincere_rows, polls, Ug):
     """Methods without feature sums: the group's sampled members changed in each poll."""
     B0 = B.copy()
     B0[mem] = sincere_rows
-    u_sin = poll_tallies(method.tally, B0, polls) @ Ug
+    u_sin = value(poll_tallies(method.tally, B0, polls), Ug)
     cache = {}
 
     def gain(ballot):
@@ -376,7 +377,7 @@ def _gain_full(method, B, mem, sincere_rows, polls, Ug):
         if key not in cache:
             B2 = B.copy()
             B2[mem] = ballot
-            cache[key] = float(np.mean(poll_tallies(method.tally, B2, polls) @ Ug - u_sin))
+            cache[key] = float(np.mean(value(poll_tallies(method.tally, B2, polls), Ug) - u_sin))
         return cache[key]
     return gain
 

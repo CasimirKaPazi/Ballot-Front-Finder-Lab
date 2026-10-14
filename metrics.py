@@ -21,6 +21,7 @@ the average probability that the method elects it.
 """
 import numpy as np
 from ballots import BALLOTS
+from outcomes import value
 
 def worst_margins(u):
     """m[c]: candidate c's smallest pairwise margin against any other, as a share of voters."""
@@ -57,15 +58,15 @@ def election_row(u, P, m):
     beats = gt > gt.T
     cw = np.flatnonzero(beats.sum(axis=1) == C - 1)
     return {
-        "U_method": float(P @ U),
+        "U_method": float(value(P, U)),
         "U_best": float(U.max()),
-        "U_rb": float(rb @ U),
+        "U_rb": float(value(rb, U)),
         "U_rand": float(U.mean()),                                 # random candidate (classical VSE zero)
         "has_cw": int(len(cw) == 1),
         "p_cw": float(P[cw[0]]) if len(cw) == 1 else float("nan"),
-        "WM": float(P @ m),
+        "WM": float(value(P, m)),
         "WM_best": float(m.max()),
-        "WM_rb": float(rb @ m),
+        "WM_rb": float(value(rb, m)),
     }
 
 
