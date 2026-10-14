@@ -658,6 +658,31 @@ for _name, _b in _BT.items():
             assert _x.shape == (C,), _name
 print(f"ballot types ok: {', '.join(_BT)}")
 
+# Method settings (methods.SETTINGS): a method may fix the score range for itself (named Name-X);
+# every other method follows the run's range (--max-score)
+_u = np.random.default_rng(5).random((40, 4))
+for _g in (5, 10):
+    _mm.set_max_score(_g)
+    for _n, _m in METHODS.items():
+        if _m.ballot == "score" and not _m.settings and not _m.inverse:
+            assert _m.sincere(_u).max() == _g, _n                         # base methods: the run's range
+    for _n, _m in METHODS.items():
+        if (_m.settings or {}).get("max_score") is not None:
+            assert _n.endswith(f"-{_m.settings['max_score']}"), f"{_n}: a fixed range is named Name-X"
+_mm.set_max_score(5)
+METHODS["Score-10"] = Method("score", _mm.d_sum, ("sum",), settings={"max_score": 10})
+assert METHODS["Score-10"].sincere(_u).max() == 10 and _mm.MAXS == 5           # own range, then back
+_jp = _p(seed=4, search=3)
+_fixed = one_election({"sc": Scenario(n_voters=21, n_cands=4), "p": {**_jp, "max_score": 5}, "e": 0, "rounds": [1, 2],
+                       "names": ["Score-10", "STAR"]})
+_glob = one_election({"sc": Scenario(n_voters=21, n_cands=4), "p": {**_jp, "max_score": 10}, "e": 0, "rounds": [1, 2],
+                      "names": ["Score"]})
+_strip = lambda rows, n: [{k: v for k, v in r.items() if k != "method"} for r in rows if r["method"] == n]
+assert _strip(_fixed, "Score-10") == _strip(_glob, "Score")      # Score-10 at --max-score 5 = Score at --max-score 10
+_mm.set_max_score(5)                                             # one_election sets the run's range
+del METHODS["Score-10"]
+print("method settings ok")
+
 # Renamed methods and groups: old names lead to existing current ones, in selection and in analysis
 for _old in _mm.RENAMED:
     assert _mm.current_name(_old) in METHODS, _old

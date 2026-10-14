@@ -275,6 +275,8 @@ Run time falls less than in proportion to p: halving the strategic voters remove
 
 Rules that refer to the range scale with it: ARA approves ratings above the middle, ARA-Top only the top score, Score+ stretches to the full range, Reciprocal score measures support as a share of the top score. Learning: see the score mutation in Strategy engine.
 
+**Global range and fixed range.** `--max-score` is the global range: every method on score ballots follows it, unless the method fixes its own range with `settings`, e.g. `Method("score", d_sum, ("sum",), settings={"max_score": 10})`. While such a method's ballots are made, changed (strategy) and tallied, its own range is in force; afterwards the global one again. A method with a fixed range is named after it, `Name-X` (`Score-10`), and its rows still show the run's global `max_score`, so the name is what tells them apart. Avoid fixing the range for the base version of a method: a base method that follows `--max-score` stays comparable across runs, and a max-score sweep varies it like all the others (a fixed one stays the same at every value of the sweep). A test checks that every base method follows the global range and that fixed ones are named `Name-X`. A fixed method is equivalent to its base version at that global range: `Score-10` in a run at `--max-score 5` gives exactly the rows of `Score` at `--max-score 10`. No built-in method fixes its range at present. The settings a method can fix are listed in `SETTINGS` in methods.py (so far only `max_score`).
+
 ## Strategic nomination
 
 `--exits 1` and `--clones N` let the candidates of the initial draw change the field before the vote (`nomination.py`; after Green-Armytage 2014, "Strategic voting and nomination", *Social Choice and Welfare* 42, with clones added). Nobody new enters.
@@ -536,7 +538,7 @@ In the ER variants (rankings with ties) a tie at level 0 of two or more candidat
 
 | Name | Required | Meaning |
 |---|---|---|
-| `METHODS` | yes | `{name: Method(ballot, decide, feats)}` (or `Method(ballot, full=tally)` for a rule that needs the whole ballot matrix); names must not clash with existing ones |
+| `METHODS` | yes | `{name: Method(ballot, decide, feats)}` (or `Method(ballot, full=tally)` for a rule that needs the whole ballot matrix); names must not clash with existing ones. Optional `settings={"max_score": X}` fixes the score range for this method, named `Name-X` (see Score range) |
 | `FEATURES` | no | new per-voter ballot features, `{name: (function(B) -> array per voter, shape of the sum given C)}`; they are summed over voters and poll samples, which keeps tallies fast |
 | `BALLOTS` | no | new ballot types, `{name: ballots.Ballot(...)}`: honest ballots, strategic changes, exaggerations, implied values and the worst ballot (see ballots.py; rarely needed) |
 | `GROUP` | no | the group its methods join: an existing one (e.g. `rated`) or a new one; default `addons` |

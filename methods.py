@@ -41,6 +41,7 @@ the others are left blank = 0. 0 = full ballots, 1 = only the favourite. Not for
   grade3   - 0..2, stretched to the voter's own utility range, rounded (as score, with 3 levels)
 """
 import importlib.util
+from contextlib import contextmanager
 import os
 import sys
 from dataclasses import dataclass
@@ -71,6 +72,31 @@ def set_max_score(m):
     if int(m) < 1:
         raise ValueError("max score must be at least 1")
     MAXS = int(m)
+
+
+# Settings a method can fix for itself, instead of following the run's value:
+#   Method("score", d_sum, ("sum",), settings={"max_score": 10})
+# name -> (read the current value, set it). Convention: a method with a fixed setting is named
+# Name-X after its value (Score-10), and the base version of a method does not fix it, so it follows
+# --max-score and stays comparable across runs (and the max-score sweep keeps working).
+SETTINGS = {"max_score": (lambda: MAXS, set_max_score)}
+
+
+@contextmanager
+def applied(settings):
+    """Within the block, the given settings (dict name -> value) are in force; afterwards the previous
+    values come back. Each process runs one method at a time, so this is safe in the worker processes."""
+    if not settings:
+        yield
+        return
+    old = {k: SETTINGS[k][0]() for k in settings}
+    try:
+        for k, v in settings.items():
+            SETTINGS[k][1](v)
+        yield
+    finally:
+        for k, v in old.items():
+            SETTINGS[k][1](v)
 
 
 def _keepnorm_scale():
@@ -1244,6 +1270,12 @@ class Method:
     feats: tuple = ()                # features the decision needs
     full: Callable = None            # tally on the full ballot matrix, for methods without features
     inverse: bool = False            # Inverse-* test methods: the sincere ballot is that of reversed preferences
+    settings: dict = None            # settings this method fixes for itself (SETTINGS), e.g. {"max_score": 10}
+
+    def applied(self):
+        """Context in which this method's own settings are in force (none: the run's settings).
+        run.py runs all of a method's work in it; tally and sincere also use it, for direct calls."""
+        return applied(self.settings)
 
     def features(self, B):
         """Per-voter features, concatenated: (n, d)."""
@@ -1274,6 +1306,12 @@ class Method:
         return np.array([self.decide(self.unpack(x)) for x in S])
 
     def tally(self, B):
+        if self.settings:
+            with self.applied():
+                return self._tally(B)
+        return self._tally(B)
+
+    def _tally(self, B):
         if self.full is not None:
             return self.full(B)
         return self.decide_many(self.features(B).sum(axis=0, keepdims=True), B.shape[1])[0]
@@ -1285,7 +1323,8 @@ class Method:
 
     def sincere(self, u):
         b = BALLOTS[self.ballot]
-        return b.sincere(self.pref(u), LAZY if b.lazy and not self.inverse else 0.0)   # Inverse-*: never lazy
+        with self.applied():
+            return b.sincere(self.pref(u), LAZY if b.lazy and not self.inverse else 0.0)   # Inverse-*: never lazy
 
     def honest(self, u):
         return self.tally(self.sincere(u))
@@ -1461,6 +1500,8 @@ def _load_addons(folder=ADDON_DIR):
         for k, m in new.items():
             if k in METHODS:
                 raise SystemExit(f"add-on {fn}: method {k!r} exists already (built in or in another add-on)")
+            if set(m.settings or ()) - set(SETTINGS):
+                raise SystemExit(f"add-on {fn}: method {k!r} fixes an unknown setting; known: {', '.join(SETTINGS)}")
             if m.ballot not in BALLOTS:
                 raise SystemExit(f"add-on {fn}: method {k!r} uses an unknown ballot type {m.ballot!r} "
                                  f"(the types are in ballots.py: {', '.join(BALLOTS)})")
@@ -1476,6 +1517,7 @@ _grouped = [m for ms in GROUPS.values() for m in ms]
 assert sorted(_grouped) == sorted(METHODS), "every method must be in exactly one group"
 assert not {g.lower() for g in GROUPS} & {m.lower() for m in METHODS}, "group names must differ from method names"
 assert all(m.ballot in BALLOTS for m in METHODS.values()), "every method's ballot type must be in ballots.BALLOTS"
+assert all(set(m.settings or ()) <= set(SETTINGS) for m in METHODS.values()), "unknown setting in a method"
 assert not set(RENAMED) & set(METHODS), "an old name (RENAMED) must not be a current method"
 assert not set(RENAMED_GROUPS) & set(GROUPS), "an old group name (RENAMED_GROUPS) must not be a current group"
 

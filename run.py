@@ -82,50 +82,51 @@ def one_election(job):
     out = []
     for name in names:
         m = METHODS[name]
-        # Strategic nomination (nomination.py): the field the voters face. Without it, the original field.
-        # Results are always judged on the original field (a clone's win counts as its original's).
-        uf, back = u, (lambda P: P)
-        nstats = {"nom_exits": 0, "nom_clones": 0, "nom_settled": 1, "nom_moves": 0, "nom_changed": 0}
-        if nominating:
-            # the candidates' order of moves is a property of the election: the same stream for every
-            # method, so methods that agree on every field (e.g. IRV and ER-IRV on strict ballots) agree
-            nrng = np.random.default_rng([seed, e, zlib.crc32(b"nomination")])
-            field, st = nominate(m, u, u_clone, cu, nrng, exits, clones)
-            ents = field.entries()
-            uf, back = utilities(ents, u, u_clone), (lambda P, ents=ents: to_original(P, ents, C))
-        P_h = back(m.honest(uf))
-        if nominating:
-            nstats = {**st, "nom_changed": int(np.abs(P_h - m.honest(u)).sum() > 1e-9)}
-        check = (lambda B: part.no_show(m, B, uf, u, back)) if participation else (lambda B: part.NAN)
-        defined = sincerity_defined(name)          # blank for TRASH and the Inverse-* methods
-        sincere_row = {**election_row(u, P_h, m_cand), **estats, "sincerity": 1.0 if defined else "",
-                   "fidelity": float(fidelity(m, m.sincere(uf), uf).mean()) if defined else "", "settled": 1,
-                       "compromise": 0.0, "pushover": 0.0, "burial": 0.0, **nstats, **check(m.sincere(uf))}
-        # Each method learns with a fresh copy of the same stream (common random numbers: the same
-        # polls for every method as long as they draw alike), so results stay the same when methods
-        # are added or reordered, and paired comparisons are not blurred by different poll draws.
-        mrng = np.random.default_rng([seed, e, zlib.crc32(b"learning")])
-        # --start previous: the first poll shows the previous election's result (the same dummy
-        # election for every election), its candidates relabelled at random as this election's
-        B0 = None
-        if start == "previous":
-            perm = np.random.default_rng([seed, e, zlib.crc32(b"relabel")]).permutation(C)
-            B0 = np.empty_like(dummy[name])
-            B0[:, perm] = dummy[name]
-        if converge > 0:     # convergent learning does not use rounds: one result for every rounds value
-            res = [learn(m, uf, mrng, converge, samples, group_cap(group_size, len(u)), strategic)] * len(rounds)
-        else:                # all requested numbers of poll rounds from one run (see strategy.respond)
-            res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
-                          poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0)
-        sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
-        for r, (B, settled, sin) in zip(rounds, res):
-            P_l = back(m.tally(B))
-            out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row})
-            out.append({"rounds": r, "election": e, "method": name, "ballots": "learned",
-                        **election_row(u, P_l, m_cand), **estats, **ballot_condorcet(m, B, u, back, P_l),
-                        "sincerity": sin if defined else "",
-                        "fidelity": float(fidelity(m, B, uf).mean()) if defined else "",
-                        "settled": int(settled), **strategy_types(B, m.pref(uf)), **nstats, **check(B)})
+        with m.applied():                           # the method's own settings, if any (methods.SETTINGS)
+            # Strategic nomination (nomination.py): the field the voters face. Without it, the original field.
+            # Results are always judged on the original field (a clone's win counts as its original's).
+            uf, back = u, (lambda P: P)
+            nstats = {"nom_exits": 0, "nom_clones": 0, "nom_settled": 1, "nom_moves": 0, "nom_changed": 0}
+            if nominating:
+                # the candidates' order of moves is a property of the election: the same stream for every
+                # method, so methods that agree on every field (e.g. IRV and ER-IRV on strict ballots) agree
+                nrng = np.random.default_rng([seed, e, zlib.crc32(b"nomination")])
+                field, st = nominate(m, u, u_clone, cu, nrng, exits, clones)
+                ents = field.entries()
+                uf, back = utilities(ents, u, u_clone), (lambda P, ents=ents: to_original(P, ents, C))
+            P_h = back(m.honest(uf))
+            if nominating:
+                nstats = {**st, "nom_changed": int(np.abs(P_h - m.honest(u)).sum() > 1e-9)}
+            check = (lambda B: part.no_show(m, B, uf, u, back)) if participation else (lambda B: part.NAN)
+            defined = sincerity_defined(name)          # blank for TRASH and the Inverse-* methods
+            sincere_row = {**election_row(u, P_h, m_cand), **estats, "sincerity": 1.0 if defined else "",
+                       "fidelity": float(fidelity(m, m.sincere(uf), uf).mean()) if defined else "", "settled": 1,
+                           "compromise": 0.0, "pushover": 0.0, "burial": 0.0, **nstats, **check(m.sincere(uf))}
+            # Each method learns with a fresh copy of the same stream (common random numbers: the same
+            # polls for every method as long as they draw alike), so results stay the same when methods
+            # are added or reordered, and paired comparisons are not blurred by different poll draws.
+            mrng = np.random.default_rng([seed, e, zlib.crc32(b"learning")])
+            # --start previous: the first poll shows the previous election's result (the same dummy
+            # election for every election), its candidates relabelled at random as this election's
+            B0 = None
+            if start == "previous":
+                perm = np.random.default_rng([seed, e, zlib.crc32(b"relabel")]).permutation(C)
+                B0 = np.empty_like(dummy[name])
+                B0[:, perm] = dummy[name]
+            if converge > 0:     # convergent learning does not use rounds: one result for every rounds value
+                res = [learn(m, uf, mrng, converge, samples, group_cap(group_size, len(u)), strategic)] * len(rounds)
+            else:                # all requested numbers of poll rounds from one run (see strategy.respond)
+                res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
+                              poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0)
+            sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
+            for r, (B, settled, sin) in zip(rounds, res):
+                P_l = back(m.tally(B))
+                out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row})
+                out.append({"rounds": r, "election": e, "method": name, "ballots": "learned",
+                            **election_row(u, P_l, m_cand), **estats, **ballot_condorcet(m, B, u, back, P_l),
+                            "sincerity": sin if defined else "",
+                            "fidelity": float(fidelity(m, B, uf).mean()) if defined else "",
+                            "settled": int(settled), **strategy_types(B, m.pref(uf)), **nstats, **check(B)})
     return out
 
 
@@ -241,9 +242,10 @@ def previous_election(args):
     strategic = rng.random(len(u)) < p["strategic"]
     aggressive = rng.random(len(u)) < p["aggressive"]
     m = METHODS[name]
-    B, _, _ = respond(m, u, np.random.default_rng([p["seed"], zlib.crc32(b"previous-learning")]), rounds=rounds,
-                      samples=p["samples"], poll_size=p["poll_size"], search=p["search"], strategic=strategic,
-                      poll_error=p["poll_error"], aggressive=aggressive)
+    with m.applied():
+        B, _, _ = respond(m, u, np.random.default_rng([p["seed"], zlib.crc32(b"previous-learning")]), rounds=rounds,
+                          samples=p["samples"], poll_size=p["poll_size"], search=p["search"], strategic=strategic,
+                          poll_error=p["poll_error"], aggressive=aggressive)
     return B
 
 

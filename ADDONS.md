@@ -233,6 +233,7 @@ If it turns out uninteresting, delete `addons/bucklin.py`. To share it, send the
 - **Ties must split the win.** Return chances like `[0.5, 0.5, 0]`, never pick one tied candidate. The simulator relies on exact results; a hidden tie-break by candidate number would favour candidate A.
 - **Compare with `EPS`:** use `x >= best - methods.EPS` rather than `x == best` for numbers that come from arithmetic.
 - **Score range:** read `methods.MAXS` *inside* your functions, not at the top of the file. The range can change with `--max-score` after your file is loaded.
+- **A fixed score range** (rarely wanted): `Method("score", ..., settings={"max_score": 10})` makes the method always use 0..10, whatever `--max-score` says. Name it `Name-10`, and keep a base version without fixed range, so it stays comparable with the other methods (README, Score range).
 - **Features must add up.** The simulator only gives you sums over voters. Totals, counts and pairwise counts add up; a median doesn't. For a median, count how many voters gave each score (the built-in feature `"grades"`) and find the median from those counts, as MJ does.
 - **Many sets are slow.** A feature over all sets of candidates (2^C rows, like IDS) is fine for 6 candidates, but doubles in size with every extra candidate.
 - **If the rule can't be written with sums** (it needs individual ballots, e.g. a random ballot drawn), use `Method("rank", full=tally)` with `def tally(B): …` returning the winning chances directly from the whole ballot matrix. It works, but strategic polls become much slower.
