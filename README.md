@@ -60,6 +60,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | File | Contents |
 |---|---|
 | `models.py` | Electorate models (one entry per model in `MODELS`): positions of voters and candidates; distances and absolute utilities `exp(-distance / width)`, common to all models |
+| `show_electorates.py` | Plots and numbers of the electorates a model draws, without methods: example elections, dimensionality, steepness, utilities, Condorcet winner (see Electorates, Looking at the electorates) |
 | `scenario.py` | The settings of a condition's electorates (model and parameters) |
 | `ballots.py` | Ballot types, one entry per type in `BALLOTS`: encoding, sincere ballots, laziness, strategic changes and exaggerations, implied values and the worst ballot (for fidelity and sincerity) |
 | `methods.py` | Exact tallies on ballot matrices (ties shared), method groups, renamed methods, add-on loader |
@@ -170,8 +171,18 @@ The default model, `clusters`:
 - Factions, in each bundle independently: a Chinese restaurant process over voters and candidates. Each person starts a new faction with probability α / (i + α), i the number of persons before, else joins the faction of a random earlier person (α = `--ks-alpha`, 1.5). A few large factions and a tail of small ones; their number is not fixed.
 - Each faction, per bundle: a position (normal, with a random variance c ~ Beta(3, 1.5)) and a caring level (Beta(3, 1.5)). Its members sit around its position, the tighter the more it cares (offset N(0, 1) × √(1 − caring) per dimension), and weigh that bundle by their caring.
 - Distance: each person weighs each dimension by its importance × their faction's caring on that bundle, normalised per person (as in vse-sim). Utilities use `exp(-distance / width)` like every model here (vse-sim uses −distance), so the models differ only in the electorate's structure. Candidates are drawn exactly like voters; the two candidate parameters below apply as for any model.
-- `--ks-shared 1` (a test variant, not in vse-sim): the factions of the first bundle are used in every bundle, so cleavages no longer cut across each other; positions and caring are still drawn per bundle.
-- Written anew from the algorithm, with one change: vse-sim's code gives a person one random offset for all dimensions of a bundle (it reads the offset by bundle number), which looks unintended; here each dimension has its own. With the exp utilities and this change, results are not directly comparable with Quinn's published numbers. `--dims`, `--clusters`, `--spread` and `--zipf` do not apply to this model.
+- Two versions. `ks` is the lab's version, which may evolve: a change comes as a new parameter whose default keeps the earlier behaviour (so older runs stay comparable), or under a new model name. `--model ks-quinn` is kept as close to vse-sim's code as the lab allows and is not to be changed: it uses vse-sim's one random offset per person and bundle (see the last point) and has no `--ks-shared`. Both read `--ks-alpha` and `--ks-cut`. What still differs from vse-sim in both is common to every model here: utilities `exp(-distance / width)` instead of −distance, and the candidate parameters.
+- `--ks-shared 1` (a test variant of `ks`, not in vse-sim): the factions of the first bundle are used in every bundle, so cleavages no longer cut across each other; positions and caring are still drawn per bundle.
+- Written anew from the algorithm; `ks` has one change: vse-sim's code gives a person one random offset for all dimensions of a bundle (it reads the offset by bundle number), which looks unintended; here each dimension has its own. With the exp utilities and this change, results are not directly comparable with Quinn's published numbers. `--dims`, `--clusters`, `--spread` and `--zipf` do not apply to this model.
+
+**Looking at the electorates.** `show_electorates.py` draws the electorates of one or more models without running any method, in a few seconds, to check by eye that they look as intended and to compare models:
+
+```
+python show_electorates.py --model clusters ks ks-quinn --out look       # -> output/look/
+python show_electorates.py --model ks --ks-cut 0.05 --width 0.5 --out look-ks
+```
+
+It takes run.py's electorate parameters (one value each; `--model` may list several) and the same random streams, so election e of a seed is the electorate run.py uses. It writes `examples.png` (a few elections per model: voters coloured by their favourite and the lettered candidates, on the voters' first two principal components; the Condorcet winner ringed), `summary.png` (over 300 elections: variance explained by the first principal components and how many reach 70%, favourite ÷ least liked, the utilities, the distances, and the VSE lost by electing the Condorcet winner where it is not the utility winner) and `summary.txt` (the same as numbers). For the ks models, whose people weigh the dimensions differently, positions are scaled by the voters' average weights first: the space roughly as an average voter sees it.
 
 **Candidates unlike the electorate.** Two parameters move the candidates relative to the voters; both act after all random draws, so the voters (and the candidates' own draws) are the same for every value and a sweep compares the same electorates with different fields.
 
@@ -188,7 +199,7 @@ The default model, `clusters`:
 | `--elections` | 200 | electorates |
 | `--voters` | 99 | voters per election (odd, so pairwise majorities rarely tie) |
 | `--cands` | 6 | candidates |
-| `--model` | clusters | electorate model (see Electorates; `models.py`); the next four flags belong to `clusters` |
+| `--model` | clusters | electorate model: `clusters`, `ks` or `ks-quinn` (see Electorates; `models.py`); the next four flags belong to `clusters` |
 | `--dims` | 10 | issue-space dimensions |
 | `--zipf` | 1 | 1: dimension i has scale 1/i (Zipf dimensions, above); 0: all dimensions equal |
 | `--clusters` | 5 | voter clusters |
