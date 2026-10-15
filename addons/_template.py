@@ -7,7 +7,7 @@ to remove it. To share a method, share the file.
 What a method is (see methods.py, Method):
     Method(ballot, decide, feats)
       ballot  the ballot type: "fav", "rank", "approval", "score", "fav_run", "app_run", "veto",
-              "weak", "trunc", "trunc3", "grade3" (methods.py docstring). The ballot type decides
+              "weak", "trunc", "trunc3", "grade3" (ballots.py). The ballot type decides
               the sincere ballots, laziness, the strategic moves and the measures; reuse one.
       feats   names of per-voter ballot features the decision needs; they are summed over voters
               (and over poll samples), which keeps tallies fast. Built-in ones are in

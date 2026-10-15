@@ -15,9 +15,11 @@ def dscore_sub(B):
     """For every subset S of candidates: the voter's scores among S with the lowest-rated candidates in
     S set to 0, the others unchanged; 0 outside S. Shape per voter: (2^C, C)."""
     n, C = B.shape
-    m = masks(C)[None]
-    lo = np.where(m, B[:, None, :], np.inf).min(axis=2, keepdims=True)
-    return np.where(m & (B[:, None, :] > lo), B[:, None, :], 0.0).reshape(n, -1)
+    in_set = masks(C)[None]                    # (1, 2^C, C): True where a candidate is in the set
+    scores = B[:, None, :]                     # (n, 1, C): each voter's scores, the same for every set
+    lowest = np.where(in_set, scores, np.inf).min(axis=2, keepdims=True)   # (n, 2^C, 1)
+    keep = in_set & (scores > lowest)          # in the set and above the set's lowest score
+    return np.where(keep, scores, 0.0).reshape(n, -1)
 
 
 def decide(s):
