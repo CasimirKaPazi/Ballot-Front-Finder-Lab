@@ -50,6 +50,7 @@ CONDITIONS = [
     ("nomination", {"exits": 1, "clones": 1, "rounds": 1}),   # strategic nomination
     ("previous", {"start": "previous"}),                      # first poll from a previous election
     ("ks", {"model": "ks", "exits": 1, "clones": 1}),         # Quinn's hierarchical model, with nomination (weights)
+    ("ks-quinn", {"model": "ks-quinn"}),                      # the same, as in vse-sim's code
 ]
 ELECTIONS = 2
 

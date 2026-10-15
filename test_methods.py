@@ -709,6 +709,21 @@ for _sh in (0, 1):
         _f += [_md._ks_structure(Scenario(n_voters=51, n_cands=4, model="ks", ks_shared=_sh), np.random.default_rng([6, _e]))[2]]
     _same = [all(np.array_equal(fs[0], x) for x in fs[1:]) for fs in _f if len(fs) > 1]
     assert _same and (all(_same) if _sh else not all(_same)), _sh
+# ks-quinn: one offset per person and bundle, so two members of a faction differ by the same amount on
+# every dimension of that bundle; in ks they do not
+for _q, _expect in ((True, True), (False, False)):
+    _hits = []
+    for _e in range(30):
+        _pos, _, _facs, _bund = _md._ks_structure(Scenario(n_voters=51, n_cands=4, model="ks"),
+                                                  np.random.default_rng([8, _e]), quinn=_q)
+        _start = 0
+        for _fac, _k in zip(_facs, _bund):
+            if _k >= 2:
+                _i, _j = np.flatnonzero(_fac == np.bincount(_fac).argmax())[:2]
+                _d = _pos[_i, _start:_start + _k] - _pos[_j, _start:_start + _k]
+                _hits.append(bool(np.allclose(_d, _d[0])))
+            _start += _k
+    assert _hits and all(_h == _expect for _h in _hits), _q
 print("electorate models ok")
 
 # Sweep order of parameter values (analyze.param_order): numbers by value, words in their listed order

@@ -32,7 +32,13 @@ MODEL "clusters" (default): voter clusters in a space of `dims` dimensions.
 
 MODEL "ks": Jameson Quinn's hierarchical ("kitchen sink") model, from vse-sim (voter_models.py,
 KSModel), with the parameters of its published results. Written anew from the algorithm, with one
-change (4. below). Parameters: ks_alpha (faction alpha), ks_cut (where importance stops), ks_shared
+change (4. below). This is the version that may evolve: changes come as new parameters whose default
+keeps the earlier behaviour (so older runs stay comparable), or under a new model name.
+
+MODEL "ks-quinn": the same, kept as close to vse-sim's code as this lab allows, and not to be changed:
+it keeps vse-sim's one offset per person and bundle (4. below), and has no ks_shared. What still
+differs from vse-sim is common to all models here: utilities exp(-distance / width) instead of
+-distance, and the candidate parameters (cand_dispersion, cand_shift). Parameters: ks_alpha (faction alpha), ks_cut (where importance stops), ks_shared
 (1: the same factions in every bundle, a test variant without cross-cutting cleavages); --dims,
 --clusters, --spread and --zipf do not apply.
     1. Issue bundles: the first bundle weighs 1, each further one a Beta(1, 3) fraction of the one
@@ -96,14 +102,24 @@ KS_CARING = (3.0, 1.5)           # Beta parameters of a faction's caring (and of
 def _draw_ks(sc, rng):
     """Quinn's hierarchical model, written from the description of vse-sim's KSModel (published
     parameters; see the README, Electorates). Persons = voters, then candidates, drawn alike."""
-    pos, W, _ = _ks_structure(sc, rng)
+    pos, W = _ks_structure(sc, rng)[:2]
     nv = sc.n_voters
     return pos[:nv], pos[nv:], W[:nv], W[nv:]
 
 
-def _ks_structure(sc, rng):
+def _draw_ks_quinn(sc, rng):
+    """As close to vse-sim's KSModel as this lab allows: as ks, but with one random offset per person
+    and bundle, shared by all dimensions of the bundle (as vse-sim's code does), and without ks_shared."""
+    pos, W = _ks_structure(sc, rng, quinn=True)[:2]
+    nv = sc.n_voters
+    return pos[:nv], pos[nv:], W[:nv], W[nv:]
+
+
+def _ks_structure(sc, rng, quinn=False):
     """The ks draw: positions (n, D) and weights of all persons (voters, then candidates), and each
-    bundle's faction of every person (list of arrays; for the tests)."""
+    bundle's faction of every person (list of arrays) and the number of dimensions of each bundle
+    (for the tests and show_electorates.py). quinn=True: the ks-quinn
+    variant (one offset per person and bundle; ks_shared ignored)."""
     n = sc.n_voters + sc.n_cands
     shared = None                          # ks_shared: the factions of the first bundle, for all bundles
     factions = []
@@ -140,7 +156,7 @@ def _ks_structure(sc, rng):
                     nf += 1
                 else:
                     fac[i] = fac[int(r)]
-            if getattr(sc, "ks_shared", 0):
+            if getattr(sc, "ks_shared", 0) and not quinn:
                 shared = (fac, nf)
         factions.append(fac)
         # 3. Each faction: a position (spread sqrt(c) for a random c) and a caring level
@@ -152,7 +168,10 @@ def _ks_structure(sc, rng):
             caring[f] = rng.beta(*KS_CARING)
         # 4. Persons: around their faction's position, the tighter the more the faction cares
         #    (an own offset per dimension; vse-sim uses one offset for all dimensions of a bundle)
-        noise = rng.normal(0.0, 1.0, (n, k))
+        if quinn:   # vse-sim: the offset is read by bundle number, so one per person for all of its dimensions
+            noise = np.repeat(rng.normal(0.0, 1.0, (n, 1)), k, axis=1)
+        else:
+            noise = rng.normal(0.0, 1.0, (n, k))
         pos[:, start:start + k] = means[fac] + noise * np.sqrt(1 - caring[fac])[:, None]
         care[:, start:start + k] = caring[fac][:, None]
         start += k
@@ -160,7 +179,7 @@ def _ks_structure(sc, rng):
     #    sqrt(sum((x - p)^2 (w c)^2) / sum((w c)^2)) as in vse-sim
     W = dim_w[None, :] * care
     W = W / np.sqrt((W ** 2).sum(axis=1, keepdims=True))
-    return pos, W, factions
+    return pos, W, factions, bundles
 
 
 MODELS = {m.name: m for m in [
@@ -170,6 +189,9 @@ MODELS = {m.name: m for m in [
     Model("ks", _draw_ks,
           lambda g: f"Quinn's hierarchical issue bundles and factions, faction alpha {g('ks_alpha')}, "
                     f"cut {g('ks_cut')}" + (", factions shared across bundles" if int(g("ks_shared")) else "")),
+    Model("ks-quinn", _draw_ks_quinn,
+          lambda g: f"Quinn's hierarchical model as in vse-sim's code (one offset per bundle), faction alpha "
+                    f"{g('ks_alpha')}, cut {g('ks_cut')}"),
 ]}
 
 
