@@ -5,8 +5,8 @@ With --one-at-a-time, the first value of every flag is the base condition, and e
 is run with all remaining flags at their base (one parameter varied at a time), per seed.
 
 Usage:
-    python sweep.py --one-at-a-time --dims 10 2 5 --clusters 5 3 10 --spread 0.5 0.25 1.0 \
-        --width 1.0 0.5 2.0 --out model
+    python sweep.py --one-at-a-time --noise-strength 5 3 7 --dims 6 3 10 --width 0.7 0.5 1.0 --out model
+    python sweep.py --model clusters --clusters 20 5 --out clusters
     python sweep.py --rounds 1 2 3 4 5 --strategic 0.5 1 --elections 200 --out rounds
     python sweep.py --aggressive 0 0.5 1 --methods STAR "BTR-score" Schulze
     python sweep.py --converge 20 --samples 10 --group-size 1 10 0 --out convergent
@@ -41,21 +41,21 @@ def main():
     ap.add_argument("--elections", type=int, default=200, help="elections per run")
     ap.add_argument("--voters", type=int, nargs="+", default=[99])
     ap.add_argument("--cands", type=int, nargs="+", default=[6])
-    ap.add_argument("--model", nargs="+", default=["clusters"], choices=list(MODELS))
-    ap.add_argument("--dims", type=int, nargs="+", default=[10])
-    ap.add_argument("--zipf", type=int, nargs="+", default=[1], choices=[0, 1])
-    ap.add_argument("--clusters", type=int, nargs="+", default=[5])
+    ap.add_argument("--model", nargs="+", default=["noise"], choices=list(MODELS))
+    ap.add_argument("--dims", type=int, nargs="+", default=[6])
+    ap.add_argument("--zipf", type=int, nargs="+", default=[0], choices=[0, 1])
+    ap.add_argument("--clusters", type=int, nargs="+", default=[20])
     ap.add_argument("--spread", type=float, nargs="+", default=[0.5])
-    ap.add_argument("--salience", nargs="+", default=["none"], choices=["none", "cluster"])
-    ap.add_argument("--salience-exponent", type=float, nargs="+", default=[1.0])
-    ap.add_argument("--fixed-variance", type=int, nargs="+", default=[0], choices=[0, 1])
+    ap.add_argument("--salience", nargs="+", default=["cluster"], choices=["none", "cluster"])
+    ap.add_argument("--salience-exponent", type=float, nargs="+", default=[0.5])
+    ap.add_argument("--fixed-variance", type=int, nargs="+", default=[1], choices=[0, 1])
     ap.add_argument("--field-kappa", type=float, nargs="+", default=[1.5])
     ap.add_argument("--field-salience", type=float, nargs="+", default=[0.0])
-    ap.add_argument("--noise-strength", type=float, nargs="+", default=[3.0])
+    ap.add_argument("--noise-strength", type=float, nargs="+", default=[5.0])
     ap.add_argument("--ks-alpha", type=float, nargs="+", default=[1.5])
     ap.add_argument("--ks-cut", type=float, nargs="+", default=[0.2])
     ap.add_argument("--ks-shared", type=int, nargs="+", default=[0], choices=[0, 1])
-    ap.add_argument("--width", type=float, nargs="+", default=[1.0])
+    ap.add_argument("--width", type=float, nargs="+", default=[0.7])
     ap.add_argument("--cand-dispersion", type=float, nargs="+", default=[1.0])
     ap.add_argument("--cand-shift", type=float, nargs="+", default=[0.0])
     ap.add_argument("--rounds", type=int, nargs="+", default=[3])

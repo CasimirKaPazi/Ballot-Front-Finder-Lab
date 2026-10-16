@@ -439,26 +439,26 @@ def main():
     ap.add_argument("--elections", type=int, default=200)
     ap.add_argument("--voters", type=int, default=99)
     ap.add_argument("--cands", type=int, default=6)
-    ap.add_argument("--model", default="clusters", choices=list(MODELS),
-                    help="electorate model (models.py); --dims, --zipf, --clusters, --spread are for 'clusters'")
-    ap.add_argument("--dims", type=int, default=10)
-    ap.add_argument("--zipf", type=int, default=1, choices=[0, 1],
+    ap.add_argument("--model", default="noise", choices=list(MODELS),
+                    help="electorate model (models.py); --zipf, --clusters, --spread are for 'clusters'")
+    ap.add_argument("--dims", type=int, default=6)
+    ap.add_argument("--zipf", type=int, default=0, choices=[0, 1],
                     help="1: dimension i has scale 1/i (Zipf dimensions, see scenario.py)")
-    ap.add_argument("--clusters", type=int, default=5)
+    ap.add_argument("--clusters", type=int, default=20)
     ap.add_argument("--spread", type=float, default=0.5)
-    ap.add_argument("--salience", default="none", choices=["none", "cluster"],
+    ap.add_argument("--salience", default="cluster", choices=["none", "cluster"],
                     help="model clusters: 'cluster' = each cluster weighs the issues 1, 1/2, 1/3, ... in its own "
                          "random order (see models.py); 'none' = every voter weighs every dimension alike")
-    ap.add_argument("--salience-exponent", type=float, default=1.0,
+    ap.add_argument("--salience-exponent", type=float, default=0.5,
                     help="model clusters, --salience cluster: weights 1/i^s (1 = Zipf, 0 = all alike)")
-    ap.add_argument("--fixed-variance", type=int, default=0, choices=[0, 1],
+    ap.add_argument("--fixed-variance", type=int, default=1, choices=[0, 1],
                     help="model clusters: 1 = scale positions so the dimensions' total variance is pi^2/6 whatever "
                          "their number (more dimensions spread the same disagreement over more issues)")
     ap.add_argument("--field-kappa", type=float, default=1.5,
                     help="model field: saturation of opinions (small: smooth, nearly Gaussian; large: two camps per issue)")
     ap.add_argument("--field-salience", type=float, default=0.0,
                     help="model field: strength of the salience field (0 = every issue weighed alike)")
-    ap.add_argument("--noise-strength", type=float, default=3.0,
+    ap.add_argument("--noise-strength", type=float, default=5.0,
                     help="model noise: how strongly voters gather where the fractal noise is high "
                          "(0 = a Gaussian blob; larger: sharper clumps)")
     ap.add_argument("--ks-alpha", type=float, default=1.5,
@@ -468,7 +468,7 @@ def main():
                          "(lower: more dimensions)")
     ap.add_argument("--ks-shared", type=int, default=0, choices=[0, 1],
                     help="model ks: 1 = the same factions in every issue bundle (no cross-cutting cleavages)")
-    ap.add_argument("--width", type=float, default=1.0)
+    ap.add_argument("--width", type=float, default=0.7)
     ap.add_argument("--cand-dispersion", type=float, default=1.0,
                     help="candidates' distance from the electorate's centre x this (< 1: clustered in the centre, "
                          "> 1: spread out; Merrill 1984); voters unchanged")

@@ -53,6 +53,7 @@ CONDITIONS = [
     ("ks-quinn", {"model": "ks-quinn"}),                      # the same, as in vse-sim's code
     ("field", {"model": "field", "dims": 6, "field_salience": 0.5, "exits": 1, "clones": 1}),
     ("salience", {"zipf": 0, "fixed_variance": 1, "salience": "cluster", "dims": 5, "exits": 1, "clones": 1}),
+    ("noise", {"model": "noise", "dims": 5, "noise_strength": 5.0, "exits": 1, "clones": 1}),
 ]
 ELECTIONS = 2
 

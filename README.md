@@ -6,7 +6,7 @@ A simulator for comparing single-winner voting methods: plurality, runoffs, IRV,
 
 **How a simulation runs.**
 
-1. **An electorate.** Voters and candidates are points in an issue space (several dimensions of decreasing importance, voters in clusters). A voter likes a candidate less the farther away it is. Each election draws a new electorate (README: Electorates).
+1. **An electorate.** Voters and candidates are points in an issue space (by default six issues, with voters gathered in clumps within clumps). A voter likes a candidate less the farther away it is. Each election draws a new electorate (README: Electorates).
 2. **Honest ballots.** Each voter fills in the method's ballot sincerely: a name, a ranking, approvals or scores, depending on the method (Ballots and sincere voting).
 3. **Poll rounds.** Polls show the method's own counts from a sample of the electorate. Strategic voters (by default half the electorate), in groups with the same preferences, change their ballot if that improves the result for them in the polls; all groups answer the same poll at once, and the next poll shows the new ballots (Strategy engine).
 4. **Optionally**, candidates may withdraw or field clones beforehand (Strategic nomination), and a diagnostic checks whether some voters would do better by staying home (Participation).
@@ -150,7 +150,24 @@ The earlier model: over N rounds, groups take turns and each sees the others' la
 
 Each election draws a fresh electorate from the model chosen with `--model` (`models.py`, one entry per model in `MODELS`). A model draws only the positions of voters and candidates (and, if it has them, how much each person weighs each dimension); distances, utilities and the two candidate parameters below are the same for every model. The model and its own parameters are written into every row and named in the report; runs from before models existed are read as `clusters`.
 
-The default model, `clusters`:
+Five models are available: `noise` (the default), `clusters`, `field`, `ks` and `ks-quinn`. Each is described below, the default first.
+
+**Fractal noise** (`--model noise`, the default). Voters are dense where a fractal noise is high, like Perlin noise with several octaves, so they gather in clumps within clumps at every scale. There is no number of clusters, no decay law for the dimensions and no salience to choose:
+
+- The noise, new for every election: five octaves of eight plane waves each, in random directions in the `--dims`-dimensional issue space. From one octave to the next the frequency doubles and the amplitude falls by 2^−0.5. (This is fractal noise built from random waves; Perlin's own lattice construction is impractical in more than three dimensions.)
+- People are drawn from a standard Gaussian weighted by exp(`--noise-strength` × noise). At 0 that is a plain Gaussian blob; larger values give sharper clumps, and electing the Condorcet winner becomes costlier while a Condorcet winner stays about as frequent.
+- Sampling: 2000 points start from the Gaussian; the strength is raised in ten steps, and each time the points are resampled by their gain in weight and then take five small random steps (Metropolis), so that clumps get their real width. Voters and candidates are distinct points drawn from the result.
+- Positions are scaled so the dimensions' total variance is π²/6, as `--fixed-variance` does for clusters. Candidates are drawn like voters. Drawing one electorate takes about 0.1 s, longer than the other models, but little next to the methods' strategy.
+- The octaves, waves, amplitude decay and sampling settings are fixed in `models.py` (`NOISE_*`). `--noise-strength` is the knob that matters.
+
+**Defaults, and why** (2026-10-16; FINDINGS.md, Electorate models). The defaults were chosen so that the electorates are plausible against two kinds of real data and still separate the methods:
+
+- `noise`, because it has the fewest assumptions of the models and gives a balanced electorate: `clusters` is clumpy (with few clusters, islands), `ks` is uniform and low-dimensional (two or three dimensions drawn, in which VSE and WME hardly pull apart), and `field` gives a featureless blob.
+- Strength 5, 6 dimensions, width 0.7. A Condorcet winner exists in about 97% of elections, as in real ranked elections with 50 to 100 or more voters (96–98% in Myers' CIVS data). The candidates' map from approval ballots (`--sav`, below) is close to Alós-Ferrer & Granić's real one with 6 candidates, if somewhat more concentrated on the first dimension. Electing the Condorcet winner loses about 15% of VSE, so VSE and WME pull apart and the methods differ. From strength 5 to 7 the method order stays within its sampling noise, so the exact value matters little. Below 5 (with 10 dimensions and width 1.0, below 6) the electorates become easy: nearly every method is close to the best possible result.
+- The models' own defaults are those of their best variant in the comparisons: `clusters` with 20 clusters, no Zipf, fixed total variance and salience per cluster with exponent 0.5; `field` and `ks` unchanged.
+- Before 2026-10-16 the defaults were `clusters`, 10 dimensions with Zipf, 5 clusters, no salience, unscaled positions and width 1.0; to reproduce older results, give these explicitly (each results file records every parameter).
+
+**Voter clusters** (`--model clusters`):
 
 - cluster centres: `--clusters` points, normal in `--dims` dimensions;
 - cluster sizes: random weights from a flat Dirichlet distribution, so some elections have one dominant cluster and others are balanced;
@@ -158,18 +175,18 @@ The default model, `clusters`:
 - candidates: drawn from the same distribution as voters (cluster by the same weights, same spread), unless moved by the two candidate parameters below;
 - utilities: `u = exp(-distance / width)`, absolute and not normalised: 1 at zero distance, towards 0 far away. A smaller `--width` makes voters care only about nearby candidates.
 
-**Zipf dimensions** (the default, `--zipf 1`), after Chris Smith's Mixture of Zipf Gaussians ([article](https://cdsmithus.medium.com/simulating-elections-with-spatial-voter-models-1ff50892390), [code](https://github.com/cdsmith/spatial-voting), `src/Model.hs`): dimension i (1, 2, 3, ...) has standard deviation 1/i — for cluster centres, voters and candidates alike — so one issue dominates and the others matter less and less, without being absent.
+**Zipf dimensions** (`--zipf 1`; the default until 2026-10-16), after Chris Smith's Mixture of Zipf Gaussians ([article](https://cdsmithus.medium.com/simulating-elections-with-spatial-voter-models-1ff50892390), [code](https://github.com/cdsmith/spatial-voting), `src/Model.hs`): dimension i (1, 2, 3, ...) has standard deviation 1/i — for cluster centres, voters and candidates alike — so one issue dominates and the others matter less and less, without being absent.
 
-- Scaling follows Smith's code: the standard deviation is 1/i, so the variance is 1/i². (The article's wording "proportional to 1/n" could also be read as variance 1/n; the code is unambiguous.) The total variance then converges (to π²/6), so beyond about 4 dimensions their number hardly matters. The default of 10 dimensions is well past that.
+- Scaling follows Smith's code: the standard deviation is 1/i, so the variance is 1/i². (The article's wording "proportional to 1/n" could also be read as variance 1/n; the code is unambiguous.) The total variance then converges (to π²/6), so beyond about 4 dimensions their number hardly matters.
 - Each cluster applies the 1/i scaling to its own slightly shuffled order of dimensions (each rank perturbed by normal noise with standard deviation 0.1 × dims, Smith's ratio of 10 for 100 dimensions), so camps differ in which issues they vary on most. Cluster centres keep the global order.
 - Taken over from Smith: the 1/i scaling and the per-cluster shuffle. Not taken over: his other settings (10 clusters with uniform random weights, cluster centres uniform in ±3/i, a random spread factor per cluster, utility = −distance); our Dirichlet weights, normal centres, one spread and `exp(-distance / width)` stay.
-- `--zipf 0` gives the alternative model: all dimensions with standard deviation 1 (then use few dimensions, e.g. 2). Distances are longer there, so the same width gives steeper preferences.
+- `--zipf 0` (the default) gives all dimensions standard deviation 1. Distances are longer there, so without `--fixed-variance 1` the same width gives steeper preferences.
 
 **Where people stand, and what they care about** (two options of `clusters`):
 
 - `--fixed-variance 1` scales all positions by one factor so that the dimensions' total variance is π²/6, the limit of Zipf dimensions, whatever their number. Without it and without Zipf, every added dimension makes all distances longer, so preferences get steeper at the same width; with it, more dimensions spread the same disagreement over more issues. (With Zipf the factor is close to 1.)
 - `--salience cluster` separates what people care about from where they stand: each cluster weighs the issues 1, 1/2, 1/3, … (Zipf, as Smith's dimensions; `--salience-exponent s` gives 1/i^s) in its own random order, in its members' and its candidates' distances, scaled to a mean squared weight of 1. Society can then disagree on many issues while each group mainly cares about a few, and groups differ in which. The positions are the same with and without it (its random draws come last).
-- Meant together with `--zipf 0`: positions spread alike on every issue, salience differs by group, e.g. `--clusters 20 --zipf 0 --fixed-variance 1 --salience cluster`.
+- Meant together with `--zipf 0`: positions spread alike on every issue, salience differs by group. This is the default of `clusters`: `--clusters 20 --zipf 0 --fixed-variance 1 --salience cluster --salience-exponent 0.5`.
 
 **Scale-free fields** (`--model field`, experimental). Instead of imposing clusters or decay laws, opinions arise as fields over a social space, following what is known about how they spread:
 
@@ -218,27 +235,28 @@ python show_electorates.py --model clusters ks --cands 9 --sav --sav-noise 0.5 -
 
 ## Parameters
 
-`run.py` (one condition). The defaults are the base condition of the latest sweeps (see FINDINGS.md):
+`run.py` (one condition). The electorate defaults are explained in Electorates (Defaults, and why):
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--elections` | 200 | electorates |
 | `--voters` | 99 | voters per election (odd, so pairwise majorities rarely tie) |
 | `--cands` | 6 | candidates |
-| `--model` | clusters | electorate model: `clusters`, `field`, `ks` or `ks-quinn` (see Electorates; `models.py`); the next four flags belong to `clusters` |
-| `--dims` | 10 | issue-space dimensions |
-| `--zipf` | 1 | 1: dimension i has scale 1/i (Zipf dimensions, above); 0: all dimensions equal |
-| `--clusters` | 5 | voter clusters |
-| `--spread` | 0.5 | standard deviation of voters around their cluster centre (centres have 1), before the Zipf scaling |
-| `--salience` | none | model `clusters`: `cluster` = each cluster weighs the issues 1, 1/2, 1/3, … in its own random order (see Electorates) |
-| `--salience-exponent` | 1 | model `clusters` with `--salience cluster`: weights 1/i^s (1 = Zipf, 0 = all alike) |
-| `--fixed-variance` | 0 | model `clusters`: 1 = scale positions so the dimensions' total variance is π²/6 whatever their number |
+| `--model` | noise | electorate model: `noise`, `clusters`, `field`, `ks` or `ks-quinn` (see Electorates; `models.py`) |
+| `--dims` | 6 | issue-space dimensions (models `noise`, `clusters`, `field`) |
+| `--noise-strength` | 5 | model `noise`: how strongly voters gather where the fractal noise is high (0 = a Gaussian blob; larger: sharper clumps) |
+| `--zipf` | 0 | model `clusters`: 1 = dimension i has scale 1/i (Zipf dimensions, above); 0 = all dimensions equal |
+| `--clusters` | 20 | model `clusters`: voter clusters |
+| `--spread` | 0.5 | model `clusters`: standard deviation of voters around their cluster centre (centres have 1), before the Zipf scaling |
+| `--salience` | cluster | model `clusters`: `cluster` = each cluster weighs the issues 1, 1/2, 1/3, … in its own random order (see Electorates) |
+| `--salience-exponent` | 0.5 | model `clusters` with `--salience cluster`: weights 1/i^s (1 = Zipf, 0 = all alike) |
+| `--fixed-variance` | 1 | model `clusters`: 1 = scale positions so the dimensions' total variance is π²/6 whatever their number |
 | `--field-kappa` | 1.5 | model `field`: saturation of opinions (small: smooth, nearly Gaussian; large: two camps per issue) |
 | `--field-salience` | 0 | model `field`: strength of the salience field (0 = every issue weighed alike) |
 | `--ks-alpha` | 1.5 | model `ks`: faction alpha (higher: more, smaller factions); see Electorates |
 | `--ks-cut` | 0.2 | model `ks`: importance below which no further issue bundles or dimensions are drawn (lower: more dimensions) |
 | `--ks-shared` | 0 | model `ks`: 1 = the same factions in every issue bundle (a test variant without cross-cutting cleavages) |
-| `--width` | 1.0 | distance scale of the utility fall-off |
+| `--width` | 0.7 | distance scale of the utility fall-off |
 | `--cand-dispersion` | 1.0 | candidates' distance from the electorate's centre × this (< 1 clustered, > 1 spread out); see Electorates |
 | `--cand-shift` | 0.0 | candidates moved along the main dimension by this many voter SDs; see Electorates |
 | `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |
@@ -285,12 +303,12 @@ python show_electorates.py --model clusters ks --cands 9 --sav --sav-noise 0.5 -
 To see how much a model assumption matters, vary each parameter on its own around a base condition and check whether the methods keep their order:
 
 ```
-python sweep.py --one-at-a-time --clusters 5 3 10 --spread 0.5 0.25 1.0 --width 1.0 1.5 \
+python sweep.py --one-at-a-time --noise-strength 5 3 7 --dims 6 10 --width 0.7 1.0 \
     --rounds 1 3 --aggressive 0.5 0 1 --strategic 0.5 1 --seeds 1 2 --elections 400 --out model
 python analyze.py model                                   # -> output/model/analysis/
 ```
 
-Conditions are labelled by how they differ from the base (`c1: base`, `clusters 5`, ...).
+Conditions are labelled by how they differ from the base (`c1: base`, `noise strength 3.0`, ...).
 
 `analyze.py` adds a **rank stability** table when there are several conditions: for each axis, the rank correlation (Spearman) between the methods' values in a condition and in the base (the first condition). The methods hidden in the plots are left out. Its first row is a noise reference: the agreement expected from sampling noise alone between two runs of the base condition (the base's even and odd elections correlated, then scaled up to full size with the Spearman-Brown formula `2r / (1 + r)`). A condition near or above that row orders methods as the base does; a value clearly below it means the parameter changes which methods do well. With few elections everything is noise, and VSE* in particular needs many elections (several hundred per condition): strategic differences between methods are small. Many methods lie close together on each axis, so rank correlation is a strict test; the heatmap shows where the changes come from.
 
@@ -653,6 +671,7 @@ The terminal and the report list each older input and what was filled in or left
 | Column | Added | Older files |
 |---|---|---|
 | model | 2026-10-14 | read as clusters |
+| noise_strength | 2026-10-15 | read as 3.0 (unused by other models) |
 | field_kappa, field_salience | 2026-10-15 | read as 1.5 and 0 (unused by other models) |
 | salience, salience_exponent, fixed_variance | 2026-10-15 | read as none, 1.0 and 0 (every dimension weighed alike, positions unscaled) |
 | ks_alpha, ks_cut, ks_shared | 2026-10-14 | read as 1.5, 0.2 and 0 (unused by the clusters model) |

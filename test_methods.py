@@ -694,8 +694,9 @@ for _e in range(20):
 _a = _md.draw_electorate(_sk, np.random.default_rng([3, 0])).u
 assert np.array_equal(_a, _md.draw_electorate(_sk, np.random.default_rng([3, 0])).u)   # reproducible
 # ks parameters do not touch the clusters model
-_c1 = _md.draw_electorate(Scenario(n_voters=21, n_cands=4), np.random.default_rng(9)).u
-_c2 = _md.draw_electorate(Scenario(n_voters=21, n_cands=4, ks_alpha=5.0, ks_cut=0.5), np.random.default_rng(9)).u
+_c1 = _md.draw_electorate(Scenario(n_voters=21, n_cands=4, model="clusters"), np.random.default_rng(9)).u
+_c2 = _md.draw_electorate(Scenario(n_voters=21, n_cands=4, model="clusters", ks_alpha=5.0, ks_cut=0.5),
+                          np.random.default_rng(9)).u
 assert np.array_equal(_c1, _c2)
 # faction alpha: tiny -> (almost) one faction, every person close to it; huge -> everyone on their own
 def _spread(alpha):
@@ -752,7 +753,8 @@ print("space from approval ballots ok")
 
 # clusters model options: salience per cluster leaves positions unchanged and adds weights (mean square 1,
 # shared within a cluster); fixed total variance scales positions by one factor
-_b = Scenario(n_voters=41, n_cands=4, dims=6, n_clusters=3, zipf=0)
+_b = Scenario(n_voters=41, n_cands=4, model="clusters", dims=6, n_clusters=3, zipf=0, salience="none",
+              salience_exponent=1.0, fixed_variance=0)
 _e0 = _md.draw_electorate(_b, np.random.default_rng(21))
 _e1 = _md.draw_electorate(Scenario(**{**_b.__dict__, "salience": "cluster"}), np.random.default_rng(21))
 assert np.array_equal(_e0.voters, _e1.voters) and _e0.voter_weights is None
@@ -781,6 +783,25 @@ assert _bimodal(20.0) > 0.8 > 0.3 > _bimodal(0.3)
 _f2 = _md.draw_electorate(Scenario(**{**_sf.__dict__, "field_salience": 1.0}), np.random.default_rng(31))
 assert np.allclose((_f2.voter_weights ** 2).mean(axis=1), 1)
 print("field model ok")
+
+# noise model: reproducible, positive utilities, distinct people, total variance pi^2/6; strength 0 is a
+# Gaussian blob (variance spread evenly over the dimensions), a high strength concentrates it on fewer directions
+_sn = Scenario(n_voters=301, n_cands=5, dims=6, model="noise")
+_n1 = _md.draw_electorate(_sn, np.random.default_rng(41))
+assert np.array_equal(_n1.u, _md.draw_electorate(_sn, np.random.default_rng(41)).u)
+assert (_n1.u > 0).all() and _n1.voter_weights is None
+_people = np.vstack([_n1.voters, _n1.cands])
+assert len(np.unique(_people.round(9), axis=0)) >= len(_people) - 3
+assert abs((_people ** 2).sum(axis=1).mean() - np.pi ** 2 / 6) < 0.4
+def _pc2(strength):
+    out = []
+    for e in range(10):
+        v = _md.draw_electorate(Scenario(**{**_sn.__dict__, "noise_strength": strength}), np.random.default_rng([42, e])).voters
+        ev = np.sort(np.linalg.eigvalsh(np.cov(v.T)))[::-1]
+        out.append(ev[:2].sum() / ev.sum())
+    return np.median(out)
+assert _pc2(0.0) < 0.5 < _pc2(8.0), (_pc2(0.0), _pc2(8.0))
+print("noise model ok")
 
 # Renamed methods and groups: old names lead to existing current ones, in selection and in analysis
 for _old in _mm.RENAMED:

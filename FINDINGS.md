@@ -4,6 +4,8 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Units.** Up to 2026-10-06 the axes were PE (zero = utility-proportional lottery) and WM (the winner's worst margin in % of voters); the sections below keep those units. Since then they are VSE and WME, both with 0 = random ballot and 100 = best candidate (README, Axes). Within one condition the change is a fixed rescaling of each axis (the sums over elections that set the zero and the 100 are the same for all methods), so method order, dominance and rank stability are unaffected; only the numbers differ.
 
+**Electorate defaults.** From 2026-10-16 the default electorate model is `noise` (strength 5, 6 dimensions, width 0.7), and the `clusters` model's own defaults are 20 clusters, no Zipf, fixed total variance and salience per cluster (exponent 0.5). Before, the defaults were `clusters` with 10 Zipf dimensions, 5 clusters and width 1.0, which all sections below use unless they say otherwise (see Electorate models, and the new defaults).
+
 **Default poll rounds and version.** From 2026-10-10 the default is 3 poll rounds (before: 1), and every row records the simulator version (1.0.0 from then on). Sections before this note report round 1 unless they say otherwise.
 
 **Truncation and laziness.** From 2026-10-13 rankings may be truncated: strategic voters can rank fewer candidates (unranked ones tied last), and `--lazy` makes honest ballots lazy: truncated rankings, fewer approvals, blank (0) scores (README, Truncation and laziness). This changes the strategic results of every ranking method (more strategic options, and new rules for unranked candidates in IRV, Coombs, Borda, Dowdall, Supplementary vote and ER-IRV), also at `--lazy 0`. Results in the sections below are from before; the version number stays 1.0.0 until publication.
@@ -22,7 +24,98 @@ What the simulations have shown so far. The model, parameters and definitions ar
 
 **Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
 
-## Electorate models: clusters vs Quinn's hierarchical model (2026-10-14)
+## Electorate models, and the new defaults (2026-10-14 to 2026-10-16)
+
+**Outcome.** Four electorate models were compared; the fractal-noise model (`noise`) became the default, at strength 5, 6 dimensions and width 0.7 (README, Electorates: Defaults, and why). It needs the fewest assumptions and gives electorates between the extremes of the others: `clusters` is clumpy (with 5 clusters, islands), `ks` uniform and low-dimensional, `field` a featureless blob. At the defaults a Condorcet winner exists in about 97% of elections, matching real ranked elections (96–98% in Myers' CIVS data with 50 to 100 or more voters), and electing them loses about 15% of VSE, so the methods separate. The `clusters` model's own defaults became its best variant below (20 clusters, no Zipf, fixed total variance, salience per cluster with exponent 0.5).
+
+Across all models and settings tried, the earlier finding held: **the methods' order on WME* and sincerity hardly depends on the electorate; their order on VSE* does**, and mainly through how much electing the Condorcet winner costs.
+
+**All four models side by side** (electorates only, no methods: `show_electorates.py`, 300 electorates per model, seed 1, 3000 voters, 6 candidates; noise strength 4, 6 dimensions, width 0.7; the other models at their parameters of the time: clusters 5 clusters with Zipf, field saturation 1.5; approval map from 100 electorates of 1000 voters):
+
+```
+python show_electorates.py --model clusters noise ks field --noise-strength 4 --dims 6 --width 0.7 --sav --voters 3000
+```
+
+| Model | CW | CW = utility winner | VSE lost electing CW | fav ÷ least | first two components | approval map, cumulative inertia 1/2/3/4 dims |
+|---|---|---|---|---|---|---|
+| clusters | 98.0% | 65.3% | 16.7% | 8.6 | 89% | 76 / 96 / 100 / 100 |
+| noise | 99.0% | 77.4% | 11.8% | 6.6 | 60% | 70 / 93 / 100 / 100 |
+| ks | 99.7% | 78.9% | 5.8% | 6.0 | 100% | 77 / 96 / 100 / 100 |
+| field | 99.7% | 93.3% | 0.4% | 4.2 | 37% | 56 / 86 / 100 / 100 |
+
+Real approval data with 6 candidates (Konstanz, Alós-Ferrer & Granić 2015): 54 / 91 / 98 / 100. With more parties or candidates the real maps are flatter (Messel, 9 parties: 37 / 54 / 66 / 76; Konstanz, 11 parties: 24 / 45 / 57 / 67); no model has been compared at those sizes with method runs.
+
+### The noise model (2026-10-15/16)
+
+Voters are dense where a fractal noise is high (README, Electorates). Two sweeps over its strength, otherwise at the defaults of the time (3 poll rounds, 10 polls of 49 voters, poll error 2, search 10, aggressive share 0.5, strategic share 0.5, scores 0..5, 99 voters, 6 candidates, seed 1):
+
+```
+python sweep.py --model noise --noise-strength 3 4 6 --out noise          # of this form; 10 dimensions, width 1.0, 200 elections
+python sweep.py --model noise --width 0.7 --dims 6 --elections 600 --noise-strength 5 6 7 --out noise2
+```
+
+| Strength (dims, width) | CW | CW = utility winner | VSE lost electing CW | fav ÷ least | reachable corner (VSE at best WME / WME at best VSE) | undominated |
+|---|---|---|---|---|---|---|
+| 3 (10, 1.0) | 96.5% | 87.6% | 2.5% | 2.6 | 97.3 / 95.5 | ARA-Top, IC-MARS, MARS, Approval |
+| 4 (10, 1.0) | 99.5% | 83.9% | 5.0% | 2.8 | 95.0 / 91.1 | Soft Minimax-40, Soft Minimax-D, MARS, Approval runoff |
+| 6 (10, 1.0) | 98.0% | 69.9% | 15.5% | 3.5 | 83.6 / 79.7 | Soft Minimax-40, MARS, Soft Minimax-D |
+| 5 (6, 0.7) | 97.8% | 70.7% | 15.3% | 7.9 | 84.3 / 77.0 | Geometric median, Soft Minimax, MMPO, Minimax-ER, Schulze-ER |
+| 6 (6, 0.7) | 96.0% | 69.1% | 16.6% | 9.7 | 81.4 / 77.8 | Geometric median, MARS, Soft Minimax-40, Smith//Score, Soft Minimax-D, MD-MARS, Baldwin-ER |
+| 7 (6, 0.7) | 97.0% | 67.9% | 17.2% | 12.2 | 80.8 / 75.2 | ARA, MARS-T, MARS, Soft Minimax-D, Approval runoff, Baldwin-ER, Minimax-ER |
+
+- **Strength 3 and 4 are easy electorates**: nearly every method is close to the best possible result. At strength 6 with 10 dimensions and width 1.0, the reachable region opens up and the methods separate.
+- **From strength 5 to 7 (6 dimensions, width 0.7) the model is on a plateau.** The cost of electing the Condorcet winner rises only from 15.3% to 17.2%, and the method order stays within its noise: rank correlation with strength 5 for VSE* 0.90 and 0.89 (noise reference 0.85), WME* 0.96 and 0.95 (0.98), sincerity 0.98 (0.99). Only the steepness (favourite ÷ least liked) keeps growing. So the exact strength matters little in this range; 5 is the lowest value clearly past the easy regime.
+- **In the first sweep, strength 3 → 6 changed the VSE* order** (rank correlation 0.23, noise reference 0.50), but not the WME* order (0.81; 0.90) or the sincerity order (0.94; 0.97): as in all model comparisons.
+- Unlike `clusters`, where a costlier Condorcet winner came with a rarer one, here the Condorcet winner stays frequent at every strength and only its cost grows.
+
+Selected methods at strength 5 (6 dimensions, width 0.7, 600 elections; each value's own VSE* interval is about ±2.5, but paired differences are much more precise):
+
+| Method | VSE* | WME* | Sincerity | VSE | WME |
+|---|---|---|---|---|---|
+| Geometric median | 90.6 | 92.1 | 99.9 | 91.3 | 90.4 |
+| ARA | 88.2 | 96.3 | 99.9 | 89.9 | 94.4 |
+| MARS | 87.8 | 95.9 | 100.0 | 88.7 | 95.7 |
+| Soft Minimax-40 | 87.8 | 95.8 | 99.9 | 89.2 | 94.1 |
+| Score | 87.5 | 94.9 | 100.0 | 90.8 | 92.6 |
+| Soft Minimax-D | 87.5 | 96.5 | 99.9 | 87.9 | 96.1 |
+| STAR | 87.5 | 96.2 | 99.9 | 88.2 | 95.7 |
+| Smith//Score | 86.9 | 97.0 | 99.9 | 87.5 | 96.4 |
+| Soft Minimax | 86.7 | 97.6 | 99.9 | 87.0 | 96.6 |
+| BTR-score | 86.3 | 97.5 | 99.9 | 87.1 | 96.4 |
+| IRV | 85.0 | 94.1 | 96.2 | 85.9 | 88.7 |
+| Approval runoff | 84.5 | 98.1 | 99.8 | 85.2 | 96.2 |
+| Ranked pairs | 83.9 | 99.6 | 96.5 | 84.3 | 100.0 |
+| Minimax | 83.5 | 99.5 | 96.4 | 84.3 | 100.0 |
+| Plurality | 80.0 | 81.4 | 96.2 | 69.7 | 70.8 |
+
+**A sampling artefact, found and fixed before the runs.** The first prototype drew voters by weighting a fixed pool of Gaussian points by exp(strength × noise). Above strength 2 the weights concentrate on a few dozen points, so about half the voters were copies of each other, and the costly electorates it showed were mostly that. The model samples by raising the strength in steps with resampling and local moves instead (README, Electorates), so all people are distinct. Prototype numbers from before this fix are not valid above strength 2.
+
+### Variants of the clusters model (2026-10-15)
+
+| Run | settings | CW | CW = utility winner | VSE lost electing CW | fav ÷ least | reachable corner | undominated |
+|---|---|---|---|---|---|---|---|
+| standard-clusters | 10 dims Zipf, 5 clusters, width 1.0, 200 elections | 96.0% | 66.1% | 12.5% | 4.3 | 85.3–86.8 / 77.0 | Soft Minimax, Smith//Score, Condorcet-random-drop, Schulze-ER, Minimax-ER |
+| clust-20 | the same with 20 clusters | 98.0% | 78.6% | 6.0% | 4.8 | 93.3 / 90.8 | MARS-T, MMWVxScore, Soft Minimax-L, Soft Minimax |
+| new-defaults | 6 dims, no Zipf, 20 clusters, width 1.5, 200 elections | 96.0% | 80.7% | 7.7% | 5.7 | 90.3–90.8 / 87.0 | MARS-T, Soft Minimax-40, IC-MARS, Smith//Score, Soft Minimax-L |
+| sal-05 | 10 dims, no Zipf, fixed total variance, 20 clusters, salience per cluster, exponent 0.5, width 1.0, 600 elections | 93.5% | 77.5% | 8.9% | 3.8 | 88.3–88.7 / 86.1 | IC-MARS, Score, MARS, MARS-T, Soft Minimax-D, MMWVxScore, Smith//Score, Schulze-ER |
+
+- **5 → 20 clusters**: the five-cluster electorates are islands with gaps between them; with 20 clusters electing the Condorcet winner costs half as much. Rank correlation (noise reference in brackets): VSE* 0.72 (0.86), WME* 0.93 (0.95), sincerity 0.97 (0.97).
+- **Equal dimensions are sensitive to their number.** new-defaults against clust-20 (10 dims with Zipf, width 1.0) changed the VSE* order (0.31; noise reference 0.60), not WME* (0.86; 0.82) or sincerity (0.95; 0.98). In electorate-only probes, without Zipf the cost of electing the Condorcet winner grew with the number of dimensions even at fixed total variance. Global Zipf scaling roughly doubled the variance decay that clustering alone already produces (the principal components of clustered electorates fall off steeply even with equal dimensions), so the decay does not need to be imposed. Choosing dims and width to hit one target looked like over-fitting, which led to the salience option.
+- **Salience per cluster** (each cluster weighs the issues in its own order) made the cost of electing the Condorcet winner stable against the number of dimensions, but made Condorcet winners rarer: 87.8% with exponent 1 and 10 dimensions in an electorate probe, 93.5% with exponent 0.5 (sal-05). sal-05 looked reasonable, with a balanced front; it is now the default of `clusters`.
+
+### What did not work (2026-10-15)
+
+- **The field model** (opinions as scale-free fields over a social space, saturation 1.5, 10 issues, width 0.7, 600 elections, run field-07): CW 95.8%, CW = utility winner 85.4%, electing it loses 3.9%, fav ÷ least 3.0, reachable corner 95.5–95.8 / 95.5; undominated IC-MARS, Soft Minimax-40, MMWVxScore, Soft Minimax, Smith//Score, Score. It hardly separates the methods. The issues are independent fields, so no ideology (issues that go together) forms: a featureless blob. It stays in the lab as an experimental model.
+- **Dynamic opinion models, as prototypes outside the lab** (a 40 × 40 grid of agents with 10 issues, elections as snapshots of 99 voters and 6 candidates, width 0.7, 60 snapshots each after 2000–3000 burn-in sweeps; not in the code). Bounded confidence with noise (Deffuant with noise, Pineda, Toral & Hernández-García 2009): agents closer than ε move toward each other on one issue, and with probability m an issue is reset at random. It switches sharply from disorder (ε ≤ 0.15: no groups, Condorcet winner in 96–100%, cost 2–3%) to one consensus group with a halo of reset agents (ε ≥ 0.2), with no lasting structure of several groups; electorates are easy (cost 0–3%). Adding repulsion between distant agents (Jager & Amblard) pushed 82–100% of opinions to the edges of the issue space, with independent issues: random corners of a cube, Condorcet winner in only 52–82%, cost 9–62%. Moving on all issues at once instead of one did not couple the issues. Both versions end at one of two poles, consensus or independent yes/no issues; real electorates lie between.
+
+### Open idea: recombination for the field model
+
+A static way to let structure emerge from merging and diverging, without agents (proposed 2026-10-16, not tried): split top-down for about ten levels, as now, but give each new faction two parents instead of one (their average plus a fresh deviation scaled to its level). Then repeatedly drop the oldest level and add a new one at the bottom, so lower levels move up and the structure turns over completely two or three times, which removes the initial conditions. Two points decide the outcome:
+
+- The balance of averaging and deviation (averaging two parents halves the spread, the deviation adds it back) is the temperature between uniformity and noise.
+- Which parents merge. With random pairs the turnover mixes everything into a Gaussian blob, the field model's present state. Structure can only survive if merges mostly join nearby factions (as assortative mating in population genetics); how strongly nearby factions are preferred would be the knob between blob and islands.
+
+### Clusters vs Quinn's hierarchical model (2026-10-14)
 
 **Settings.** Two runs at the defaults, differing only in the electorate model: 200 elections, seed 1, 99 voters, 6 candidates, width 1.0, 3 poll rounds, 10 polls of 49 voters, poll error 2, search 10, aggressive share 0.5, strategic share 0.5, scores 0..5, default methods. `clusters`: 10 dimensions (Zipf), 5 clusters, spread 0.5. `ks`: faction alpha 1.5, cut 0.2 (README, Electorates). Analysed together (settings as the report states them; the commands were of the form):
 
@@ -657,7 +750,7 @@ The same kind of sweep with 4 candidates (width 1.0 1.5 2.0, spread 0.5 0.75 1.0
 
 (The PE-lost figure is a ratio of sums, as in the report.) More dimensions and narrower width make the Condorcet winner less often the best candidate by total utility, which lowers PE for Condorcet and plurality-based methods and favours rated methods. Width 0.5 makes preferences implausibly steep (a voter values the favourite 17 times the least liked candidate).
 
-**Zipf dimensions** (dimension i with standard deviation 1/i, after Clay Smith) make the number of dimensions almost irrelevant: from about 4 dimensions on the electorates are the same within noise.
+**Zipf dimensions** (dimension i with standard deviation 1/i, after Chris Smith) make the number of dimensions almost irrelevant: from about 4 dimensions on the electorates are the same within noise.
 
 | Model (width 1) | Condorcet winner also highest total utility | PE lost electing it | Favourite ÷ least liked |
 |---|---|---|---|

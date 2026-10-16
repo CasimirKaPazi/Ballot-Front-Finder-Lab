@@ -17,7 +17,7 @@ None = every dimension counts alike). A model's own parameters are fields of the
                 often from one social group). Both act after all random draws, so the voters (and
                 the candidates' draws) are the same for every setting.
 
-MODEL "clusters" (default): voter clusters in a space of `dims` dimensions.
+MODEL "clusters": voter clusters in a space of `dims` dimensions.
     Cluster centres are drawn N(0, 1) per dimension; cluster sizes vary (Dirichlet weights, so some
     elections have a dominant cluster); voters and candidates are drawn around their cluster's
     centre with standard deviation `spread`. A voter belongs to one cluster on all dimensions at once.
@@ -83,7 +83,7 @@ opinions arise and spread, rather than from imposed clusters or decay laws (READ
       field), mean square 1 per person), so neighbours share their priorities partly.
     Candidates are drawn like voters.
 
-MODEL "noise": voters are dense where a fractal noise is high (as Perlin noise with octaves), so they
+MODEL "noise" (default): voters are dense where a fractal noise is high (as Perlin noise with octaves), so they
 form clumps within clumps at every scale, without a number of clusters, a Zipf law or salience:
     - The noise, new for every election: NOISE_OCTAVES octaves of NOISE_WAVES plane waves each, in
       random directions in the issue space, the frequency doubling and the amplitude falling by
@@ -385,7 +385,7 @@ class Electorate:
 
 
 def draw_electorate(sc, rng):
-    """The electorate of one election under the scenario's model (sc.model, default "clusters")."""
+    """The electorate of one election under the scenario's model (sc.model, default "noise")."""
     voters, cands, vw, cw = MODELS[getattr(sc, "model", "clusters")].draw(sc, rng)
     if sc.cand_dispersion != 1.0 or sc.cand_shift != 0.0:
         centre = voters.mean(axis=0)
