@@ -21,7 +21,7 @@ MODEL "clusters" (default): voter clusters in a space of `dims` dimensions.
     Cluster centres are drawn N(0, 1) per dimension; cluster sizes vary (Dirichlet weights, so some
     elections have a dominant cluster); voters and candidates are drawn around their cluster's
     centre with standard deviation `spread`. A voter belongs to one cluster on all dimensions at once.
-    Zipf dimensions (zipf=1), after Clay Smith's Mixture of Zipf Gaussians
+    Zipf dimensions (zipf=1), after Chris Smith's Mixture of Zipf Gaussians
     (https://github.com/cdsmith/spatial-voting, src/Model.hs): dimension i (1, 2, ...) has standard
     deviation 1/i, for cluster centres and candidates' and voters' spread alike, so the first issue
     dominates and later ones matter less and less (total variance converges to pi^2/6, so beyond a
@@ -29,6 +29,15 @@ MODEL "clusters" (default): voter clusters in a space of `dims` dimensions.
     slightly shuffled order of dimensions (each rank perturbed by normal noise with standard
     deviation 0.1 x dims, Smith's ratio of 10 for 100 dimensions), so camps differ in which issues
     they vary on most. Cluster centres keep the global order.
+    Fixed total variance (fixed_variance=1): all positions are scaled by one factor, so that the total
+    variance of the dimension scales is pi^2/6 (the limit of Zipf dimensions) whatever their number.
+    More dimensions then spread the same disagreement over more issues instead of making every distance
+    longer (which would make preferences steeper at the same width). With zipf=1 the factor is close to 1.
+    Salience per cluster (salience="cluster"): positions say where people stand; salience says what they
+    care about. Each cluster weighs the issues 1, 1/2, 1/3, ... (Zipf, as Smith's dimensions; more
+    generally 1/i^s with s = salience_exponent, default 1; 0 = all alike) in its own random order, in its members' distances (and its candidates'), scaled so that the mean squared weight
+    is 1. So society can disagree on many issues while each group mainly cares about a few, and groups
+    differ in which. "none" (default): every voter weighs every dimension alike.
 
 MODEL "ks": Jameson Quinn's hierarchical ("kitchen sink") model, from vse-sim (voter_models.py,
 KSModel), with the parameters of its published results. Written anew from the algorithm, with one
@@ -57,6 +66,22 @@ differs from vse-sim is common to all models here: utilities exp(-distance / wid
     5. Weights: a person weighs each dimension by its importance x the caring of the person's faction
        on that bundle, normalised (distance = sqrt(sum((x - p)^2 (w c)^2) / sum((w c)^2)), as in
        vse-sim). Utilities then use exp(-distance / width) like every model here (vse-sim: -distance).
+
+MODEL "field": opinions as scale-free fields over a social space, built from what is known about how
+opinions arise and spread, rather than from imposed clusters or decay laws (README, Electorates):
+    - People live on a two-dimensional social space (a 64 x 64 torus: who meets whom), placed by a
+      Levy flight, so they are clustered at all scales (towns, neighbourhoods, circles).
+    - Each issue is a Gaussian random field over that space with power spectrum k^-2: correlations that
+      decay with the logarithm of distance, the signature found in real vote statistics (Borghesi &
+      Bouchaud 2010), i.e. structure at every scale without a characteristic one.
+    - A person's opinion on an issue is the field where they live (a share FIELD_SHARED = 0.4 of the
+      variance; Borghesi & Bouchaud find a third to a half shared) plus an own part, passed through
+      tanh(field_kappa x .): a saturating response, as a spin in the Ising model. Small field_kappa gives
+      smooth, nearly Gaussian opinions; large field_kappa pushes each issue towards two camps.
+    - Many issues (dims) with a fixed total variance pi^2/6, as fixed_variance does for clusters.
+    - field_salience > 0: what people care about is a field too (weights exp(field_salience x another
+      field), mean square 1 per person), so neighbours share their priorities partly.
+    Candidates are drawn like voters.
 """
 from dataclasses import dataclass
 from typing import Callable
@@ -90,7 +115,24 @@ def _draw_clusters(sc, rng):
         centres_z = centres / rank                                  # centres: global order
         voters = centres_z[vc] + (voters - centres[vc]) * own[vc]
         cands = centres_z[cc] + (cands - centres[cc]) * own[cc]
-    return voters, cands, None, None
+    if getattr(sc, "fixed_variance", 0):
+        # one scale for all dimensions, so that their total variance is pi^2/6 (the limit of Zipf
+        # dimensions) whatever their number: more dimensions spread the same variance over more issues
+        rank = np.arange(1, sc.dims + 1)
+        per_dim = (1.0 / rank ** 2) if sc.zipf else np.ones(sc.dims)
+        f = np.sqrt((np.pi ** 2 / 6) / per_dim.sum())
+        voters, cands = voters * f, cands * f
+    vw = cw = None
+    if getattr(sc, "salience", "none") == "cluster":
+        # each cluster weighs the issues 1, 1/2, 1/3, ... in its own random order (drawn after all other
+        # draws, so positions are the same with and without salience); scaled so that the mean squared
+        # weight is 1, which leaves the expected distance in an isotropic space unchanged
+        sal = np.empty((sc.n_clusters, sc.dims))
+        for k in range(sc.n_clusters):
+            sal[k, rng.permutation(sc.dims)] = 1.0 / np.arange(1, sc.dims + 1) ** getattr(sc, "salience_exponent", 1.0)
+        sal = sal / np.sqrt((sal ** 2).mean(axis=1, keepdims=True))
+        vw, cw = sal[vc], sal[cc]
+    return voters, cands, vw, cw
 
 
 # MODEL "ks": Quinn's hierarchical "kitchen sink" model (vse-sim, voter_models.py, KSModel)
@@ -182,13 +224,63 @@ def _ks_structure(sc, rng, quinn=False):
     return pos, W, factions, bundles
 
 
+# MODEL "field": opinions as scale-free fields over a social space (see the module docstring)
+FIELD_GRID = 64          # the social space: a 64 x 64 torus
+FIELD_EXPONENT = 2.0     # power spectrum k^-2 in two dimensions: logarithmically decaying correlations
+FIELD_SHARED = 0.4       # share of each opinion's variance that is shared with one's surroundings
+FIELD_LEVY = 1.0         # where people live: a Levy flight with P(step > x) ~ 1/x (clustered at all scales)
+
+
+def _fields(rng, n):
+    """n independent Gaussian random fields on the FIELD_GRID torus with power spectrum k^-FIELD_EXPONENT,
+    each with mean 0 and variance 1."""
+    kx, ky = np.fft.fftfreq(FIELD_GRID)[:, None], np.fft.fftfreq(FIELD_GRID)[None, :]
+    k = np.sqrt(kx ** 2 + ky ** 2)
+    k[0, 0] = np.inf
+    z = rng.normal(size=(n, FIELD_GRID, FIELD_GRID)) + 1j * rng.normal(size=(n, FIELD_GRID, FIELD_GRID))
+    f = np.fft.ifft2(z * k ** (-FIELD_EXPONENT / 2), axes=(1, 2)).real
+    f -= f.mean(axis=(1, 2), keepdims=True)
+    return f / f.std(axis=(1, 2), keepdims=True)
+
+
+def _levy_cells(rng, n):
+    """Grid cells of n persons placed by a Levy flight on the torus (step lengths with P(l > x) = x^-FIELD_LEVY,
+    at least one cell, at most the grid; random directions), in random order."""
+    length = np.minimum(rng.random(n) ** (-1.0 / FIELD_LEVY), FIELD_GRID)
+    angle = rng.random(n) * 2 * np.pi
+    pos = np.cumsum(np.c_[length * np.cos(angle), length * np.sin(angle)], axis=0)
+    return (np.floor(pos[rng.permutation(n)]) % FIELD_GRID).astype(int)
+
+
+def _draw_field(sc, rng):
+    """Opinions as scale-free fields over a social space (see the module docstring)."""
+    n, D = sc.n_voters + sc.n_cands, sc.dims
+    cell = _levy_cells(rng, n)
+    F = _fields(rng, D)[:, cell[:, 0], cell[:, 1]].T                       # (n, D): the surroundings' view
+    Z = np.sqrt(FIELD_SHARED) * F + np.sqrt(1 - FIELD_SHARED) * rng.normal(size=(n, D))
+    X = np.tanh(sc.field_kappa * Z)                                         # saturating, as a spin
+    X = X / np.sqrt((X ** 2).mean()) * np.sqrt((np.pi ** 2 / 6) / D)        # fixed total variance pi^2/6
+    W = None
+    if sc.field_salience > 0:                                               # what people care about: a field too
+        H = _fields(rng, D)[:, cell[:, 0], cell[:, 1]].T
+        W = np.exp(sc.field_salience * H)
+        W = W / np.sqrt((W ** 2).mean(axis=1, keepdims=True))
+    nv = sc.n_voters
+    return X[:nv], X[nv:], (None if W is None else W[:nv]), (None if W is None else W[nv:])
+
+
 MODELS = {m.name: m for m in [
     Model("clusters", _draw_clusters,
-          lambda g: f"{g('dims')} dimensions{' (Zipf)' if int(g('zipf')) else ''}, {g('clusters')} clusters, "
-                    f"spread {g('spread')}"),
+          lambda g: f"{g('dims')} dimensions{' (Zipf)' if int(g('zipf')) else ''}"
+                    f"{', fixed total variance' if int(g('fixed_variance')) else ''}, {g('clusters')} clusters, "
+                    f"spread {g('spread')}" + (f", salience per cluster (exponent {g('salience_exponent')})"
+                                               if g("salience") == "cluster" else "")),
     Model("ks", _draw_ks,
           lambda g: f"Quinn's hierarchical issue bundles and factions, faction alpha {g('ks_alpha')}, "
                     f"cut {g('ks_cut')}" + (", factions shared across bundles" if int(g("ks_shared")) else "")),
+    Model("field", _draw_field,
+          lambda g: f"{g('dims')} issues as scale-free fields over a social space, saturation {g('field_kappa')}"
+                    + (f", salience field {g('field_salience')}" if float(g("field_salience")) > 0 else "")),
     Model("ks-quinn", _draw_ks_quinn,
           lambda g: f"Quinn's hierarchical model as in vse-sim's code (one offset per bundle), faction alpha "
                     f"{g('ks_alpha')}, cut {g('ks_cut')}"),

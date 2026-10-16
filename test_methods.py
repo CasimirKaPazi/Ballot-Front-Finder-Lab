@@ -733,6 +733,55 @@ assert sorted(["0", "5", "1"], key=lambda v: _po("group_size", v)) == ["1", "5",
 assert sorted(["previous", "honest"], key=lambda v: _po("start", v)) == ["honest", "previous"]
 print("parameter order ok")
 
+# Space from approval ballots (show_electorates.sav_space): candidates on a line give one dominant
+# dimension; candidates on a circle give two equal ones
+import show_electorates as _se
+_r = np.random.default_rng(12)
+_x = _r.normal(0, 1, (4000, 1))
+_line = np.linspace(-1.5, 1.5, 7)[None, :]
+_A = (_r.random((4000, 7)) < np.exp(-0.5 * (_x - _line) ** 2)).astype(float)
+_sh, _npos, _zero = _se.sav_space(_A)
+assert _sh[0] > 0.6 and _zero == 0, _sh
+_ang = np.linspace(0, 2 * np.pi, 8, endpoint=False)
+_cand = np.c_[np.cos(_ang), np.sin(_ang)]
+_v = _r.normal(0, 1, (6000, 2))
+_d2 = ((_v[:, None, :] - _cand[None]) ** 2).sum(axis=2)
+_sh, _, _ = _se.sav_space((_r.random(_d2.shape) < np.exp(-0.7 * _d2)).astype(float))
+assert abs(_sh[0] - _sh[1]) < 0.1 and _sh[:2].sum() > 0.6, _sh
+print("space from approval ballots ok")
+
+# clusters model options: salience per cluster leaves positions unchanged and adds weights (mean square 1,
+# shared within a cluster); fixed total variance scales positions by one factor
+_b = Scenario(n_voters=41, n_cands=4, dims=6, n_clusters=3, zipf=0)
+_e0 = _md.draw_electorate(_b, np.random.default_rng(21))
+_e1 = _md.draw_electorate(Scenario(**{**_b.__dict__, "salience": "cluster"}), np.random.default_rng(21))
+assert np.array_equal(_e0.voters, _e1.voters) and _e0.voter_weights is None
+assert np.allclose((_e1.voter_weights ** 2).mean(axis=1), 1)
+assert len({tuple(np.round(w, 9)) for w in _e1.voter_weights}) <= 3                    # one weighting per cluster
+assert sorted(np.round(_e1.voter_weights[0] / _e1.voter_weights[0].max(), 6)) == sorted(np.round(1 / np.arange(1, 7), 6))
+_e2 = _md.draw_electorate(Scenario(**{**_b.__dict__, "fixed_variance": 1}), np.random.default_rng(21))
+assert np.allclose(_e2.voters, _e0.voters * np.sqrt(np.pi ** 2 / 6 / 6))
+_e3 = _md.draw_electorate(Scenario(**{**_b.__dict__, "salience": "cluster", "salience_exponent": 0.0}),
+                          np.random.default_rng(21))
+assert np.allclose(_e3.voter_weights, 1) and np.allclose(_e3.u, _e0.u)            # exponent 0: all alike = none
+print("clusters options ok")
+
+# field model: reproducible, positive utilities, fixed total variance; large saturation pushes each issue
+# towards two camps; the salience field gives per-person weights with mean square 1
+_sf = Scenario(n_voters=301, n_cands=5, dims=8, model="field")
+_f1 = _md.draw_electorate(_sf, np.random.default_rng(31))
+assert np.array_equal(_f1.u, _md.draw_electorate(_sf, np.random.default_rng(31)).u)
+assert (_f1.u > 0).all() and _f1.voter_weights is None
+assert abs((_f1.voters ** 2).mean() * 8 - np.pi ** 2 / 6) < 0.15
+def _bimodal(k):
+    v = _md.draw_electorate(Scenario(**{**_sf.__dict__, "field_kappa": k}), np.random.default_rng(31)).voters
+    v = v / np.abs(v).max()
+    return np.mean(np.abs(v) > 0.8)
+assert _bimodal(20.0) > 0.8 > 0.3 > _bimodal(0.3)
+_f2 = _md.draw_electorate(Scenario(**{**_sf.__dict__, "field_salience": 1.0}), np.random.default_rng(31))
+assert np.allclose((_f2.voter_weights ** 2).mean(axis=1), 1)
+print("field model ok")
+
 # Renamed methods and groups: old names lead to existing current ones, in selection and in analysis
 for _old in _mm.RENAMED:
     assert _mm.current_name(_old) in METHODS, _old

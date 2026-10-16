@@ -110,6 +110,11 @@ ADDED_COLUMNS = {
     "ks_alpha": ("1.5", "2026-10-14, parameters of the ks model (not used by older runs)"),
     "ks_cut": ("0.2", "2026-10-14, parameters of the ks model (not used by older runs)"),
     "ks_shared": ("0", "2026-10-14, parameters of the ks model (not used by older runs)"),
+    "salience": ("none", "2026-10-15, salience per cluster: older runs weighed every dimension alike"),
+    "salience_exponent": ("1.0", "2026-10-15, salience per cluster (not used by older runs)"),
+    "field_kappa": ("1.5", "2026-10-15, parameters of the field model (not used by older runs)"),
+    "field_salience": ("0.0", "2026-10-15, parameters of the field model (not used by older runs)"),
+    "fixed_variance": ("0", "2026-10-15, fixed total variance: older runs did not scale positions"),
     "lazy": ("0.0", "2026-10-13, laziness: older runs had full ballots"),
     "fidelity": (None, "2026-10-12, fidelity, with the current sincerity measure"),
     "bcw": (None, "2026-10-12, Condorcet winner in the ballots"),
@@ -524,7 +529,8 @@ PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "
                "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion",
                "cand_shift": "candidate shift", "lazy": "laziness", "model": "electorate model",
                "ks_alpha": "ks faction alpha", "ks_cut": "ks cut",
-               "ks_shared": "ks shared factions"}
+               "ks_shared": "ks shared factions", "salience": "salience", "salience_exponent": "salience exponent", "fixed_variance": "fixed total variance",
+               "field_kappa": "field saturation", "field_salience": "salience field"}
 LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "poll_size", "poll_error", "search", "converge",
                  "aggressive", "start"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)
@@ -534,7 +540,7 @@ def param_order(k, v):
     """Sort key for a parameter value: numbers by value (group size 0, whole ranking groups, counts as
     the largest); words in their listed order (start: honest, previous; model: as in models.MODELS),
     other words alphabetically, after the numbers."""
-    words = {"start": ["honest", "previous"], "model": list(MODELS)}
+    words = {"start": ["honest", "previous"], "model": list(MODELS), "salience": ["none", "cluster"]}
     try:
         x = float(v)
     except ValueError:

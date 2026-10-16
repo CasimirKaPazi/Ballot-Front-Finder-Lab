@@ -200,6 +200,120 @@ def summary_text(models, scs, S, elections, seed):
     return "\n".join(lines)
 
 
+# ---------- the political space as voters' approvals show it (--sav) ----------
+# Alós-Ferrer & Granić (2015), after Laslier (2006): candidates are close when the people who approve
+# them overlap more than chance. Their results (cumulative share of inertia explained by 1-4
+# dimensions, %), for comparison:
+SAV_REFERENCE = {
+    "Messel, 9 parties": [36.77, 53.97, 65.47, 75.58],
+    "Konstanz, 11 parties": [24.23, 45.08, 57.42, 66.78],
+    "Messel, 8 candidates": [35.46, 58.27, 72.60, 83.62],
+    "Konstanz, 6 candidates": [53.97, 91.36, 98.34, 100.0],
+}
+
+
+def approvals(u, noise, rng):
+    """Approval ballots: each voter approves the candidates above their own mean utility (the lab's
+    sincere approval). With noise > 0 each utility is first blurred by a normal error of noise x the
+    voter's own spread of utilities, so approval near the cut-off is a matter of chance."""
+    if noise > 0:
+        u = u + rng.normal(0.0, 1.0, u.shape) * noise * u.std(axis=1, keepdims=True)
+    return (u > u.mean(axis=1, keepdims=True)).astype(float)
+
+
+def sav_space(A):
+    """The space of the candidates from approval ballots A (voters x candidates), as in Laslier (2006)
+    and Alós-Ferrer & Granić (2015):
+      a(c)      how many voters approve c;  a(c, d)  how many approve both c and d
+      r(c, d) = N a(c, d) / (a(c) a(d))     overlap relative to chance (1 = independent)
+      squared distance = A' - B' ln r       with B' = 2 / alpha and A' set by the smallest alpha that
+                                            keeps every distance non-negative; then only the ratios
+                                            matter, and the distances are proportional to
+                                            ln(r_max / r(c, d)) (the most overlapping pair at 0)
+      classical multidimensional scaling of these squared distances: the eigenvalues' shares are the
+      inertia explained by each dimension; only positive eigenvalues count as dimensions.
+    Candidates nobody approves are left out. A pair nobody approves together would be infinitely far
+    apart; it is counted (zero_pairs) and given half a voter instead.
+    Returns (explained shares, number of positive eigenvalues, zero pairs)."""
+    A = A[:, A.sum(axis=0) > 0]
+    N, C = A.shape
+    a = A.sum(axis=0)
+    both = A.T @ A
+    zero = int(((both == 0) & ~np.eye(C, dtype=bool)).sum() // 2)
+    both = np.where(both == 0, 0.5, both)
+    r = N * both / np.outer(a, a)
+    off = ~np.eye(C, dtype=bool)
+    D2 = np.where(off, np.log(r[off].max() / r), 0.0)       # proportional to the squared distances
+    H = np.eye(C) - 1.0 / C
+    G = -0.5 * H @ D2 @ H                                     # inertia matrix (double centring)
+    mu = np.sort(np.linalg.eigvalsh(G))[::-1]
+    pos = mu[mu > 1e-9 * max(mu.max(), 1e-12)]
+    share = pos / pos.sum() if len(pos) else np.array([1.0])
+    return share, len(pos), zero
+
+
+def sav_stats(sc, elections, voters, noise, seed):
+    """sav_space over `elections` electorates of `voters` voters each (seed: as run.py's streams)."""
+    big = Scenario(**{**sc.__dict__, "n_voters": voters})
+    out = []
+    for e in range(elections):
+        u = draw_electorate(big, np.random.default_rng([seed, e])).u
+        A = approvals(u, noise, np.random.default_rng([seed, e, 17]))
+        share, npos, zero = sav_space(A)
+        out.append({"share": share, "npos": npos, "zero": zero,
+                    "k70": int(np.searchsorted(np.cumsum(share), 0.7 - 1e-12) + 1)})
+    return out
+
+
+def draw_sav(models, T, cands, path):
+    fig, axs = plt.subplots(1, 2, figsize=(11.5, 4.6))
+    ax = axs[0]
+    for (label, ref), ls in zip(SAV_REFERENCE.items(), ["--", "-.", ":", (0, (5, 1, 1, 1, 1, 1))]):
+        ax.plot(range(1, 5), ref, color=MUTED, lw=1.3, ls=ls, label=label)
+    for i, n in enumerate(models):
+        kmax = max(len(t["share"]) for t in T[n])
+        cum = np.array([np.r_[np.cumsum(t["share"]), np.ones(kmax - len(t["share"]))] for t in T[n]])
+        med = np.median(cum, axis=0)
+        ax.plot(np.arange(1, len(med) + 1), med * 100, marker="o", ms=4, lw=2, color=MODEL_COLOURS[i], label=n)
+    ax.axhline(70, color=MUTED, lw=0.8)
+    ax.set(xlabel="dimensions", ylabel="inertia explained (%, median)", ylim=(0, 102),
+           title=f"Space from approval ballots ({cands} candidates)\ngrey: Alós-Ferrer & Granić 2015")
+    ax.legend(frameon=False, fontsize=7.5, loc="lower right")
+    ax = axs[1]
+    top = max(max(t["k70"] for t in T[n]) for n in models)
+    width = 0.8 / len(models)
+    for i, n in enumerate(models):
+        k = np.array([t["k70"] for t in T[n]])
+        counts = np.bincount(k, minlength=top + 1)[1:] / len(k) * 100
+        ax.bar(np.arange(1, top + 1) + (i - (len(models) - 1) / 2) * width, counts, width=width * 0.92,
+               color=MODEL_COLOURS[i], label=n)
+    ax.set(title="Dimensions needed for 70% of the inertia", xlabel="dimensions", ylabel="elections (%)",
+           xticks=range(1, top + 1))
+    ax.legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
+
+def sav_text(models, T, a):
+    lines = [f"Space from approval ballots (--sav): {a.sav_elections} electorates of {a.sav_voters} voters "
+             f"per model, {a.cands} candidates, approval noise {a.sav_noise}",
+             "  cumulative inertia explained by 1, 2, 3, 4 dimensions (median, %); for comparison, "
+             "Alós-Ferrer & Granić 2015:"]
+    for label, ref in SAV_REFERENCE.items():
+        lines.append(f"    {label:24s} " + "  ".join(f"{x:5.1f}" for x in ref))
+    for n in models:
+        kmax = max(len(t["share"]) for t in T[n])
+        cum = np.median([np.r_[np.cumsum(t["share"]), np.ones(kmax - len(t["share"]))] for t in T[n]], axis=0)
+        k70 = np.array([t["k70"] for t in T[n]])
+        npos = np.array([t["npos"] for t in T[n]])
+        zero = np.mean([t["zero"] > 0 for t in T[n]])
+        lines.append(f"    {n:24s} " + "  ".join(f"{x * 100:5.1f}" for x in cum[:4])
+                     + f"   dims for 70%: median {np.median(k70):.0f}; positive eigenvalues: median "
+                       f"{np.median(npos):.0f}; elections with a pair nobody approves together: {zero:.0%}")
+    return "\n".join(lines)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Plots of the electorates a model draws (no methods).")
     ap.add_argument("--model", nargs="+", default=["clusters"], choices=list(MODELS))
@@ -211,6 +325,11 @@ def main():
     ap.add_argument("--zipf", type=int, default=1, choices=[0, 1])
     ap.add_argument("--clusters", type=int, default=5)
     ap.add_argument("--spread", type=float, default=0.5)
+    ap.add_argument("--salience", default="none", choices=["none", "cluster"])
+    ap.add_argument("--salience-exponent", type=float, default=1.0)
+    ap.add_argument("--fixed-variance", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--field-kappa", type=float, default=1.5)
+    ap.add_argument("--field-salience", type=float, default=0.0)
     ap.add_argument("--ks-alpha", type=float, default=1.5)
     ap.add_argument("--ks-cut", type=float, default=0.2)
     ap.add_argument("--ks-shared", type=int, default=0, choices=[0, 1])
@@ -218,23 +337,36 @@ def main():
     ap.add_argument("--cand-dispersion", type=float, default=1.0)
     ap.add_argument("--cand-shift", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--sav", action="store_true",
+                    help="also map the candidates from approval ballots as Alós-Ferrer & Granić (2015) do (sav.png)")
+    ap.add_argument("--sav-voters", type=int, default=1000, help="--sav: voters per electorate")
+    ap.add_argument("--sav-elections", type=int, default=100, help="--sav: electorates per model")
+    ap.add_argument("--sav-noise", type=float, default=0.0,
+                    help="--sav: blur utilities before approving, x each voter's own utility spread (0 = none)")
     ap.add_argument("--out", default="electorates", help="folder (in output/ unless it has a directory)")
     a = ap.parse_args()
 
     out = out_path(a.out)
     os.makedirs(out, exist_ok=True)
     scs = [Scenario(a.voters, a.cands, a.dims, a.clusters, a.spread, a.width, a.zipf, a.cand_dispersion,
-                    a.cand_shift, m, a.ks_alpha, a.ks_cut, a.ks_shared) for m in a.model]
+                    a.cand_shift, m, a.ks_alpha, a.ks_cut, a.ks_shared, salience=a.salience,
+                    salience_exponent=a.salience_exponent, fixed_variance=a.fixed_variance,
+                    field_kappa=a.field_kappa, field_salience=a.field_salience)
+           for m in a.model]
     # the same random streams as run.py: election e of seed s is the electorate run.py uses
     S = {m: [stats(draw_electorate(sc, np.random.default_rng([a.seed, e]))) for e in range(a.elections)]
          for m, sc in zip(a.model, scs)}
     draw_examples(a.model, scs, a.examples, a.seed, os.path.join(out, "examples.png"))
     draw_summary(a.model, S, os.path.join(out, "summary.png"))
     text = summary_text(a.model, scs, S, a.elections, a.seed)
+    if a.sav:
+        T = {m: sav_stats(sc, a.sav_elections, a.sav_voters, a.sav_noise, a.seed) for m, sc in zip(a.model, scs)}
+        draw_sav(a.model, T, a.cands, os.path.join(out, "sav.png"))
+        text += "\n" + sav_text(a.model, T, a) + "\n"
     with open(os.path.join(out, "summary.txt"), "w") as f:
         f.write(text)
     print(text)
-    print(f"wrote {out}/: examples.png, summary.png, summary.txt")
+    print(f"wrote {out}/: examples.png, summary.png, " + ("sav.png, " if a.sav else "") + "summary.txt")
 
 
 if __name__ == "__main__":

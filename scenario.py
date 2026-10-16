@@ -22,6 +22,11 @@ class Scenario:
     ks_alpha: float = 1.5          # "ks": faction alpha (Chinese restaurant process)
     ks_cut: float = 0.2            # "ks": importance below which no further bundles / dimensions
     ks_shared: int = 0             # "ks": 1 = the same factions in every bundle (no cross-cutting)
+    salience: str = "none"         # "clusters": "cluster" = each cluster weighs the issues in its own Zipf order
+    salience_exponent: float = 1.0 # "clusters", salience "cluster": weights 1/i^s
+    field_kappa: float = 1.5       # "field": saturation of opinions (small: smooth; large: two camps per issue)
+    field_salience: float = 0.0    # "field": strength of the salience field (0 = every issue weighed alike)
+    fixed_variance: int = 0        # "clusters": 1 = total variance of the dimensions fixed (pi^2/6), whatever their number
 
 
 def electorate(sc: Scenario, rng: np.random.Generator):

@@ -38,7 +38,7 @@ IGNORE = {"version"}
 
 # The run parameters every condition starts from (small and fast), then what each condition changes.
 BASE = {"voters": 25, "cands": 4, "model": "clusters", "dims": 3, "zipf": 1, "clusters": 3, "spread": 0.5,
-        "ks_alpha": 1.5, "ks_cut": 0.2, "ks_shared": 0, "width": 1.0,
+        "ks_alpha": 1.5, "ks_cut": 0.2, "ks_shared": 0, "salience": "none", "salience_exponent": 1.0, "fixed_variance": 0, "field_kappa": 1.5, "field_salience": 0.0, "width": 1.0,
         "cand_dispersion": 1.0, "cand_shift": 0.0, "rounds": 2, "samples": 3, "group_size": 10,
         "strategic": 0.5, "aggressive": 0.5, "lazy": 0.0, "max_score": 5, "exits": 0, "clones": 0,
         "poll_size": 0, "poll_error": 2.0, "search": 4, "converge": 0, "start": "honest", "seed": 7}
@@ -51,6 +51,8 @@ CONDITIONS = [
     ("previous", {"start": "previous"}),                      # first poll from a previous election
     ("ks", {"model": "ks", "exits": 1, "clones": 1}),         # Quinn's hierarchical model, with nomination (weights)
     ("ks-quinn", {"model": "ks-quinn"}),                      # the same, as in vse-sim's code
+    ("field", {"model": "field", "dims": 6, "field_salience": 0.5, "exits": 1, "clones": 1}),
+    ("salience", {"zipf": 0, "fixed_variance": 1, "salience": "cluster", "dims": 5, "exits": 1, "clones": 1}),
 ]
 ELECTIONS = 2
 

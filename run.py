@@ -182,6 +182,12 @@ def check_params(a, error):
     for k in ("strategic", "aggressive", "lazy"):
         if any(not 0 <= v <= 1 for v in vals(k)):
             error(f"--{k} must be between 0 and 1")
+    if any(v <= 0 for v in vals("field_kappa")):
+        error("--field-kappa must be above 0")
+    if any(v < 0 for v in vals("field_salience")):
+        error("--field-salience must be 0 or more")
+    if any(v < 0 for v in vals("salience_exponent")):
+        error("--salience-exponent must be 0 or more")
     if any(v <= 0 for v in vals("ks_alpha")):
         error("--ks-alpha must be above 0")
     if any(not 0 < v < 1 for v in vals("ks_cut")):
@@ -233,7 +239,7 @@ def group_text(g):
 
 
 # Run parameters written into every row of the elections CSV
-PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "ks_alpha", "ks_cut", "ks_shared", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
+PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "ks_alpha", "ks_cut", "ks_shared", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
           "strategic", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
           "start", "seed"]
 
@@ -309,7 +315,9 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     rounds = list(p["rounds"]) if isinstance(p["rounds"], (list, tuple)) else [p["rounds"]]
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"],
                   p["cand_dispersion"], p["cand_shift"], p.get("model", "clusters"), p.get("ks_alpha", 1.5),
-                  p.get("ks_cut", 0.2), p.get("ks_shared", 0))
+                  p.get("ks_cut", 0.2), p.get("ks_shared", 0), salience=p.get("salience", "none"),
+                  salience_exponent=p.get("salience_exponent", 1.0), fixed_variance=p.get("fixed_variance", 0),
+                  field_kappa=p.get("field_kappa", 1.5), field_salience=p.get("field_salience", 0.0))
     todo = [e for e in range(elections) if e not in set(skip)]
     jobs = [{"sc": sc, "p": p, "e": e, "rounds": rounds, "names": names, "participation": participation}
             for e in todo]
@@ -435,6 +443,18 @@ def main():
                     help="1: dimension i has scale 1/i (Zipf dimensions, see scenario.py)")
     ap.add_argument("--clusters", type=int, default=5)
     ap.add_argument("--spread", type=float, default=0.5)
+    ap.add_argument("--salience", default="none", choices=["none", "cluster"],
+                    help="model clusters: 'cluster' = each cluster weighs the issues 1, 1/2, 1/3, ... in its own "
+                         "random order (see models.py); 'none' = every voter weighs every dimension alike")
+    ap.add_argument("--salience-exponent", type=float, default=1.0,
+                    help="model clusters, --salience cluster: weights 1/i^s (1 = Zipf, 0 = all alike)")
+    ap.add_argument("--fixed-variance", type=int, default=0, choices=[0, 1],
+                    help="model clusters: 1 = scale positions so the dimensions' total variance is pi^2/6 whatever "
+                         "their number (more dimensions spread the same disagreement over more issues)")
+    ap.add_argument("--field-kappa", type=float, default=1.5,
+                    help="model field: saturation of opinions (small: smooth, nearly Gaussian; large: two camps per issue)")
+    ap.add_argument("--field-salience", type=float, default=0.0,
+                    help="model field: strength of the salience field (0 = every issue weighed alike)")
     ap.add_argument("--ks-alpha", type=float, default=1.5,
                     help="model ks: faction alpha (higher: more, smaller factions)")
     ap.add_argument("--ks-cut", type=float, default=0.2,

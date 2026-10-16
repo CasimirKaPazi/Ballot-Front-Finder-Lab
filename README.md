@@ -20,7 +20,7 @@ The two pull apart, so no method can reach 100 on both; the lab computes the bou
 
 **What you get.** `run.py` and `sweep.py` produce CSV files with one row per election, method and ballot set; `analyze.py` turns them into a Markdown report with paired bootstrap intervals, the methods no other method beats (the front), paired comparisons and plots: how strategy moves each method in the VSE/WME plane, how methods change across parameter sweeps, and where they stand relative to the frontier.
 
-The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulations) and on Clay Smith's spatial voter model; in the strategy model, rounds of best responses to the previous poll (level-k reasoning), the leader rule of Myerson and Weber (1993) emerges instead of being coded. Its assumptions are spelled out in the sections below, and eight Inverse-* methods (honest voting elects the worst candidate) test whether voters learn their way back.
+The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulations) and on Chris Smith's spatial voter model; in the strategy model, rounds of best responses to the previous poll (level-k reasoning), the leader rule of Myerson and Weber (1993) emerges instead of being coded. Its assumptions are spelled out in the sections below, and eight Inverse-* methods (honest voting elects the worst candidate) test whether voters learn their way back.
 
 Python 3.9 or newer + NumPy; the analysis also needs matplotlib (`pip install -r requirements.txt`). This file describes the software: the model, its parameters, the methods and the analysis. What the simulations have shown so far, with the commands that produced it, is in [FINDINGS.md](FINDINGS.md).
 
@@ -158,12 +158,27 @@ The default model, `clusters`:
 - candidates: drawn from the same distribution as voters (cluster by the same weights, same spread), unless moved by the two candidate parameters below;
 - utilities: `u = exp(-distance / width)`, absolute and not normalised: 1 at zero distance, towards 0 far away. A smaller `--width` makes voters care only about nearby candidates.
 
-**Zipf dimensions** (the default, `--zipf 1`), after Clay Smith's Mixture of Zipf Gaussians ([article](https://cdsmithus.medium.com/simulating-elections-with-spatial-voter-models-1ff50892390), [code](https://github.com/cdsmith/spatial-voting), `src/Model.hs`): dimension i (1, 2, 3, ...) has standard deviation 1/i — for cluster centres, voters and candidates alike — so one issue dominates and the others matter less and less, without being absent.
+**Zipf dimensions** (the default, `--zipf 1`), after Chris Smith's Mixture of Zipf Gaussians ([article](https://cdsmithus.medium.com/simulating-elections-with-spatial-voter-models-1ff50892390), [code](https://github.com/cdsmith/spatial-voting), `src/Model.hs`): dimension i (1, 2, 3, ...) has standard deviation 1/i — for cluster centres, voters and candidates alike — so one issue dominates and the others matter less and less, without being absent.
 
 - Scaling follows Smith's code: the standard deviation is 1/i, so the variance is 1/i². (The article's wording "proportional to 1/n" could also be read as variance 1/n; the code is unambiguous.) The total variance then converges (to π²/6), so beyond about 4 dimensions their number hardly matters. The default of 10 dimensions is well past that.
 - Each cluster applies the 1/i scaling to its own slightly shuffled order of dimensions (each rank perturbed by normal noise with standard deviation 0.1 × dims, Smith's ratio of 10 for 100 dimensions), so camps differ in which issues they vary on most. Cluster centres keep the global order.
 - Taken over from Smith: the 1/i scaling and the per-cluster shuffle. Not taken over: his other settings (10 clusters with uniform random weights, cluster centres uniform in ±3/i, a random spread factor per cluster, utility = −distance); our Dirichlet weights, normal centres, one spread and `exp(-distance / width)` stay.
 - `--zipf 0` gives the alternative model: all dimensions with standard deviation 1 (then use few dimensions, e.g. 2). Distances are longer there, so the same width gives steeper preferences.
+
+**Where people stand, and what they care about** (two options of `clusters`):
+
+- `--fixed-variance 1` scales all positions by one factor so that the dimensions' total variance is π²/6, the limit of Zipf dimensions, whatever their number. Without it and without Zipf, every added dimension makes all distances longer, so preferences get steeper at the same width; with it, more dimensions spread the same disagreement over more issues. (With Zipf the factor is close to 1.)
+- `--salience cluster` separates what people care about from where they stand: each cluster weighs the issues 1, 1/2, 1/3, … (Zipf, as Smith's dimensions; `--salience-exponent s` gives 1/i^s) in its own random order, in its members' and its candidates' distances, scaled to a mean squared weight of 1. Society can then disagree on many issues while each group mainly cares about a few, and groups differ in which. The positions are the same with and without it (its random draws come last).
+- Meant together with `--zipf 0`: positions spread alike on every issue, salience differs by group, e.g. `--clusters 20 --zipf 0 --fixed-variance 1 --salience cluster`.
+
+**Scale-free fields** (`--model field`, experimental). Instead of imposing clusters or decay laws, opinions arise as fields over a social space, following what is known about how they spread:
+
+- People live on a two-dimensional social space (who meets whom; a 64 × 64 torus), placed by a Lévy flight, so they are clustered at all scales.
+- Each issue is a Gaussian random field over that space with power spectrum k⁻²: correlations that fall off with the logarithm of distance, as Borghesi & Bouchaud (2010, "Spatial correlations in vote statistics: a diffusive field model for decision-making") found in real vote statistics, i.e. structure at all scales without a characteristic one.
+- A person's opinion on an issue is the field where they live (40% of the variance; Borghesi & Bouchaud find a third to a half shared) plus an own part, passed through tanh(`--field-kappa` × ·): a saturating response, as a spin in the Ising model. Small values give smooth, nearly Gaussian opinions; large values push every issue towards two camps.
+- `--dims` issues with a fixed total variance (as `--fixed-variance` for clusters). `--field-salience g` makes what people care about a field too (weights exp(g × another field)), so neighbours share their priorities partly.
+- The exponent, the shared share and the Lévy exponent are fixed in `models.py` (`FIELD_EXPONENT`, `FIELD_SHARED`, `FIELD_LEVY`): in first tests they hardly changed the electorates' properties. `--field-kappa` is the knob that matters: from the smooth end (like ks) to the polarised end (like clusters).
+- Issues are independent fields, so no ideology (opinions on different issues going together) is built in; how to let it emerge (overlapping topics, Baumann et al. 2021) is open.
 
 **Quinn's hierarchical model** (`--model ks`), from Jameson Quinn's VSE simulations ([vse-sim](https://github.com/electionscience/vse-sim), `src/vse_sim/voter_models.py`, `KSModel`, "kitchen sink"), with the parameters of its published results. In the clusters model a voter belongs to one cluster on all dimensions at once, so clusters behave like consistent ideologies or parties. Here the issues come in bundles, and factions form in each bundle separately, so cleavages cut across each other: a voter can be in the big faction on one bundle and a small one on another, and groups differ in how much they care.
 
@@ -184,6 +199,17 @@ python show_electorates.py --model ks --ks-cut 0.05 --width 0.5 --out look-ks
 
 It takes run.py's electorate parameters (one value each; `--model` may list several) and the same random streams, so election e of a seed is the electorate run.py uses. It writes `examples.png` (a few elections per model: voters coloured by their favourite and the lettered candidates, on the voters' first two principal components; the Condorcet winner ringed), `summary.png` (over 300 elections: variance explained by the first principal components and how many reach 70%, favourite ÷ least liked, the utilities, the distances, and the VSE lost by electing the Condorcet winner where it is not the utility winner) and `summary.txt` (the same as numbers). For the ks models, whose people weigh the dimensions differently, positions are scaled by the voters' average weights first: the space roughly as an average voter sees it.
 
+With `--sav` it also maps the candidates the way Alós-Ferrer & Granić (2015, "Political space representations with approval data", *Electoral Studies* 39) mapped real parties and candidates from approval ballots in German field experiments, after Laslier's spatial approval voting (2006). This gives a dimensionality comparable with theirs (four or more dimensions to explain 70% for real voters):
+
+```
+python show_electorates.py --model clusters ks --cands 9 --sav --sav-noise 0.5 --out look-sav
+```
+
+- Each electorate is drawn with `--sav-voters` voters (1000), and every voter approves the candidates above their own mean utility. `--sav-noise s` first blurs each utility by a normal error of s × the voter's own spread of utilities, so approval near the cut-off is partly chance, as in real ballots.
+- For each pair of candidates, the overlap of the people approving them, relative to chance: r = N · a(c, d) / (a(c) · a(d)). Squared distances are proportional to ln(r_max / r) (the paper's formula with its smallest admissible α; the most overlapping pair is at 0). Classical multidimensional scaling then gives the inertia each dimension explains; only positive eigenvalues count.
+- A pair nobody approves together would be infinitely far apart; it is given half a voter instead, and the share of elections where this happens is reported. Without noise this happens in most elections, which makes the map less reliable.
+- `sav.png` and `summary.txt` show the cumulative inertia by number of dimensions next to the paper's four data sets (Messel: 9 parties, 8 candidates; Konstanz: 11 parties, 6 candidates). Use a similar number of candidates (`--cands`), since n candidates allow at most n − 1 dimensions.
+
 **Candidates unlike the electorate.** Two parameters move the candidates relative to the voters; both act after all random draws, so the voters (and the candidates' own draws) are the same for every value and a sweep compares the same electorates with different fields.
 
 - `--cand-dispersion s` (default 1): each candidate's distance from the voters' mean position is multiplied by s. Below 1 the candidates cluster toward the centre of the electorate; above 1 they are more extreme than the voters. This is the relative candidate dispersion of Merrill (1984), "A comparison of efficiency of multicandidate electoral systems", *American Journal of Political Science* 28, whose Condorcet efficiency of plurality and IRV falls as candidates cluster (centre squeeze: the central candidate is squeezed out of the first choices).
@@ -199,11 +225,16 @@ It takes run.py's electorate parameters (one value each; `--model` may list seve
 | `--elections` | 200 | electorates |
 | `--voters` | 99 | voters per election (odd, so pairwise majorities rarely tie) |
 | `--cands` | 6 | candidates |
-| `--model` | clusters | electorate model: `clusters`, `ks` or `ks-quinn` (see Electorates; `models.py`); the next four flags belong to `clusters` |
+| `--model` | clusters | electorate model: `clusters`, `field`, `ks` or `ks-quinn` (see Electorates; `models.py`); the next four flags belong to `clusters` |
 | `--dims` | 10 | issue-space dimensions |
 | `--zipf` | 1 | 1: dimension i has scale 1/i (Zipf dimensions, above); 0: all dimensions equal |
 | `--clusters` | 5 | voter clusters |
 | `--spread` | 0.5 | standard deviation of voters around their cluster centre (centres have 1), before the Zipf scaling |
+| `--salience` | none | model `clusters`: `cluster` = each cluster weighs the issues 1, 1/2, 1/3, … in its own random order (see Electorates) |
+| `--salience-exponent` | 1 | model `clusters` with `--salience cluster`: weights 1/i^s (1 = Zipf, 0 = all alike) |
+| `--fixed-variance` | 0 | model `clusters`: 1 = scale positions so the dimensions' total variance is π²/6 whatever their number |
+| `--field-kappa` | 1.5 | model `field`: saturation of opinions (small: smooth, nearly Gaussian; large: two camps per issue) |
+| `--field-salience` | 0 | model `field`: strength of the salience field (0 = every issue weighed alike) |
 | `--ks-alpha` | 1.5 | model `ks`: faction alpha (higher: more, smaller factions); see Electorates |
 | `--ks-cut` | 0.2 | model `ks`: importance below which no further issue bundles or dimensions are drawn (lower: more dimensions) |
 | `--ks-shared` | 0 | model `ks`: 1 = the same factions in every issue bundle (a test variant without cross-cutting cleavages) |
@@ -622,6 +653,8 @@ The terminal and the report list each older input and what was filled in or left
 | Column | Added | Older files |
 |---|---|---|
 | model | 2026-10-14 | read as clusters |
+| field_kappa, field_salience | 2026-10-15 | read as 1.5 and 0 (unused by other models) |
+| salience, salience_exponent, fixed_variance | 2026-10-15 | read as none, 1.0 and 0 (every dimension weighed alike, positions unscaled) |
 | ks_alpha, ks_cut, ks_shared | 2026-10-14 | read as 1.5, 0.2 and 0 (unused by the clusters model) |
 | lazy | 2026-10-13 | read as 0.0 (full ballots) |
 | fidelity | 2026-10-12 | blank; their sincerity column holds the earlier measure (the report warns) |
