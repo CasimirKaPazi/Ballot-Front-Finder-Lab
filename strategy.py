@@ -50,6 +50,13 @@ far more information and coordination than one election offers. Kept for compari
 
 Partial strategy (both): `strategic` marks the voters who take part (a random share of the
 electorate, drawn in run.py, the same voters for every method). The others always vote sincerely.
+Poll rounds only: adaptive voters decide each round whether to vote strategically, by their stake
+in the race that matters: |u(A) - u(B)| for the round's two leaders A and B, rescaled to 0..1
+between their least and most liked candidate. A voter is strategic in a round if the stake exceeds
+their personal threshold (`adaptive`: one value per voter, drawn once in run.py, uniform on 0..1,
+nan = not adaptive), else sincere in that round; strategic ones join the group of their ranking.
+Supporters of both leaders have a stake in a close race, so attack and defence come from the same
+rule. The shares strategic per round go into `activated`.
 """
 import numpy as np
 from outcomes import value
@@ -228,7 +235,7 @@ def default_poll_size(n):
 
 
 def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=10, strategic=None, poll_error=2.0,
-            report=None, aggressive=None, start=None):
+            report=None, aggressive=None, start=None, adaptive=None, activated=None):
     """Poll rounds (see the module docstring). Returns ballots of the last round, whether it
     settled (same as the round before), and mean sincerity (all voters).
     report: a list of round numbers; then `rounds` is ignored, the rounds run up to the highest,
@@ -236,47 +243,74 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=10, strate
     rounds = r gives (each round depends only on the ones before it, and draws its random numbers
     in sequence), so one run serves a sweep over the number of rounds.
     start: ballots (n x C) the first poll is drawn from instead of the sincere ones (run.py --start
-    previous: a previous election's result); only the information of round 1 changes."""
+    previous: a previous election's result); only the information of round 1 changes.
+    adaptive: personal thresholds of the adaptive voters (one per voter, nan = not adaptive; None =
+    none): in each round a voter is strategic if their stake in the race between the two leaders,
+    rescaled to 0..1, exceeds it (see the module docstring). activated: a dict, filled with
+    {round: share of the adaptive voters strategic in that round} (0 for round 0)."""
     if report is not None:
         want = sorted(set(int(r) for r in report))
         if want[0] < 0:
             raise ValueError("poll rounds must be 0 or more")
         snaps = {}
         _respond(method, u, rng, max(want), samples, poll_size, search, strategic, poll_error, aggressive,
-                 lambda r, res: snaps.__setitem__(r, res) if r in want else None, start)
+                 lambda r, res: snaps.__setitem__(r, res) if r in want else None, start, adaptive, activated)
         return [snaps[int(r)] for r in report]
     return _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive,
-                    start=start)
+                    start=start, adaptive=adaptive, activated=activated)
 
 
 def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive=None,
-             snapshot=None, start=None):
+             snapshot=None, start=None, adaptive=None, activated=None):
     n, C = u.shape
     sincere = method.sincere(u)
     B = sincere.copy()
+    fixed = np.ones(n, bool) if strategic is None else np.asarray(strategic, bool).copy()
+    q = None if adaptive is None else np.asarray(adaptive, float)
+    adapt = np.zeros(n, bool) if q is None else ~np.isnan(q) & ~fixed
+    q_adapt = np.where(adapt, np.nan_to_num(q, nan=np.inf), np.inf)
+    n_adaptive = int(adapt.sum())
+    active = fixed.copy()
+
+    def record(r):
+        if activated is not None:
+            activated[r] = float((active & adapt).sum()) / n_adaptive if n_adaptive else 0.0
+    record(0)
     if snapshot:
         snapshot(0, (B, True, 1.0))
     if rounds <= 0:
         return B, True, 1.0
     keys = [tuple(r) for r in np.argsort(-u, axis=1, kind="stable")]
-    groups = {}
-    for v, k in enumerate(keys):      # ranking groups, aggressive and kind voters apart
-        if strategic is None or strategic[v]:
-            groups.setdefault((k, aggressive is None or bool(aggressive[v])), []).append(v)
-    eager = [k[1] for k in groups]
-    if not groups:
-        if snapshot:
-            for r in range(1, rounds + 1):
+    lo, hi = u.min(axis=1), u.max(axis=1)
+    span = np.where(hi > lo, hi - lo, 1.0)
+
+    def build():
+        """Ranking groups of the active voters, aggressive and kind voters apart, in voter order."""
+        gs = {}
+        for v, k in enumerate(keys):
+            if active[v]:
+                gs.setdefault((k, aggressive is None or bool(aggressive[v])), []).append(v)
+        return gs
+
+    gkeys = build()
+    if not gkeys and not adapt.any():
+        for r in range(1, rounds + 1):
+            record(r)
+            if snapshot:
                 snapshot(r, (B, True, 1.0))
         return B, True, 1.0
-    groups = [np.array(x) for x in groups.values()]
     m = min(n, poll_size if poll_size > 0 else default_poll_size(n))
     # methods without feature sums can't scale counts: a smaller poll has about poll_error times the error
     # (only approximates poll_error >= 1; smaller values give polls of poll_size voters)
     m_full = max(1, min(m, int(round(m / poll_error ** 2)))) if poll_error > 0 else m
-    ref = [method.sincere(u[g].mean(axis=0, keepdims=True))[0] for g in groups]
-    Ug = [u[g].sum(axis=0) for g in groups]
-    shared = [None] * len(groups)              # each group's answer in the last round (None = sincere)
+
+    def setup(gkeys):
+        groups = [np.array(x) for x in gkeys.values()]
+        return (list(gkeys), groups, [k[1] for k in gkeys],
+                [method.sincere(u[g].mean(axis=0, keepdims=True))[0] for g in groups], [u[g].sum(axis=0) for g in groups])
+
+    names, groups, eager, ref, Ug = setup(gkeys)
+    shared = {}                                # each group's answer in the last round (absent = sincere)
     if start is not None:                      # the first poll shows these ballots (a previous result)
         B = np.array(start, dtype=float)
     inc = method.full is None
@@ -292,17 +326,25 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
             a, b = _leaders(lambda j: method.decide_many(_widened(tot, dev, j), C), C)
         else:
             a, b = _leaders(lambda j: poll_tallies(method.tally, B, _smaller(polls, j, rng, n)), C)
+        if n_adaptive:                             # adaptive voters: strategic this round if the race matters to them
+            stake = np.abs(u[:, a] - u[:, b]) / span if b is not None else np.zeros(n)
+            now = fixed | (stake > q_adapt)
+            if not np.array_equal(now, active):
+                active = now
+                names, groups, eager, ref, Ug = setup(build())
+        record(r)
         answers = []
         for g, mem in enumerate(groups):
             if inc:
                 gain = _gain(method, tot + dev, F[mem].sum(axis=0), sincere[mem], len(mem), C, Ug[g])
             else:
                 gain = _gain_full(method, B, mem, sincere[mem], polls, Ug[g])
-            cands = ([shared[g]] if shared[g] is not None else []) + exaggerations(method.ballot, Ug[g], a, b)
+            prev = shared.get(names[g])
+            cands = ([prev] if prev is not None else []) + exaggerations(method.ballot, Ug[g], a, b)
             answers.append(_answer(gain, method.ballot, ref[g], cands, search, rng, eager[g]))
-        shared, B_prev = answers, B
+        shared, B_prev = {k: x for k, x in zip(names, answers) if x is not None}, B
         B = sincere.copy()
-        for mem, x in zip(groups, shared):        # everyone switches at once
+        for mem, x in zip(groups, answers):       # everyone switches at once
             if x is not None:
                 B[mem] = x
         settled = np.array_equal(B, B_prev)       # the ballots repeat the round before

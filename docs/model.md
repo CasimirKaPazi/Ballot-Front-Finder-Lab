@@ -214,6 +214,15 @@ Smaller groups mean more groups, and run time grows with their number.
 
 Run time falls less than in proportion to p: halving the strategic voters removes fewer than half of the groups, since many groups are small.
 
+**Adaptive voters** (`--adaptive a`, poll rounds only). A fixed share of strategic voters makes some of them optimise their ballot even when nothing is at stake for them, while sincere voters, lazy ones in particular, never react. Adaptive voters strategise when the race that matters matters to them.
+
+- Three groups, from the same random draw per voter: always strategic (a share p, `--strategic`), adaptive (the next share a) and always sincere (the rest; p + a ≤ 1). With `--adaptive 0`, the default, the results are exactly those of the share model.
+- **Stake.** In each round, after the poll, the two leaders A and B are known (the same for everyone; Strategy engine). A voter's stake is |u(A) − u(B)|, rescaled to 0–1 between their least and most liked candidate: how much the outcome of the leading race matters to them.
+- **Decision, every round anew.** Each adaptive voter has a personal threshold, fixed for the election: their place in the adaptive band of the draw, uniform on 0–1. In a round, the voter votes strategically if their stake exceeds it, and sincerely otherwise (lazy if `--lazy` is set). So the share strategic at a given stake equals that stake: a voter indifferent between the leaders never strategises, one with everything at stake always does. A voter can turn sincere again when the leaders change.
+- **Both sides.** In a close race the supporters of both leaders have a stake, so attack and defence come from the same rule; the leader rule of Myerson and Weber needs both. A method whose two leaders are both broadly acceptable gives fewer voters a reason to strategise.
+- The report gives the share of adaptive voters voting strategically in the reported round, per method (column `adapted` in the elections CSV).
+- Not with `--converge` (convergent learning has no leading race per round); `sweep.py` skips such combinations, and those with p + a above 1. With `--start previous`, the previous election uses the same groups.
+
 ## Score range
 
 `--max-score m` sets the range of the score ballot to 0–m for every method that uses it (Score, MJ, STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, Reciprocal score, Smith//Score, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D, INS, Geometric median, and add-ons on score ballots). The default 0–5 is an implementation choice, not part of these methods; other simulations (e.g. Quinn's VSE) also run 0–10 and 0–100. With a coarse range, sincere voters must give candidates they like differently the same score, so pairwise preferences are lost: this is the cap on WME seen for the rated and hybrid methods. A wider range reduces it. MCA and 321 keep their three grades, and methods on other ballots are unaffected; the electorates are the same for every value, so a sweep (`sweep.py --max-score 5 10 100`) isolates the effect of the range, and its chain plot draws the reachable frontier.

@@ -88,6 +88,7 @@ The exaggerated score ballot and the approval ballot say the same and get the sa
 |---|---|
 | VSE, WME, VSE\*, WME\*, CE, CE\*, sincerity | point estimate and 95% interval of each value on its own |
 | dominated by | methods clearly better on at least one of the three front axes (VSE\*, WME\*, sincerity) and clearly worse on none, each with the axes on which it is better; the report shows at most three, the CSV all. Clearly: the paired 95% interval of the difference excludes 0, smaller differences count as ties. Without this, methods level on one axis would be kept apart by noise-sized differences. Sincerity is measured very precisely, so at equal VSE\* and WME\* the more honest method dominates |
+| adaptive voters (with `--adaptive`) | share of the adaptive voters who turned strategic, per method |
 | paired differences (`--compare "A:B"`) | difference A − B per axis with a 95% interval; marked as a tie when the interval includes 0 |
 
 **How to interpret:**

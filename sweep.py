@@ -31,7 +31,7 @@ import os
 import time
 
 from models import MODELS
-from run import (simulate, PARAMS, run_dir, write_command, group_size_arg, check_params, run_key,
+from run import (simulate, PARAMS, run_dir, write_command, group_size_arg, check_params, run_key, valid_combination,
                  resume_state, CsvSink, interrupted)
 from methods import run_selection
 
@@ -62,6 +62,7 @@ def main():
     ap.add_argument("--samples", type=int, nargs="+", default=[10])
     ap.add_argument("--group-size", type=group_size_arg, nargs="+", default=[10])
     ap.add_argument("--strategic", type=float, nargs="+", default=[0.5])
+    ap.add_argument("--adaptive", type=float, nargs="+", default=[0.0])
     ap.add_argument("--max-score", type=int, nargs="+", default=[5])
     ap.add_argument("--exits", type=int, nargs="+", default=[0], choices=[0, 1])
     ap.add_argument("--clones", type=int, nargs="+", default=[0])
@@ -108,6 +109,11 @@ def main():
         grid = [{**c, "seed": sd} for c in conds for sd in values["seed"]]
     else:
         grid = [dict(zip(PARAMS, combo)) for combo in itertools.product(*values.values())]
+    skipped = [p for p in grid if not valid_combination(p)]
+    if skipped:
+        grid = [p for p in grid if valid_combination(p)]
+        print(f"skipped {len(skipped)} combination(s) that cannot run (--strategic + --adaptive above 1, "
+              "or --adaptive with --converge)")
     # Conditions that differ only in the number of poll rounds come from one run (strategy.respond):
     # merge them, keeping the order of first appearance.
     runs = {}

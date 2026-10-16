@@ -287,6 +287,34 @@ B, st, _ = respond(METHODS["Plurality"], u, np.random.default_rng(0), rounds=1)
 assert np.array_equal(B, METHODS["Plurality"].sincere(u)) and st
 print("settled ok")
 
+# Adaptive voters (per round, by their stake in the leading race): personal thresholds above 1 never
+# act (= only the always-strategic voters), below 0 always act once there is a runner-up (= all of them
+# strategic); thresholds in between give a share between; a voter indifferent between the leaders never acts
+_ua = np.random.default_rng(12).random((41, 4))
+_d = np.random.default_rng(13).random(41)
+_s, _band = _d < 0.2, (_d >= 0.2) & (_d < 0.8)
+for name in ["Approval", "Score", "IRV", "Minimax"]:
+    m = METHODS[name]
+    run_ = lambda strat, q=None, act=None: respond(m, _ua, np.random.default_rng(5), report=[1, 2, 3],
+                                                   strategic=strat, adaptive=q, activated=act)
+    _act = {}
+    for (B, *_), (B0, *_) in zip(run_(_s, np.where(_band, 1.01, np.nan), _act), run_(_s)):
+        assert np.array_equal(B, B0), name
+    assert all(v == 0 for v in _act.values()), (name, _act)
+    _act = {}
+    for (B, *_), (B1, *_) in zip(run_(_s, np.where(_band, -0.01, np.nan), _act), run_(_s | _band)):
+        assert np.array_equal(B, B1), name
+    assert _act[0] == 0 and all(_act[k] == 1 for k in (1, 2, 3)), (name, _act)
+    _act = {}
+    run_(_s, np.where(_band, (_d - 0.2) / 0.6, np.nan), _act)
+    assert all(0 < _act[k] < 1 for k in (1, 2, 3)), (name, _act)
+_ui = np.array([[1.0, 0.0, 0.5]] * 10 + [[0.0, 1.0, 0.5]] * 9 + [[0.5, 0.5, 1.0]] * 6)   # leaders 0 and 1
+_act = {}
+respond(METHODS["Plurality"], _ui, np.random.default_rng(3), rounds=1, strategic=np.zeros(25, bool),
+        adaptive=np.zeros(25), activated=_act)
+assert abs(_act[1] - 19 / 25) < 1e-12, _act        # the last six are indifferent between the leaders
+print("adaptive voters ok")
+
 # Equal-ranking variants equal their strict versions on sincere (strict) ballots
 r = np.random.default_rng(11)
 pairs = [("Borda", "Borda-ER"), ("Baldwin", "Baldwin-ER"), ("Minimax", "Minimax-ER"),

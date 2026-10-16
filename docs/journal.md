@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-16 | Adaptive voters (`--adaptive`): strategic per round by their stake in the leading race; the default `--adaptive 0` leaves results unchanged | — |
 | 2026-10-16 | Default electorate `noise` (strength 5, 6 dimensions, width 0.7); `clusters` defaults 20 clusters, no Zipf, fixed total variance, salience per cluster with exponent 0.5 (see Electorate models, and the new defaults) | `clusters`, 10 Zipf dimensions, 5 clusters, width 1.0 |
 | 2026-10-13 | Truncated rankings: strategic voters may rank fewer candidates (unranked tied last), and `--lazy` makes honest ballots lazy ([model.md](model.md), Truncation and laziness). Changes the strategic results of every ranking method, also at `--lazy 0`, and the rules for unranked candidates in IRV, Coombs, Borda, Dowdall, Supplementary vote and ER-IRV | full rankings |
 | 2026-10-12 | Sincerity counts only reversed preferences, weighted by utility difference and scaled by the most dishonest ballot the format allows; fidelity is new ([analysis.md](analysis.md), Sincerity and fidelity). Both blank for TRASH and the Inverse-\* methods. Since sincerity is a front axis, fronts may change | sincerity divided by all pairs (a high floor for plurality and approval); not comparable |
@@ -18,6 +19,16 @@ How the lab developed: the experiments, what they showed and the decisions they 
 | 2026-10-07 | Renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (ACR), Minimax-wv → MMWV | use the new names |
 | 2026-10-06 | Axes VSE and WME, both 0 = random ballot and 100 = best candidate ([analysis.md](analysis.md), Axes). Within a condition a fixed rescaling of each axis, so order, dominance and rank stability are unaffected | PE (0 = utility-proportional lottery) and WM (worst margin in % of voters) |
 | earlier | Plain dimensions before Zipf; CE as an axis before WM | |
+
+## Adaptive voters (2026-10-16)
+
+**Why.** In the reruns for a new base, a fixed strategic share combined badly with laziness: lazy sincere voters do not separate the front-runners, while the strategic share optimises its ballots to the limit over the rounds. This is starkest for approval and score, whose ballots leave the most room. A fixed share is a useful first approximation (cheap, and comparable with vse-sim), but realistically voters strategise when they have a reason.
+
+**First attempt: dissatisfaction (not kept).** Adaptive voters turned strategic, and stayed so, once a poll's expected result fell below a threshold of their range from least to most liked candidate (`--threshold`). Run (Hive): defaults (noise model, 200 elections, 3 poll rounds) with `--strategic 0.5` against `--strategic 0 --adaptive 1 --threshold 0.5`. The strategy became one-sided: the voters losing in the polls attacked and the content supporters of the likely winner never defended. Score's VSE\* fell from 86.9 to 75.2 (honest 89.2), Approval's from 81.4 to 76.2 (honest 77.7), Borda's from 81.7 to 75.2, while Minimax (82.1 → 82.8), Schulze (82.1 → 82.0) and STAR (86.9 → 86.1) barely moved; burial under the ranked methods roughly halved and push-over doubled (Minimax 13.0% → 5.5% and 3.4% → 6.8%). The VSE\* order changed (rank correlation 0.37, noise reference 0.68), WME\* (0.86) and sincerity (0.95) did not. Under every method 40–47% of the adaptive voters turned strategic: the trigger picked the voters far from the likely winner, whatever the method. The same kind of artefact as the early naive burial: moves without the counter-moves.
+
+**Kept: the stake in the leading race** (docs/model.md, Partial strategy). Each round, an adaptive voter's stake is |u(A) − u(B)| for the round's two leaders, rescaled to 0–1; the voter is strategic in that round if it exceeds their personal threshold (uniform on 0–1, fixed per election), so the share strategic equals the stake. Decided every round anew, so voters can turn sincere again. Symmetric: in a close race both leaders' supporters have a stake. No new parameter beyond `--adaptive`; `--threshold` was removed. A distribution of personal thresholds with a parameter (a sigmoid around a midpoint) was considered and left out until results ask for it.
+
+**First check** (40 elections, 9 methods, otherwise defaults; indicative only): with `--strategic 0 --adaptive 1`, Score's VSE\* is 88.8 (share model 89.1, honest 91.8) and Approval's 91.9 (share model 90.3); the collapse is gone. 43–50% of the adaptive voters strategic per method.
 
 ## Electorate models, and the new defaults (2026-10-14 to 2026-10-16)
 

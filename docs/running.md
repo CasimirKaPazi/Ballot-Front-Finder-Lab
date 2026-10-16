@@ -63,7 +63,8 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--search` | 10 | random ballot changes a group tries per poll round, after the naive exaggerations |
 | `--converge` | 0 | N > 0: convergent learning with N rounds instead of poll rounds (e.g. `--converge 20 --samples 10`) |
 | `--group-size` | 10 | convergent learning only: most voters that coordinate as one group: a number of voters (1 = every voter alone), a share of the electorate between 0 and 1 (0.05 = 5% of the voters, rounded, at least 1), or 0 = whole ranking group |
-| `--strategic` | 0.5 | share of voters who vote strategically (see [model.md](model.md), Partial strategy) |
+| `--strategic` | 0.5 | share of voters who always vote strategically (see [model.md](model.md), Partial strategy) |
+| `--adaptive` | 0 | share of voters who decide each poll round whether to vote strategically, by how much the race between the two leaders matters to them (poll rounds only; `--strategic` + `--adaptive` ≤ 1, sweep.py skips other combinations; see [model.md](model.md), Partial strategy) |
 | `--max-score` | 5 | score ballots range over 0–max (see [model.md](model.md), Score range) |
 | `--exits` | 0 | 1: candidates may withdraw and re-enter strategically (see [model.md](model.md), Strategic nomination) |
 | `--clones` | 0 | most clones in the race at once, fielded strategically; 0 = none (see [model.md](model.md), Strategic nomination) |
@@ -76,7 +77,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--overwrite` | off | replace an existing run in `--out` |
 | `--resume` | off | continue an interrupted run in `--out` with the same command (see Progress, saving and resuming) |
 
-`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--converge`, `--group-size`, `--strategic`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid, one run after another, and writes one elections CSV per run into `output/<out>/runs/`. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--converge`, `--group-size`, `--strategic`, `--adaptive`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid, one run after another, and writes one elections CSV per run into `output/<out>/runs/`. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
 
 `analyze.py`:
 
@@ -115,6 +116,7 @@ The terminal and the report list each older input and what was filled in or left
 | field_kappa, field_salience | 2026-10-15 | read as 1.5 and 0 (unused by other models) |
 | salience, salience_exponent, fixed_variance | 2026-10-15 | read as none, 1.0 and 0 (every dimension weighed alike, positions unscaled) |
 | ks_alpha, ks_cut, ks_shared | 2026-10-14 | read as 1.5, 0.2 and 0 (unused by the clusters model) |
+| adaptive, adapted | 2026-10-16 | read as 0 (no adaptive voters); adapted blank |
 | lazy | 2026-10-13 | read as 0.0 (full ballots) |
 | fidelity | 2026-10-12 | blank; their sincerity column holds the earlier measure (the report warns) |
 | bcw, p_bcw | 2026-10-12 | blank |
@@ -164,6 +166,6 @@ How the files are combined (the report lists what was done, and `analyze.py` pri
 Two checks, both quick:
 
 - `python test_methods.py`: hand-built checks. Each method on small profiles with a known winner, the ballot types, truncation and laziness, sincerity and fidelity, the add-ons.
-- `python regression.py`: does the simulator still give the same numbers? It runs eleven tiny conditions (two elections each: the base, five candidates, laziness with scores 0..10, convergent learning, strategic nomination, the first poll from a previous election, and one for each electorate model and the salience option) with every method, including the references, the Inverse-\* methods and the add-ons, and compares every column of every row with `regression.csv`. About a minute or less.
+- `python regression.py`: does the simulator still give the same numbers? It runs twelve tiny conditions (two elections each: the base, five candidates, laziness with scores 0..10, convergent learning, strategic nomination, the first poll from a previous election, one for each electorate model and the salience option, and adaptive voters with laziness) with every method, including the references, the Inverse-\* methods and the add-ons, and compares every column of every row with `regression.csv`. About a minute or less.
 
 A change that only reorganises the code (moving, renaming, splitting files) must leave `regression.py` at "all equal". A change meant to alter results (a fixed bug, a new rule) shows up as differences, listed by method and column; once they are understood, `python regression.py --update` writes the new reference, and `regression.csv` is committed together with that change, so the history shows which commit changed which numbers. New methods (a new add-on) are listed but not counted as differences; `--update` adds them. Numbers count as equal within a relative tolerance of 1e-9, since the last digits can differ between numpy versions or machines.

@@ -115,6 +115,8 @@ ADDED_COLUMNS = {
     "salience_exponent": ("1.0", "2026-10-15, salience per cluster (not used by older runs)"),
     "field_kappa": ("1.5", "2026-10-15, parameters of the field model (not used by older runs)"),
     "field_salience": ("0.0", "2026-10-15, parameters of the field model (not used by older runs)"),
+    "adaptive": ("0.0", "2026-10-16, adaptive voters: older runs had none"),
+    "adapted": (None, "2026-10-16, share of adaptive voters who turned strategic"),
     "noise_strength": ("3.0", "2026-10-15, parameter of the noise model (not used by older runs)"),
     "fixed_variance": ("0", "2026-10-15, fixed total variance: older runs did not scale positions"),
     "lazy": ("0.0", "2026-10-13, laziness: older runs had full ballots"),
@@ -259,7 +261,7 @@ def arrays(rows):
     mi = {m: j for j, m in enumerate(methods)}
     E, M = len(eids), len(methods)
     A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "wm_s", "wm_l", "sin"] + TYPES + NOM}
-    A.update({k: np.full((E, M), np.nan) for k in ["fid_s", "fid_l", "pbcw_s", "pbcw_l"]})   # absent in older CSVs
+    A.update({k: np.full((E, M), np.nan) for k in ["fid_s", "fid_l", "pbcw_s", "pbcw_l", "adapted"]})   # absent in older CSVs
     A.update({k: np.full((E, M), "", dtype=object) for k in ["bcw_s", "bcw_l"]})    # ballot Condorcet winner
     A.update({k + sfx: np.full((E, M), np.nan) for k in PART for sfx in ("_s", "_l")})
     den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
@@ -298,6 +300,7 @@ def arrays(rows):
                 A["sin"][i, j] = np.nan
             for t in TYPES:
                 A[t][i, j] = float(r[t])
+            A["adapted"][i, j] = float(r.get("adapted") or "nan")   # blank without adaptive voters
             for k in PART:
                 A[k + "_l"][i, j] = float(r[k])
     return methods, A, (den, dwm), has, ele, cands
@@ -460,6 +463,7 @@ def analyse_condition(rows, boot, rng):
            "references": references(cands, dens, ele),
            "electorate": electorate_summary(dens, has, ele),
            "nomination": {k: A[k].mean(axis=0) for k in NOM},
+           "adapted": nanmean0(A["adapted"]),
            "participation": participation_summary(A, W),
            "ballot_cw": ballot_cw_summary(A, has),
            # Pareto front on point estimates; undefined sincerity (TRASH, Inverse-*) counts as worst
@@ -533,8 +537,8 @@ PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "
                "ks_alpha": "ks faction alpha", "ks_cut": "ks cut",
                "ks_shared": "ks shared factions", "salience": "salience", "salience_exponent": "salience exponent", "fixed_variance": "fixed total variance",
                "field_kappa": "field saturation", "field_salience": "salience field",
-               "noise_strength": "noise strength"}
-LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "poll_size", "poll_error", "search", "converge",
+               "noise_strength": "noise strength", "adaptive": "adaptive share"}
+LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "adaptive", "poll_size", "poll_error", "search", "converge",
                  "aggressive", "start"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)
 
@@ -607,6 +611,13 @@ def fmt(x, lo, hi, pct=True):
     return f"{x*s:.1f} [{lo*s:.1f}–{hi*s:.1f}]"
 
 
+
+
+def nanmean0(X):
+    """Column means ignoring nan; nan where a column has no values (no warning)."""
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return np.nanmean(X, axis=0)
 
 MD_STARRED = re.compile(r"(?<![\\\w])(VSE|WME|CE|Inverse-)\*(?!\*)")
 
@@ -847,7 +858,9 @@ def main():
               + (f"; {r['cover']}" if r["cover"] else "") + f"), {r['with_cw']} with a Condorcet winner. "
               f"{p['voters']} voters, {p['cands']} candidates, {model_text(p)}, "
               f"width {p['width']}{cand_text(p['cand_dispersion'], p['cand_shift'])}; {strategy_text(p, p['voters'])}, "
-              f"strategic share {p['strategic']}, scores 0..{p['max_score']}"
+              f"strategic share {p['strategic']}"
+              + (f", adaptive share {p['adaptive']}" if float(p.get('adaptive') or 0) > 0 else "")
+              + f", scores 0..{p['max_score']}"
               + (f"; nomination: exits {p['exits']}, clones {p['clones']}" if p['exits'] != '0' or p['clones'] != '0' else "")
               + "." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")
               + frontier_text(r["frontier"], r["region"], r["references"]),
@@ -871,6 +884,16 @@ def main():
                      + " | " + " | ".join(f"{r[t][j] * 100:.1f}%" for t in TYPES)
                      + f" | {dom_text(r['dominated_by'][j], limit=3)} |")
         L += [""]
+        if float(p.get("adaptive") or 0) > 0:
+            ad = r["adapted"]
+            L += [f"**Adaptive voters** (a share {p['adaptive']} of the electorate, strategic in a round when the race "
+                  "between the two leaders matters enough to them): the share of them voting strategically in the "
+                  "reported round, per method, averaged over elections. A method whose leading candidates are both "
+                  "broadly acceptable gives fewer voters a reason to strategise.", "",
+                  "| Method | Adaptive voters strategic |", "|---|---|"]
+            for j in np.argsort(-np.nan_to_num(ad, nan=-1), kind="stable"):
+                L.append(f"| {r['methods'][j]} | {'—' if np.isnan(ad[j]) else f'{ad[j]:.1%}'} |")
+            L += [""]
         if p["exits"] != "0" or p["clones"] != "0":
             nm = r["nomination"]
             L += ["**Nomination** (with sincere ballots; per method, averaged over elections): how often the "
