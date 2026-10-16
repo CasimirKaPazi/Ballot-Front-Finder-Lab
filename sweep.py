@@ -22,7 +22,7 @@ sweep-<date>-<time>). `python analyze.py <folder>` puts its analysis into <folde
                     analysed alone
     command.txt     the command, simulator version and start time (a resumed run adds its own)
 Every election is saved as soon as it is done; after an interruption the same command with
---resume continues where it stopped (see README, Progress, saving and resuming).
+--resume continues where it stopped (see docs/running.md, Progress, saving and resuming).
 """
 import argparse
 import csv

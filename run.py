@@ -1,7 +1,7 @@
 """Run honest and strategic elections for all methods on one scenario and write CSV.
 
 Usage:
-    python run.py --elections 200                      # defaults: see README, Parameters
+    python run.py --elections 200                      # defaults: see docs/running.md, Parameters
 
 Each electorate is tallied twice per method: with sincere ballots, and after the groups
 (voters with the same sincere ranking) have answered polls strategically (see strategy.py: poll
@@ -25,7 +25,7 @@ run-<date>-<time>). `python analyze.py <folder>` puts its analysis into <folder>
     table.txt       the printed table
     command.txt     the command, simulator version and start time (a resumed run adds its own)
 Every election is saved as soon as it is done; after an interruption the same command with
---resume continues where it stopped (see README, Progress, saving and resuming).
+--resume continues where it stopped (see docs/running.md, Progress, saving and resuming).
 """
 import argparse
 import csv
@@ -490,7 +490,7 @@ def main():
     ap.add_argument("--lazy", type=float, default=0.0,
                     help="laziness of honest ballots, 0..1: a voter ranks, approves or scores only candidates whose "
                          "utility, stretched to 0..1 between least and most liked, is at least this (0 = full "
-                         "ballots, 1 = bullet votes); strategic voters may deviate (see README)"),
+                         "ballots, 1 = bullet votes); strategic voters may deviate (see docs/model.md, Truncation and laziness)"),
     ap.add_argument("--poll-error", type=float, default=2.0,
                     help="poll rounds only: voters treat polls as this many times less precise than their "
                          "sampling error")

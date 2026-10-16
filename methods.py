@@ -1473,7 +1473,7 @@ def _load_addons(folder=ADDON_DIR):
     defines METHODS = {name: Method(...)}, and may define FEATURES = {name: (per-voter function,
     shape)} for new ballot features, BALLOTS = {name: ballots.Ballot(...)} for new ballot types, GROUP = "a group name" (default "addons"; an existing group or
     a new one) and test() for its own checks (run by test_methods.py). Its methods are then used like
-    the built-in ones. Deleting the file removes them. See addons/_template.py and README, Add-ons."""
+    the built-in ones. Deleting the file removes them. See addons/_template.py and docs/methods.md, Add-ons."""
     if not os.path.isdir(folder):
         return
     for fn in sorted(os.listdir(folder)):

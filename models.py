@@ -68,7 +68,7 @@ differs from vse-sim is common to all models here: utilities exp(-distance / wid
        vse-sim). Utilities then use exp(-distance / width) like every model here (vse-sim: -distance).
 
 MODEL "field": opinions as scale-free fields over a social space, built from what is known about how
-opinions arise and spread, rather than from imposed clusters or decay laws (README, Electorates):
+opinions arise and spread, rather than from imposed clusters or decay laws (docs/model.md, Electorates):
     - People live on a two-dimensional social space (a 64 x 64 torus: who meets whom), placed by a
       Levy flight, so they are clustered at all scales (towns, neighbourhoods, circles).
     - Each issue is a Gaussian random field over that space with power spectrum k^-2: correlations that
@@ -160,7 +160,7 @@ KS_CARING = (3.0, 1.5)           # Beta parameters of a faction's caring (and of
 
 def _draw_ks(sc, rng):
     """Quinn's hierarchical model, written from the description of vse-sim's KSModel (published
-    parameters; see the README, Electorates). Persons = voters, then candidates, drawn alike."""
+    parameters; see docs/model.md, Electorates). Persons = voters, then candidates, drawn alike."""
     pos, W = _ks_structure(sc, rng)[:2]
     nv = sc.n_voters
     return pos[:nv], pos[nv:], W[:nv], W[nv:]

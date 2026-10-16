@@ -556,7 +556,7 @@ except SystemExit:
     pass
 print("combine ok")
 
-# Sincerity (reversals within the format) and fidelity: utilities 0.5 / 0.3 / 0.15 / 0.05 (README)
+# Sincerity (reversals within the format) and fidelity: utilities 0.5 / 0.3 / 0.15 / 0.05 (docs/analysis.md, Sincerity and fidelity)
 from strategy import sincerity, fidelity, _max_separated
 from itertools import product as _prod
 u1 = np.array([[0.5, 0.3, 0.15, 0.05]])

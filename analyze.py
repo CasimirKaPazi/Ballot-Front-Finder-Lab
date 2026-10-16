@@ -10,7 +10,7 @@ with several, --out names the folder.
 
 Conditions: rows with identical parameters except the seed form one condition; seeds are
 pooled as replications. Runs of different methods on the same elections can be combined, e.g. a
-new method with the example output: see combine() and README, Combining runs.
+new method with the example output: see combine() and docs/running.md, Combining runs.
 
 Uncertainty: paired bootstrap over elections. All methods share the same electorates, so each
 bootstrap replicate redraws whole elections (with replacement) and recomputes every method
@@ -48,6 +48,7 @@ Outputs in the analysis folder (--out: a bare name goes into output/):
 import argparse
 import csv
 import os
+import re
 import warnings
 from collections import OrderedDict
 import numpy as np
@@ -181,7 +182,7 @@ def _same(r1, r2, cols):
 
 
 def combine(rows):
-    """Combine rows from several files into one consistent set (see README, Combining runs).
+    """Combine rows from several files into one consistent set (see docs/running.md, Combining runs).
 
     An election is (condition, seed, election number). Every method's result in an election depends
     only on these (run.py gives each method the same random streams), so runs of different methods
@@ -606,6 +607,17 @@ def fmt(x, lo, hi, pct=True):
     return f"{x*s:.1f} [{lo*s:.1f}–{hi*s:.1f}]"
 
 
+
+MD_STARRED = re.compile(r"(?<![\\\w])(VSE|WME|CE|Inverse-)\*(?!\*)")
+
+
+def md_stars(text):
+    """Escape the asterisk of VSE*, WME*, CE* and Inverse-* outside code spans, so Markdown does not read
+    "VSE*, WME*" as emphasis."""
+    parts = text.split("`")
+    return "`".join(MD_STARRED.sub(r"\1\\*", p) if i % 2 == 0 else p for i, p in enumerate(parts))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("csv", nargs="+", help="run or sweep folders, or elections CSV files")
@@ -752,7 +764,7 @@ def main():
           "the format permits). Ties (exaggeration, levelling) are not reversals. **Fidelity**: how well the ballots "
           "reproduce the voters' utility differences (100 = exactly, a tie loses half a pair, a mirrored pair all of "
           "it); it includes what the format cannot express. **(honest)** is the fidelity of the sincere ballots: the "
-          "format's own loss; the drop from there to Fidelity is what strategy adds (README, Sincerity and fidelity). "
+          "format's own loss; the drop from there to Fidelity is what strategy adds (docs/analysis.md, Sincerity and fidelity). "
           "Both are undefined (—) for TRASH and the Inverse-* methods, whose honest ballot works against the voter's "
           "own interest; on the front they count as ties on sincerity.",
           "- The intervals in the tables are for each value on its own. They are wide because elections differ "
@@ -771,7 +783,7 @@ def main():
               "separated bars suggest a real difference (an approximation of the paired differences). In track "
               "plots they are each point's own interval."]
     L += ["- The strategic axes (VSE*, WME*) give the result after the poll rounds: voters see polls of the previous round "
-          "(the method's counts only) and answer them all at once (README, Strategic voting). Under convergent learning "
+          "(the method's counts only) and answer them all at once (docs/model.md, Strategy engine). Under convergent learning "
           "(--converge) they describe a long-run state instead and depend on the group size.",
           "- **Compromise, burial, push-over** are shares of voters whose learned ballot reverses a real preference, "
           "by kind (see strategy.strategy_types): compromise raises a liked second choice above the favourite, "
@@ -944,7 +956,7 @@ def main():
     elif a.hide:
         L += [f"Scatter and chain plots leave out {', '.join(a.hide)}; they are in all tables and heatmaps.", ""]
     with open(os.path.join(a.out, "report.md"), "w") as f:
-        f.write("\n".join(L))
+        f.write(md_stars("\n".join(L)))
     print(f"{len(results)} condition(s); wrote {a.out}/summary.csv, report.md and plots")
 
 

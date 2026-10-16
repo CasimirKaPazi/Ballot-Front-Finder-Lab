@@ -1,6 +1,6 @@
 # Writing your own method: a tutorial
 
-This guide is for people who want to test a voting method of their own and know little Python. It first walks through a real add-on, IDS (`addons/ids.py`), line by line. Then you change it into two variants yourself (Section 4, with solutions to compare against), and finally build a new method from scratch, Bucklin (Section 5). The reference for the file format is README, Methods, Add-ons.
+This guide is for people who want to test a voting method of their own and know little Python. It first walks through a real add-on, IDS (`addons/ids.py`), line by line. Then you change it into two variants yourself (Section 4, with solutions to compare against), and finally build a new method from scratch, Bucklin (Section 5). The reference for the file format is [methods.md](methods.md), Add-ons.
 
 You will need some Python. The guide explains every piece the examples use, but writing a new counting rule is still programming: expect to try things, read error messages and test small cases by hand. Copying an example that is close to your idea and changing it step by step is the easiest way in. Section 6 lists what to do when you are stuck.
 
@@ -358,7 +358,7 @@ python run.py --methods Bucklin IRV Schulze --elections 50 --out bucklin-test
 python analyze.py bucklin-test
 ```
 
-To compare with a bigger run you already have, run only your method with the same parameters and seed, and analyse both folders together (README, Combining runs):
+To compare with a bigger run you already have, run only your method with the same parameters and seed, and analyse both folders together ([running.md](running.md), Combining runs):
 
 ```
 python run.py --methods Bucklin --elections 600 --out bucklin
@@ -372,12 +372,12 @@ If it turns out uninteresting, delete `addons/bucklin.py`. To share it, send the
 - **Ties must split the win.** Return chances like `[0.5, 0.5, 0]`, never pick one tied candidate. The simulator relies on exact results; a hidden tie-break by candidate number would favour candidate A.
 - **Compare with `EPS`:** use `x >= best - methods.EPS` rather than `x == best` for numbers that come from arithmetic.
 - **Score range:** read `methods.MAXS` *inside* your functions, not at the top of the file. The range can change with `--max-score` after your file is loaded.
-- **A fixed score range** (rarely wanted): `Method("score", ..., settings={"max_score": 10})` makes the method always use 0..10, whatever `--max-score` says. Name it `Name-10`, and keep a base version without fixed range, so it stays comparable with the other methods (README, Score range).
+- **A fixed score range** (rarely wanted): `Method("score", ..., settings={"max_score": 10})` makes the method always use 0..10, whatever `--max-score` says. Name it `Name-10`, and keep a base version without fixed range, so it stays comparable with the other methods ([model.md](model.md), Score range).
 - **Features must add up.** The simulator only gives you sums over voters. Totals, counts and pairwise counts add up; a median doesn't. For a median, count how many voters gave each score (the built-in feature `"grades"`) and find the median from those counts, as MJ does.
 - **Many sets are slow.** A feature over all sets of candidates (2^C rows, like IDS) is fine for 6 candidates, but doubles in size with every extra candidate.
 - **If the rule can't be written with sums** (it needs individual ballots, e.g. a random ballot drawn), use `Method("rank", full=tally)` with `def tally(B): …` returning the winning chances directly from the whole ballot matrix. It works, but strategic polls become much slower.
 - **Names:** method and feature names must be new. Loading stops with a message if one already exists.
-- **Truncated rankings:** on `"rank"` and `"weak"` ballots, a 0 shared by two or more candidates means unranked. Decide what your rule does with them (Bucklin: never counted). README, Truncation and laziness, lists what the built-in methods do.
+- **Truncated rankings:** on `"rank"` and `"weak"` ballots, a 0 shared by two or more candidates means unranked. Decide what your rule does with them (Bucklin: never counted). [model.md](model.md), Truncation and laziness, lists what the built-in methods do.
 
 **When you are stuck:**
 
