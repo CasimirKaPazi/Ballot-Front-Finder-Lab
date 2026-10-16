@@ -114,6 +114,7 @@ ADDED_COLUMNS = {
     "salience_exponent": ("1.0", "2026-10-15, salience per cluster (not used by older runs)"),
     "field_kappa": ("1.5", "2026-10-15, parameters of the field model (not used by older runs)"),
     "field_salience": ("0.0", "2026-10-15, parameters of the field model (not used by older runs)"),
+    "noise_strength": ("3.0", "2026-10-15, parameter of the noise model (not used by older runs)"),
     "fixed_variance": ("0", "2026-10-15, fixed total variance: older runs did not scale positions"),
     "lazy": ("0.0", "2026-10-13, laziness: older runs had full ballots"),
     "fidelity": (None, "2026-10-12, fidelity, with the current sincerity measure"),
@@ -530,7 +531,8 @@ PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "
                "cand_shift": "candidate shift", "lazy": "laziness", "model": "electorate model",
                "ks_alpha": "ks faction alpha", "ks_cut": "ks cut",
                "ks_shared": "ks shared factions", "salience": "salience", "salience_exponent": "salience exponent", "fixed_variance": "fixed total variance",
-               "field_kappa": "field saturation", "field_salience": "salience field"}
+               "field_kappa": "field saturation", "field_salience": "salience field",
+               "noise_strength": "noise strength"}
 LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "poll_size", "poll_error", "search", "converge",
                  "aggressive", "start"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)

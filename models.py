@@ -82,6 +82,23 @@ opinions arise and spread, rather than from imposed clusters or decay laws (READ
     - field_salience > 0: what people care about is a field too (weights exp(field_salience x another
       field), mean square 1 per person), so neighbours share their priorities partly.
     Candidates are drawn like voters.
+
+MODEL "noise": voters are dense where a fractal noise is high (as Perlin noise with octaves), so they
+form clumps within clumps at every scale, without a number of clusters, a Zipf law or salience:
+    - The noise, new for every election: NOISE_OCTAVES octaves of NOISE_WAVES plane waves each, in
+      random directions in the issue space, the frequency doubling and the amplitude falling by
+      2^-NOISE_H from one octave to the next (random Fourier features: fractal noise in any number of
+      dimensions, where Perlin's lattice would be impractical), scaled to variance 1.
+    - People: drawn from the density Gaussian(0, 1 per dimension) x exp(noise_strength x noise).
+      0 = a plain Gaussian blob; larger values = sharper clumps (a Condorcet winner rarer and costlier).
+      Sampling (annealed resampling with local moves): NOISE_PARTICLES points start from the
+      Gaussian; the strength is raised in NOISE_STEPS equal steps, each time the points are
+      resampled by their gain in weight and then take NOISE_MOVES Metropolis steps (random-walk,
+      size NOISE_STEP), so that clumps get their real width instead of repeated copies of a few
+      points. The voters and candidates are distinct points drawn at random from the result.
+    - Scaled so the dimensions' total variance is pi^2/6 (over all points), as fixed_variance does
+      for clusters.
+    Candidates are drawn like voters.
 """
 from dataclasses import dataclass
 from typing import Callable
@@ -224,6 +241,52 @@ def _ks_structure(sc, rng, quinn=False):
     return pos, W, factions, bundles
 
 
+# MODEL "noise": voters dense where a fractal noise is high (see the module docstring)
+NOISE_OCTAVES = 5        # octaves of the noise
+NOISE_WAVES = 8          # plane waves per octave
+NOISE_K0 = 0.7           # frequency of the coarsest octave (wavelength about 9 voter SDs: a broad tilt)
+NOISE_H = 0.5            # amplitude falls by 2^-NOISE_H per octave (frequency doubles)
+NOISE_PARTICLES = 2000   # sampling: points that are moved toward the density
+NOISE_STEPS = 10         # sampling: the strength is raised in this many steps
+NOISE_MOVES = 5          # sampling: Metropolis steps per strength step
+NOISE_STEP = 0.15        # sampling: Metropolis step size per dimension (the finest waves have length ~0.6)
+
+
+def _draw_noise(sc, rng):
+    """Voters and candidates where a fresh fractal noise is high (see the module docstring)."""
+    n, D = sc.n_voters + sc.n_cands, sc.dims
+    k, phase, amp = [], [], []
+    for o in range(NOISE_OCTAVES):
+        d = rng.normal(size=(NOISE_WAVES, D))
+        k.append(d / np.linalg.norm(d, axis=1, keepdims=True) * NOISE_K0 * 2 ** o)
+        phase.append(rng.random(NOISE_WAVES) * 2 * np.pi)
+        amp.append(np.full(NOISE_WAVES, 2.0 ** (-NOISE_H * o)))
+    k, phase, amp = np.vstack(k), np.concatenate(phase), np.concatenate(amp)
+    amp = amp / np.sqrt((amp ** 2).sum() / 2)                               # noise variance 1
+
+    def noise(Y):
+        return (amp * np.cos(Y @ k.T + phase)).sum(axis=1)
+
+    M = max(NOISE_PARTICLES, 2 * n)
+    Y = rng.normal(size=(M, D))
+    f = noise(Y)
+    for step in range(1, NOISE_STEPS + 1):
+        beta = sc.noise_strength * step / NOISE_STEPS
+        gain = np.exp((sc.noise_strength / NOISE_STEPS) * (f - f.max()))    # resample by the gain in weight
+        keep = rng.choice(M, M, p=gain / gain.sum())
+        Y, f = Y[keep], f[keep]
+        for _ in range(NOISE_MOVES):                                         # local moves: Metropolis
+            Z = Y + NOISE_STEP * rng.normal(size=Y.shape)
+            fz = noise(Z)
+            log_ratio = beta * (fz - f) - 0.5 * ((Z ** 2).sum(axis=1) - (Y ** 2).sum(axis=1))
+            ok = np.log(rng.random(M)) < log_ratio
+            Y[ok], f[ok] = Z[ok], fz[ok]
+    Y = Y - Y.mean(axis=0)
+    Y = Y * np.sqrt((np.pi ** 2 / 6) / (Y ** 2).sum(axis=1).mean())          # total variance pi^2/6
+    X = Y[rng.choice(M, n, replace=False)]
+    return X[:sc.n_voters], X[sc.n_voters:], None, None
+
+
 # MODEL "field": opinions as scale-free fields over a social space (see the module docstring)
 FIELD_GRID = 64          # the social space: a 64 x 64 torus
 FIELD_EXPONENT = 2.0     # power spectrum k^-2 in two dimensions: logarithmically decaying correlations
@@ -284,6 +347,8 @@ MODELS = {m.name: m for m in [
     Model("ks-quinn", _draw_ks_quinn,
           lambda g: f"Quinn's hierarchical model as in vse-sim's code (one offset per bundle), faction alpha "
                     f"{g('ks_alpha')}, cut {g('ks_cut')}"),
+    Model("noise", _draw_noise,
+          lambda g: f"{g('dims')} dimensions, voters dense where a fractal noise is high, strength {g('noise_strength')}"),
 ]}
 
 

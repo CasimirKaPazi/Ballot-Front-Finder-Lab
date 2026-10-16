@@ -184,6 +184,8 @@ def check_params(a, error):
             error(f"--{k} must be between 0 and 1")
     if any(v <= 0 for v in vals("field_kappa")):
         error("--field-kappa must be above 0")
+    if any(v < 0 for v in vals("noise_strength")):
+        error("--noise-strength must be 0 or more")
     if any(v < 0 for v in vals("field_salience")):
         error("--field-salience must be 0 or more")
     if any(v < 0 for v in vals("salience_exponent")):
@@ -239,7 +241,7 @@ def group_text(g):
 
 
 # Run parameters written into every row of the elections CSV
-PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "ks_alpha", "ks_cut", "ks_shared", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
+PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
           "strategic", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
           "start", "seed"]
 
@@ -317,7 +319,8 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
                   p["cand_dispersion"], p["cand_shift"], p.get("model", "clusters"), p.get("ks_alpha", 1.5),
                   p.get("ks_cut", 0.2), p.get("ks_shared", 0), salience=p.get("salience", "none"),
                   salience_exponent=p.get("salience_exponent", 1.0), fixed_variance=p.get("fixed_variance", 0),
-                  field_kappa=p.get("field_kappa", 1.5), field_salience=p.get("field_salience", 0.0))
+                  field_kappa=p.get("field_kappa", 1.5), field_salience=p.get("field_salience", 0.0),
+                  noise_strength=p.get("noise_strength", 3.0))
     todo = [e for e in range(elections) if e not in set(skip)]
     jobs = [{"sc": sc, "p": p, "e": e, "rounds": rounds, "names": names, "participation": participation}
             for e in todo]
@@ -455,6 +458,9 @@ def main():
                     help="model field: saturation of opinions (small: smooth, nearly Gaussian; large: two camps per issue)")
     ap.add_argument("--field-salience", type=float, default=0.0,
                     help="model field: strength of the salience field (0 = every issue weighed alike)")
+    ap.add_argument("--noise-strength", type=float, default=3.0,
+                    help="model noise: how strongly voters gather where the fractal noise is high "
+                         "(0 = a Gaussian blob; larger: sharper clumps)")
     ap.add_argument("--ks-alpha", type=float, default=1.5,
                     help="model ks: faction alpha (higher: more, smaller factions)")
     ap.add_argument("--ks-cut", type=float, default=0.2,

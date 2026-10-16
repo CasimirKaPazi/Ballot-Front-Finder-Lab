@@ -27,6 +27,7 @@ class Scenario:
     field_kappa: float = 1.5       # "field": saturation of opinions (small: smooth; large: two camps per issue)
     field_salience: float = 0.0    # "field": strength of the salience field (0 = every issue weighed alike)
     fixed_variance: int = 0        # "clusters": 1 = total variance of the dimensions fixed (pi^2/6), whatever their number
+    noise_strength: float = 3.0    # "noise": how strongly voters gather where the noise is high (0 = a Gaussian blob)
 
 
 def electorate(sc: Scenario, rng: np.random.Generator):

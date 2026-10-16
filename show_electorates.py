@@ -39,7 +39,7 @@ from run import out_path
 from scenario import Scenario
 
 CATS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
-MODEL_COLOURS = ["#2a78d6", "#eb6834", "#1baf7a", "#6250d6"]
+MODEL_COLOURS = ["#2a78d6", "#eb6834", "#1baf7a", "#6250d6", "#c2417f"]
 INK2, MUTED = plots.INK2, plots.MUTED
 
 
@@ -330,6 +330,7 @@ def main():
     ap.add_argument("--fixed-variance", type=int, default=0, choices=[0, 1])
     ap.add_argument("--field-kappa", type=float, default=1.5)
     ap.add_argument("--field-salience", type=float, default=0.0)
+    ap.add_argument("--noise-strength", type=float, default=3.0)
     ap.add_argument("--ks-alpha", type=float, default=1.5)
     ap.add_argument("--ks-cut", type=float, default=0.2)
     ap.add_argument("--ks-shared", type=int, default=0, choices=[0, 1])
@@ -351,7 +352,8 @@ def main():
     scs = [Scenario(a.voters, a.cands, a.dims, a.clusters, a.spread, a.width, a.zipf, a.cand_dispersion,
                     a.cand_shift, m, a.ks_alpha, a.ks_cut, a.ks_shared, salience=a.salience,
                     salience_exponent=a.salience_exponent, fixed_variance=a.fixed_variance,
-                    field_kappa=a.field_kappa, field_salience=a.field_salience)
+                    field_kappa=a.field_kappa, field_salience=a.field_salience,
+                    noise_strength=a.noise_strength)
            for m in a.model]
     # the same random streams as run.py: election e of seed s is the electorate run.py uses
     S = {m: [stats(draw_electorate(sc, np.random.default_rng([a.seed, e]))) for e in range(a.elections)]

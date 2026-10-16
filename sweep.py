@@ -51,6 +51,7 @@ def main():
     ap.add_argument("--fixed-variance", type=int, nargs="+", default=[0], choices=[0, 1])
     ap.add_argument("--field-kappa", type=float, nargs="+", default=[1.5])
     ap.add_argument("--field-salience", type=float, nargs="+", default=[0.0])
+    ap.add_argument("--noise-strength", type=float, nargs="+", default=[3.0])
     ap.add_argument("--ks-alpha", type=float, nargs="+", default=[1.5])
     ap.add_argument("--ks-cut", type=float, nargs="+", default=[0.2])
     ap.add_argument("--ks-shared", type=int, nargs="+", default=[0], choices=[0, 1])
