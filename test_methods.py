@@ -611,11 +611,12 @@ L = _mm.FEATURES["lasts"][0](np.array([[3., 0, 0, 0]])).reshape(16, 4)
 assert np.allclose(L[15], [0, 1 / 3, 1 / 3, 1 / 3])                                         # Coombs: last place shared
 FS = _mm.FEATURES["firstsecond"][0](np.array([[3., 0, 0, 0], [3., 2, 0, 0]])).reshape(2, 4, 4)
 assert FS[0, 0, 0] == 1 and FS[1, 0, 1] == 1                                                 # bullet: no second preference
+import ballots as _bl
 ul = np.array([[1.0, 0.6, 0.3, 0.0]])
-assert np.allclose(_mm.lazy_rank_ballots(ul, 0.0), [[3, 2, 1, 0]])
-assert np.allclose(_mm.lazy_rank_ballots(ul, 0.5), [[3, 2, 0, 0]])
-assert np.allclose(_mm.lazy_rank_ballots(ul, 1.0), [[3, 0, 0, 0]])
-assert np.allclose(_mm.lazy_rank_ballots(ul, 0.3), [[3, 2, 1, 0]])                           # all but one = full ranking
+assert np.allclose(_bl.lazy_rank_ballots(ul, 0.0), [[3, 2, 1, 0]])
+assert np.allclose(_bl.lazy_rank_ballots(ul, 0.5), [[3, 2, 0, 0]])
+assert np.allclose(_bl.lazy_rank_ballots(ul, 1.0), [[3, 0, 0, 0]])
+assert np.allclose(_bl.lazy_rank_ballots(ul, 0.3), [[3, 2, 1, 0]])                           # all but one = full ranking
 _mm.set_lazy(1.0)
 assert np.allclose(METHODS["IRV"].sincere(ul), [[3, 0, 0, 0]])
 assert np.allclose(METHODS["MDDA"].sincere(ul), [[1, 0, 0, 0]])                                # trunc: lazy cuts further

@@ -40,7 +40,7 @@ import numpy as np
 from scenario import Scenario, electorate_positions
 from models import draw_electorate, model_text, MODELS
 from nomination import nominate, clone_setup, utilities, to_original
-from methods import METHODS, select, run_selection, set_max_score, set_lazy, sincerity_defined
+from methods import METHODS, run_selection, set_max_score, set_lazy, sincerity_defined
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet
 import participation as part

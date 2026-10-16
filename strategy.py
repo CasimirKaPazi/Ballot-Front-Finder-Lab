@@ -52,7 +52,6 @@ Partial strategy (both): `strategic` marks the voters who take part (a random sh
 electorate, drawn in run.py, the same voters for every method). The others always vote sincerely.
 """
 import numpy as np
-import methods
 from outcomes import value
 from ballots import BALLOTS, _max_separated  # noqa: F401 (_max_separated: for the tests)
 

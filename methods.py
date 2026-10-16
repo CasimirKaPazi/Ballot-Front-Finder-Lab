@@ -111,9 +111,7 @@ def _keepnorm_scale():
 # ---------- sincere ballots: in ballots.py ----------
 TRUNC3 = 3       # most candidates ranked on a "trunc3" ballot
 
-from ballots import (BALLOTS, cares, truncate, fav_ballots, rank_ballots, approval_ballots,  # noqa: E402
-                     score_ballots, fav_run_ballots, app_run_ballots, veto_ballots, lazy_rank_ballots,
-                     trunc_ballots, trunc3_ballots, grade3_ballots)
+from ballots import BALLOTS  # noqa: E402
 
 
 # ---------- helpers ----------

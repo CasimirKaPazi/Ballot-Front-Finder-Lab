@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, Normalize, ListedColormap
+from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch
 

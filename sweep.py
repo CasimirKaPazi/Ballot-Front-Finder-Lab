@@ -33,7 +33,7 @@ import time
 from models import MODELS
 from run import (simulate, PARAMS, run_dir, write_command, group_size_arg, check_params, run_key,
                  resume_state, CsvSink, interrupted)
-from methods import select, run_selection
+from methods import run_selection
 
 
 def main():
