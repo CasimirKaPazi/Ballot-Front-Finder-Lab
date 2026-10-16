@@ -1,28 +1,23 @@
-# Voting Pareto Lab — findings
+# Voting Pareto Lab — development journal
 
-What the simulations have shown so far. The model, parameters and definitions are in [README.md](README.md). Newest first; each section names the settings it used, since the model and defaults changed along the way (plain dimensions before Zipf, CE as an axis before WM). Numbers are point estimates; differences only count where the paired comparison or the noise reference says so.
+How the lab developed: the experiments, what they showed and the decisions they led to, each with the settings and commands that produced it. Newest first. The software itself (model, parameters, definitions) is described in [README.md](README.md). Numbers are point estimates; differences only count where the paired comparison or the noise reference says so.
 
-**Units.** Up to 2026-10-06 the axes were PE (zero = utility-proportional lottery) and WM (the winner's worst margin in % of voters); the sections below keep those units. Since then they are VSE and WME, both with 0 = random ballot and 100 = best candidate (README, Axes). Within one condition the change is a fixed rescaling of each axis (the sums over elections that set the zero and the 100 are the same for all methods), so method order, dominance and rank stability are unaffected; only the numbers differ.
+**Changes along the way.** The model, its defaults and the measures changed over time, so each section names its settings. A section uses what was current at its date; the changes, newest first, with what earlier sections used:
 
-**Electorate defaults.** From 2026-10-16 the default electorate model is `noise` (strength 5, 6 dimensions, width 0.7), and the `clusters` model's own defaults are 20 clusters, no Zipf, fixed total variance and salience per cluster (exponent 0.5). Before, the defaults were `clusters` with 10 Zipf dimensions, 5 clusters and width 1.0, which all sections below use unless they say otherwise (see Electorate models, and the new defaults).
-
-**Default poll rounds and version.** From 2026-10-10 the default is 3 poll rounds (before: 1), and every row records the simulator version (1.0.0 from then on). Sections before this note report round 1 unless they say otherwise.
-
-**Truncation and laziness.** From 2026-10-13 rankings may be truncated: strategic voters can rank fewer candidates (unranked ones tied last), and `--lazy` makes honest ballots lazy: truncated rankings, fewer approvals, blank (0) scores (README, Truncation and laziness). This changes the strategic results of every ranking method (more strategic options, and new rules for unranked candidates in IRV, Coombs, Borda, Dowdall, Supplementary vote and ER-IRV), also at `--lazy 0`. Results in the sections below are from before; the version number stays 1.0.0 until publication.
-
-**Sincerity measure.** From 2026-10-12 sincerity counts only reversed preferences (the ballot puts a less-liked candidate above a more-liked one, weighted by the utility difference), scaled by the most dishonest ballot each method's format allows (README, Sincerity and fidelity). Ties and exaggeration are not reversals. The earlier measure divided by all pairs, which gave coarse formats (plurality, approval) a high floor. Fidelity, new, measures how well ballots reproduce utility differences, including what the format cannot express. Both are undefined (blank) for TRASH and the Inverse-* methods, whose honest ballot works against the voter's interest. Sincerity values in the sections below use the earlier measure and are not comparable; since sincerity is a front axis, fronts may change too.
-
-**Removed method, renamed group.** On 2026-10-12 COWPEA Lottery was removed: it is meant as a proportional method, so judging it on single-winner measures makes it look worse than it is, and it was by far the slowest method. The group condorcet-hybrid was renamed condorcet-based (to keep it apart from the groups condorcet and hybrid). Sections below still report COWPEA Lottery.
-
-**Output folders.** From 2026-10-11 every run or sweep writes into its own folder (`output/<out>/elections.csv`, analysis in `output/<out>/analysis/`). The commands in the sections below are from before: there `--out x` wrote `output/x-elections.csv`, and `analyze.py` was given that file. The same commands now write the folder, and `analyze.py x` reads it.
-
-**Polls per round.** From 2026-10-11 the default is 10 polls per round (`--samples`, before: 30). A test with 1 to 30 samples showed systematic shifts only at 3 or fewer; from 5 up the results moved by a few points without a trend, which is strategy noise that more elections average out. 10 samples take about 37% of the time of 30. Sections before this note used 30.
-
-**Removed methods.** On 2026-10-09 the Dowdall variants (Black-, BTR-, Baldwin-, Nanson-Dowdall; plain Dowdall stays) and the contingent vote (Contingent vote, Contingent-ER) were removed: the Dowdall test had answered its question (see the current picture below), and the contingent vote only served to separate the automated from the real runoff. Sections below still report them.
-
-**Front.** From 2026-10-09 the analysis judges dominance on VSE*, WME* and sincerity: the result with strategic voters and how honest they can afford to be. Honest VSE and WME depend more on modelling assumptions and are context only. Earlier sections used other axes.
-
-**Names.** On 2026-10-07 some methods were renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (called ACR below), Minimax-wv → MMWV. The sections below use the new names.
+| Date | Change | Earlier sections |
+|---|---|---|
+| 2026-10-16 | Default electorate `noise` (strength 5, 6 dimensions, width 0.7); `clusters` defaults 20 clusters, no Zipf, fixed total variance, salience per cluster with exponent 0.5 (see Electorate models, and the new defaults) | `clusters`, 10 Zipf dimensions, 5 clusters, width 1.0 |
+| 2026-10-13 | Truncated rankings: strategic voters may rank fewer candidates (unranked tied last), and `--lazy` makes honest ballots lazy (README, Truncation and laziness). Changes the strategic results of every ranking method, also at `--lazy 0`, and the rules for unranked candidates in IRV, Coombs, Borda, Dowdall, Supplementary vote and ER-IRV | full rankings |
+| 2026-10-12 | Sincerity counts only reversed preferences, weighted by utility difference and scaled by the most dishonest ballot the format allows; fidelity is new (README, Sincerity and fidelity). Both blank for TRASH and the Inverse-* methods. Since sincerity is a front axis, fronts may change | sincerity divided by all pairs (a high floor for plurality and approval); not comparable |
+| 2026-10-12 | COWPEA Lottery removed (a proportional method, judged unfairly by single-winner measures, and the slowest); group condorcet-hybrid renamed condorcet-based | report COWPEA Lottery and the old group name |
+| 2026-10-11 | Every run or sweep writes its own folder (`output/<out>/`, analysis in `output/<out>/analysis/`); `analyze.py x` reads it | `--out x` wrote `output/x-elections.csv`, given to `analyze.py` as a file |
+| 2026-10-11 | 10 polls per round (`--samples`). A test with 1 to 30 showed systematic shifts only at 3 or fewer; from 5 up the results moved by a few points without a trend (strategy noise that more elections average out). 10 take 37% of the time of 30 | 30 polls |
+| 2026-10-10 | 3 poll rounds by default; every row records the simulator version (1.0.0 until publication) | round 1 unless they say otherwise |
+| 2026-10-09 | Dominance judged on VSE*, WME* and sincerity; honest VSE and WME are context | other axes |
+| 2026-10-09 | Removed: the Dowdall variants (Black-, BTR-, Baldwin-, Nanson-Dowdall; Dowdall stays) and the contingent vote (Contingent vote, Contingent-ER): the Dowdall test had answered its question (see the current picture of 2026-10-09), and the contingent vote only served to separate the automated from the real runoff | report them |
+| 2026-10-07 | Renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (ACR), Minimax-wv → MMWV | use the new names |
+| 2026-10-06 | Axes VSE and WME, both 0 = random ballot and 100 = best candidate (README, Axes). Within a condition a fixed rescaling of each axis, so order, dominance and rank stability are unaffected | PE (0 = utility-proportional lottery) and WM (worst margin in % of voters) |
+| earlier | Plain dimensions before Zipf; CE as an axis before WM | |
 
 ## Electorate models, and the new defaults (2026-10-14 to 2026-10-16)
 

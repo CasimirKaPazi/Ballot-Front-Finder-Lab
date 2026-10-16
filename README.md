@@ -1,6 +1,6 @@
 # Voting Pareto Lab
 
-A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 65 in all, plus eight test methods. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
+A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 62 in all (one of them, IDS, as an add-on; more can be added), plus three reference methods and eight test methods. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
 
 **The question.** Every voting method turns ballots into a winner, and every method can be gamed to some degree. Comparisons with honest ballots alone flatter methods that are easy to manipulate; comparisons under fully rational strategy depend on assumptions nobody believes. This lab places voters in between: some of them read polls and adjust their ballots when it pays, the way people vote tactically in real elections, and it measures what the method makes of that.
 
@@ -22,7 +22,7 @@ The two pull apart, so no method can reach 100 on both; the lab computes the bou
 
 The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulations) and on Chris Smith's spatial voter model; in the strategy model, rounds of best responses to the previous poll (level-k reasoning), the leader rule of Myerson and Weber (1993) emerges instead of being coded. Its assumptions are spelled out in the sections below, and eight Inverse-* methods (honest voting elects the worst candidate) test whether voters learn their way back.
 
-Python 3.9 or newer + NumPy; the analysis also needs matplotlib (`pip install -r requirements.txt`). This file describes the software: the model, its parameters, the methods and the analysis. What the simulations have shown so far, with the commands that produced it, is in [FINDINGS.md](FINDINGS.md).
+Python 3.9 or newer + NumPy; the analysis also needs matplotlib (`pip install -r requirements.txt`). This file describes the software: the model, its parameters, the methods and the analysis. How the lab developed (experiments, what they showed and the decisions they led to, with the commands that produced them) is in [JOURNAL.md](JOURNAL.md).
 
 ```
 python test_methods.py                                   # hand-built checks
@@ -77,7 +77,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `plots.py` | The analysis plots |
 | `test_methods.py` | Hand-built checks |
 | `regression.py`, `regression.csv` | Regression check: a few tiny fixed runs compared with the stored reference (see Checking changes) |
-| `FINDINGS.md` | Results so far and their interpretation |
+| `JOURNAL.md` | Development journal: experiments, results and decisions, with their settings |
 
 ## Checking changes
 
@@ -123,7 +123,7 @@ One election, with a few polls before it. Voters see only published poll results
 
 ### Convergent learning (`--converge N`)
 
-The earlier model: over N rounds, groups take turns and each sees the others' latest strategic ballots through a fresh poll of the full electorate. It finds where an electorate ends up after long adjustment, with much more information and coordination than one election offers. That makes it resistant to strategies that only fail when many voters use them at once: mass burial under Borda, for example, which sinks Borda when everyone buries simultaneously (FINDINGS.md). Kept for comparison and as a long-run view; the results up to 2026-10-08 used it with N = 20 and 10 poll samples (`--converge 20 --samples 10`).
+The earlier model: over N rounds, groups take turns and each sees the others' latest strategic ballots through a fresh poll of the full electorate. It finds where an electorate ends up after long adjustment, with much more information and coordination than one election offers. That makes it resistant to strategies that only fail when many voters use them at once: mass burial under Borda, for example, which sinks Borda when everyone buries simultaneously (JOURNAL.md). Kept for comparison and as a long-run view; the results up to 2026-10-08 used it with N = 20 and 10 poll samples (`--converge 20 --samples 10`).
 
 - **Groups:** strategic voters with the same sincere ranking, split at random into subgroups of at most `--group-size` voters (see Coordination below). A group either votes sincerely (each member their own sincere ballot) or casts one shared ballot.
 - **Polls:** each round draws `--samples` bootstrap resamples of the electorate. A proposal is judged by the group's total expected utility averaged over these samples, so a group gains in proportion to how often it would be pivotal, not only when it is decisive in the exact electorate.
@@ -160,7 +160,7 @@ Five models are available: `noise` (the default), `clusters`, `field`, `ks` and 
 - Positions are scaled so the dimensions' total variance is π²/6, as `--fixed-variance` does for clusters. Candidates are drawn like voters. Drawing one electorate takes about 0.1 s, longer than the other models, but little next to the methods' strategy.
 - The octaves, waves, amplitude decay and sampling settings are fixed in `models.py` (`NOISE_*`). `--noise-strength` is the knob that matters.
 
-**Defaults, and why** (2026-10-16; FINDINGS.md, Electorate models). The defaults were chosen so that the electorates are plausible against two kinds of real data and still separate the methods:
+**Defaults, and why** (2026-10-16; JOURNAL.md, Electorate models). The defaults were chosen so that the electorates are plausible against two kinds of real data and still separate the methods:
 
 - `noise`, because it has the fewest assumptions of the models and gives a balanced electorate: `clusters` is clumpy (with few clusters, islands), `ks` is uniform and low-dimensional (two or three dimensions drawn, in which VSE and WME hardly pull apart), and `field` gives a featureless blob.
 - Strength 5, 6 dimensions, width 0.7. A Condorcet winner exists in about 97% of elections, as in real ranked elections with 50 to 100 or more voters (96–98% in Myers' CIVS data). The candidates' map from approval ballots (`--sav`, below) is close to Alós-Ferrer & Granić's real one with 6 candidates, if somewhat more concentrated on the first dimension. Electing the Condorcet winner loses about 15% of VSE, so VSE and WME pull apart and the methods differ. From strength 5 to 7 the method order stays within its sampling noise, so the exact value matters little. Below 5 (with 10 dimensions and width 1.0, below 6) the electorates become easy: nearly every method is close to the best possible result.
