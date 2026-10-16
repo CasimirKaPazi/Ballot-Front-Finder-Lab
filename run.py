@@ -42,10 +42,15 @@ import numpy as np
 from scenario import Scenario, electorate_positions
 from models import draw_electorate, model_text, MODELS
 from nomination import nominate, clone_setup, utilities, to_original
-from methods import METHODS, run_selection, set_max_score, set_lazy, sincerity_defined
+from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, sincerity_defined
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet
 import participation as part
+
+
+def lazy_cuts(rng, n, lazy):
+    """Each voter's laziness cut, uniform between 0 and `lazy` (--lazy); None without laziness."""
+    return rng.random(n) * lazy if lazy > 0 else None
 
 
 def personal_thresholds(draw, share, adapt):
@@ -82,6 +87,8 @@ def one_election(job):
     ele = draw_electorate(sc, rng)                  # the scenario's model (models.py)
     u, voters, cands = ele.u, ele.voters, ele.cands
     C = u.shape[1]
+    # laziness: each voter's own cut, uniform between 0 and --lazy (own stream, the same for every method)
+    set_voter_lazy(lazy_cuts(np.random.default_rng([seed, e, zlib.crc32(b"lazy")]), len(u), p.get("lazy", 0.0)))
     nominating = bool(exits or clones)
     if nominating:   # clones' positions: own random stream, the same for every method
         u_clone, cu = clone_setup(voters, cands, sc.width,
@@ -151,6 +158,7 @@ def one_election(job):
                             "fidelity": float(fidelity(m, B, uf).mean()) if defined else "",
                             "settled": int(settled), "adapted": act[r] if adaptive is not None else "",
                             **strategy_types(B, m.pref(uf)), **nstats, **check(B)})
+    set_voter_lazy(None)
     return out
 
 
@@ -286,6 +294,7 @@ def previous_election(args):
     set_lazy(p.get("lazy", 0.0))
     rng = np.random.default_rng([p["seed"], zlib.crc32(b"previous")])
     u = electorate_positions(sc, rng)[0]
+    set_voter_lazy(lazy_cuts(np.random.default_rng([p["seed"], zlib.crc32(b"previous-lazy")]), len(u), p.get("lazy", 0.0)))
     draw = rng.random(len(u))
     strategic = draw < p["strategic"]
     adaptive = personal_thresholds(draw, p["strategic"], p.get("adaptive", 0.0))
@@ -295,6 +304,7 @@ def previous_election(args):
         B, _, _ = respond(m, u, np.random.default_rng([p["seed"], zlib.crc32(b"previous-learning")]), rounds=rounds,
                           samples=p["samples"], poll_size=p["poll_size"], search=p["search"], strategic=strategic,
                           poll_error=p["poll_error"], aggressive=aggressive, adaptive=adaptive)
+    set_voter_lazy(None)
     return B
 
 
@@ -522,9 +532,10 @@ def main():
                     help="share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) "
                          "only when the polls show a gain (poll rounds only)")
     ap.add_argument("--lazy", type=float, default=0.0,
-                    help="laziness of honest ballots, 0..1: a voter ranks, approves or scores only candidates whose "
-                         "utility, stretched to 0..1 between least and most liked, is at least this (0 = full "
-                         "ballots, 1 = bullet votes); strategic voters may deviate (see docs/model.md, Truncation and laziness)"),
+                    help="laziness of honest ballots, 0..1: each voter has a cut drawn between 0 and this, and ranks, "
+                         "approves or scores only candidates whose utility, stretched to 0..1 between least and most "
+                         "liked, is at least their cut (0 = full ballots); strategic voters may deviate "
+                         "(see docs/model.md, Truncation and laziness)"),
     ap.add_argument("--poll-error", type=float, default=2.0,
                     help="poll rounds only: voters treat polls as this many times less precise than their "
                          "sampling error")

@@ -665,6 +665,24 @@ for _ in range(300):                                                            
     b = _mutate(b, "rank", rg)
     pos = np.sort(b[b > 0])[::-1]
     assert np.allclose(pos, np.arange(4, 4 - len(pos), -1)) and 1 <= len(pos) <= 4
+# per-voter laziness: each row with its own cut, the same as that row alone with that cut
+_ul = np.random.default_rng(14).random((6, 5))
+_cuts = np.array([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+from ballots import BALLOTS as _BL
+for _bt, _b in _BL.items():
+    if _b.lazy:
+        _all = _b.sincere(_ul, _cuts)
+        for _i, _c in enumerate(_cuts):
+            assert np.array_equal(_all[_i], _b.sincere(_ul[_i:_i + 1], _c)[0]), (_bt, _i)
+_mm.set_voter_lazy(_cuts)
+assert np.array_equal(METHODS["IRV"].sincere(_ul), _BL["rank"].sincere(_ul, _cuts))
+try:
+    METHODS["IRV"].sincere(_ul[:2])
+    raise AssertionError("per-voter laziness with the wrong number of rows must fail")
+except ValueError:
+    pass
+assert abs(_mm.lazy_of(np.array([1, 2])) - 0.3) < 1e-12
+_mm.set_voter_lazy(None)
 print("truncated rankings and laziness ok")
 
 # Ballot types (ballots.py, also those from add-ons): every entry is complete and consistent

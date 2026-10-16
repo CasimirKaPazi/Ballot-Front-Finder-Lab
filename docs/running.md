@@ -58,7 +58,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--samples` | 10 | polls per round (they stand for the uncertainty); with `--converge`, bootstrap resamples per round |
 | `--poll-error` | 2 | voters treat polls as this many times less precise than their sampling error |
 | `--aggressive` | 0.5 | share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) only when the polls show a gain (poll rounds only) |
-| `--lazy` | 0 | laziness of honest rankings, 0–1 (see [model.md](model.md), Truncation and laziness) |
+| `--lazy` | 0 | laziness of honest ballots, 0–1: each voter's cut is drawn between 0 and this (see [model.md](model.md), Truncation and laziness) |
 | `--poll-size` | 0 | voters per poll; 0 = half the electorate, rounded to an odd number |
 | `--search` | 10 | random ballot changes a group tries per poll round, after the naive exaggerations |
 | `--converge` | 0 | N > 0: convergent learning with N rounds instead of poll rounds (e.g. `--converge 20 --samples 10`) |
@@ -117,7 +117,7 @@ The terminal and the report list each older input and what was filled in or left
 | salience, salience_exponent, fixed_variance | 2026-10-15 | read as none, 1.0 and 0 (every dimension weighed alike, positions unscaled) |
 | ks_alpha, ks_cut, ks_shared | 2026-10-14 | read as 1.5, 0.2 and 0 (unused by the clusters model) |
 | adaptive, adapted | 2026-10-16 | read as 0 (no adaptive voters); adapted blank |
-| lazy | 2026-10-13 | read as 0.0 (full ballots) |
+| lazy | 2026-10-13 | read as 0.0 (full ballots). From 2026-10-16 each voter has their own cut between 0 and `lazy`; lazy runs from before (one cut for everyone) are read the same way, so do not combine them with newer ones |
 | fidelity | 2026-10-12 | blank; their sincerity column holds the earlier measure (the report warns) |
 | bcw, p_bcw | 2026-10-12 | blank |
 

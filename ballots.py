@@ -49,10 +49,19 @@ import numpy as np
 
 # ---------- laziness ----------
 def cares(u, lazy):
-    """Per voter and candidate: True if a lazy voter (laziness `lazy`) ranks the candidate."""
+    """Per voter and candidate: True if a lazy voter ranks the candidate. lazy: one cut for every
+    voter, or one per voter (an array with one value per row of u)."""
+    lazy = np.asarray(lazy, float)
+    if lazy.ndim == 1:
+        lazy = lazy[:, None]
     mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
     p = (u - mn) / np.where(mx - mn > 1e-12, mx - mn, 1)
     return (p >= lazy - 1e-12) | (u >= mx)
+
+
+def lazy_on(lazy):
+    """Does laziness `lazy` (one cut or one per voter) leave out anything?"""
+    return bool(np.any(np.asarray(lazy) > 0))
 
 
 def truncate(R, keep):
@@ -85,7 +94,7 @@ def approval_ballots(u, lazy=0.0):
     """Every candidate above the voter's mean utility (at least the favourite); with laziness only
     those the voter also cares about (cares): at 1 a bullet vote for the favourite."""
     a = u > u.mean(axis=1, keepdims=True) + 1e-12
-    if lazy > 0:
+    if lazy_on(lazy):
         a &= cares(u, lazy)
     none = ~a.any(axis=1)
     a[none, u[none].argmax(axis=1)] = True
@@ -99,7 +108,7 @@ def score_ballots(u, lazy=0.0):
     mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
     d = np.where(mx - mn > 1e-12, mx - mn, 1.0)
     B = np.rint(methods.MAXS * (u - mn) / d)
-    return np.where(cares(u, lazy), B, 0.0) if lazy > 0 else B
+    return np.where(cares(u, lazy), B, 0.0) if lazy_on(lazy) else B
 
 
 def fav_run_ballots(u, lazy=0.0):
@@ -125,7 +134,7 @@ def lazy_rank_ballots(u, lazy=None):
     points, the rest are unranked (0). lazy=None: the current laziness (methods.LAZY)."""
     lazy = methods.LAZY if lazy is None else lazy
     R = rank_ballots(u)
-    return R if lazy <= 0 else truncate(R, cares(u, lazy))
+    return truncate(R, cares(u, lazy)) if lazy_on(lazy) else R
 
 
 def trunc_ballots(u, lazy=None):
@@ -133,7 +142,7 @@ def trunc_ballots(u, lazy=None):
     only those of them the voter also cares about."""
     lazy = methods.LAZY if lazy is None else lazy
     R, A = rank_ballots(u), approval_ballots(u)
-    if lazy > 0:
+    if lazy_on(lazy):
         A = A * cares(u, lazy)
     k = A.sum(axis=1, keepdims=True)
     return np.where(A > 0, R - (u.shape[1] - k) + 1, 0.0)   # top k get k ... 1
@@ -147,7 +156,7 @@ def trunc3_ballots(u, lazy=None):
     k = min(methods.TRUNC3, C)
     R = rank_ballots(u)
     keep = R >= C - k
-    if lazy > 0:
+    if lazy_on(lazy):
         keep = keep & cares(u, lazy)
         kk = keep.sum(axis=1, keepdims=True)
         return np.where(keep, R - (C - kk) + 1, 0.0)            # the kept top kk get kk ... 1
@@ -159,7 +168,7 @@ def grade3_ballots(u, lazy=0.0):
     mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
     d = np.where(mx - mn > 1e-12, mx - mn, 1.0)
     B = np.rint(2 * (u - mn) / d)
-    return np.where(cares(u, lazy), B, 0.0) if lazy > 0 else B         # blank = bad (0), as for scores
+    return np.where(cares(u, lazy), B, 0.0) if lazy_on(lazy) else B         # blank = bad (0), as for scores
 
 
 # ---------- strategic changes: one small random change to a single ballot ----------

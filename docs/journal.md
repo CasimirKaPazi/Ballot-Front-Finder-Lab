@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-16 | Laziness per voter: each voter's cut uniform between 0 and `--lazy` | one cut (`--lazy`) for everyone |
 | 2026-10-16 | Adaptive voters (`--adaptive`): strategic per round by their stake in the leading race; the default `--adaptive 0` leaves results unchanged | — |
 | 2026-10-16 | Default electorate `noise` (strength 5, 6 dimensions, width 0.7); `clusters` defaults 20 clusters, no Zipf, fixed total variance, salience per cluster with exponent 0.5 (see Electorate models, and the new defaults) | `clusters`, 10 Zipf dimensions, 5 clusters, width 1.0 |
 | 2026-10-13 | Truncated rankings: strategic voters may rank fewer candidates (unranked tied last), and `--lazy` makes honest ballots lazy ([model.md](model.md), Truncation and laziness). Changes the strategic results of every ranking method, also at `--lazy 0`, and the rules for unranked candidates in IRV, Coombs, Borda, Dowdall, Supplementary vote and ER-IRV | full rankings |
@@ -20,6 +21,32 @@ How the lab developed: the experiments, what they showed and the decisions they 
 | 2026-10-06 | Axes VSE and WME, both 0 = random ballot and 100 = best candidate ([analysis.md](analysis.md), Axes). Within a condition a fixed rescaling of each axis, so order, dominance and rank stability are unaffected | PE (0 = utility-proportional lottery) and WM (worst margin in % of voters) |
 | earlier | Plain dimensions before Zipf; CE as an axis before WM | |
 
+## Laziness per voter (2026-10-16)
+
+**Why:** with one cut for everyone (next section, Adaptive voters: With laziness), laziness is either negligible or makes every ballot format equivalent; real ballots are heterogeneous (some voters bullet-vote, many rank fully, some stop after a few).
+
+**Change** (docs/model.md, Truncation and laziness): each voter's cut is drawn per election uniformly between 0 and `--lazy` (own random stream, the same for every method), so `--lazy` is now the largest cut. A strategic group's reference ballot uses its members' mean cut. Lazy runs from before this change used one cut for everyone and cannot be told apart in the files; they should not be combined with newer ones. Regression: only the two lazy conditions changed.
+
+**Runs** (Hive): defaults (noise model, 200 elections, seed 1, 3 poll rounds, aggressive share 0.5) with `--strategic 0 --adaptive 1`, at `--lazy 0`, `0.5` and `1` (commands of the form `python run.py --strategic 0 --adaptive 1 --lazy 0.5 --out adaptive-test-0-100-0-lazynew50`). Honest → strategic (VSE / WME):
+
+| Method | no laziness | `--lazy 0.5` | `--lazy 1` |
+|---|---|---|---|
+| Minimax | 82.8 / 100.0 → 81.4 / 99.0 | 87.6 / 93.9 → 86.7 / 95.8 | 88.4 / 89.6 → 88.0 / 91.5 |
+| Copeland | 83.0 / 99.8 → 83.0 / 97.7 | 87.6 / 93.8 → 85.9 / 94.2 | 88.2 / 89.5 → 86.4 / 91.2 |
+| IRV | 85.6 / 88.1 → 84.1 / 91.4 | 86.5 / 87.2 → 87.2 / 90.0 | 87.9 / 85.8 → 86.5 / 89.7 |
+| Borda | 78.9 / 95.0 → 82.1 / 94.1 | 87.7 / 94.1 → 86.5 / 92.2 | 88.2 / 89.1 → 89.3 / 91.2 |
+| Approval | 77.7 / 83.1 → 85.0 / 90.1 | 81.9 / 86.2 → 85.5 / 90.3 | 88.5 / 87.3 → 88.1 / 89.7 |
+| Score | 89.2 / 92.5 → 89.1 / 93.2 | 90.7 / 90.6 → 90.4 / 90.5 | 87.9 / 85.7 → 88.7 / 90.2 |
+| STAR | 86.6 / 94.6 → 85.3 / 94.7 | 87.7 / 91.3 → 87.9 / 92.6 | 89.0 / 88.0 → 88.5 / 90.0 |
+| MARS | 87.6 / 95.0 → 85.2 / 95.2 | 89.5 / 91.9 → 88.3 / 92.9 | 88.6 / 87.3 → 89.6 / 92.8 |
+| Smith//Score | 86.6 / 95.3 → 86.1 / 95.8 | 88.0 / 92.3 → 87.5 / 92.7 | 89.1 / 88.3 → 90.2 / 91.3 |
+| Plurality | 69.2 / 71.8 → 77.8 / 80.7 | unchanged | unchanged |
+
+- **At 0.5 the methods stay distinguishable**, unlike with one cut for everyone. Rank correlation with no laziness: WME\* 0.91 (noise reference 0.93), sincerity 0.96 (0.95), VSE\* 0.61 (0.74), so a moderate change on VSE\* only. The spread of honest WME across methods narrows from a standard deviation of 5.7 to 4.0.
+- **Truncation moves the Condorcet methods toward the utility winner:** honest VSE up, WME down (Minimax 82.8 / 100 → 87.6 / 93.9). Approval's honest result improves (77.7 / 83.1 → 81.9 / 86.2: fewer approvals near the mean cut), its strategic result barely moves. Plurality and TTR are unchanged, as their marks name a single candidate anyway.
+- **At 1** (the average voter cuts at the middle of their range) the formats come close to each other again: honest WME of almost every ranked and rated method 86–90; rank correlation VSE\* 0.18, WME\* 0.62, sincerity 0.95. The effect of a uniform cut, now only at the extreme end.
+- Undominated: no laziness Score, MD-MARS, Smith//Score, Baldwin-ER; 0.5 Score, Soft Minimax-40, MARS-T, MARS, MMWVxScore, ARA; 1 MARS, Score, Soft Minimax-D. Score is undominated in all three, MARS in both lazy conditions.
+
 ## Adaptive voters (2026-10-16)
 
 **Why.** In the reruns for a new base, a fixed strategic share combined badly with laziness: lazy sincere voters do not separate the front-runners, while the strategic share optimises its ballots to the limit over the rounds. This is starkest for approval and score, whose ballots leave the most room. A fixed share is a useful first approximation (cheap, and comparable with vse-sim), but realistically voters strategise when they have a reason.
@@ -29,6 +56,25 @@ How the lab developed: the experiments, what they showed and the decisions they 
 **Kept: the stake in the leading race** (docs/model.md, Partial strategy). Each round, an adaptive voter's stake is |u(A) − u(B)| for the round's two leaders, rescaled to 0–1; the voter is strategic in that round if it exceeds their personal threshold (uniform on 0–1, fixed per election), so the share strategic equals the stake. Decided every round anew, so voters can turn sincere again. Symmetric: in a close race both leaders' supporters have a stake. No new parameter beyond `--adaptive`; `--threshold` was removed. A distribution of personal thresholds with a parameter (a sigmoid around a midpoint) was considered and left out until results ask for it.
 
 **First check** (40 elections, 9 methods, otherwise defaults; indicative only): with `--strategic 0 --adaptive 1`, Score's VSE\* is 88.8 (share model 89.1, honest 91.8) and Approval's 91.9 (share model 90.3); the collapse is gone. 43–50% of the adaptive voters strategic per method.
+
+**Comparison with the share model** (Hive): defaults (noise model, 200 elections, seed 1, 3 poll rounds, aggressive share 0.5), `--strategic 0.5` against `--strategic 0 --adaptive 1` (commands of this form):
+
+```
+python run.py --out default
+python run.py --strategic 0 --adaptive 1 --out adaptive-test-0-100-0
+```
+
+- About as much strategy as the share model: 41.5–51.6% of the adaptive voters strategic per method (most under Plurality, least under Borda-ER).
+- The method order holds: rank correlation with the share model VSE\* 0.82 (noise reference 0.68), WME\* 0.89 (0.93), sincerity 0.97 (0.98). The dissatisfaction version had reordered VSE\* (0.37).
+- Methods stay closer to their honest WME: the mean shift from honest to strategic is 2.4 points under the share model and 1.4 with stakes (VSE: 1.4 under both). Above all the rated and hybrid methods, which had gained WME from the random strategic half exaggerating with little at stake: 321 +8.1 → +1.0, MCA +7.5 → +3.0, MJ +3.7 → −2.5, Score VSE −2.3 → −0.1 and WME +1.8 → +0.7.
+- Approval-based methods gain more (on average +2.9 VSE, +3.3 WME): Approval from 77.7 / 83.1 honest to 85.0 / 90.1 (share model 81.4 / 89.5), consistent with the leader rule (both leaders' supporters adjust their approvals around the leading pair; Laslier 2009). Borda keeps its WME (Borda-ER −3.1 → +0.1). Plurality gains least strongly (+8.6 VSE, share model +11.8).
+- Condorcet and minimax methods lose a little more VSE (−0.5 to −1.4 on average; BTR-Borda and ER-IRV −2.7). Push-over nearly disappears under the ranked methods (Minimax 3.4% → 0.8%): it pays mostly for voters with little at stake in the leading race, who now stay sincere.
+- Undominated: Score, MD-MARS, Baldwin-ER (share model: Soft Minimax-L, Soft Minimax-D, MARS, IC-MARS, Soft Minimax, MMPO). One seed of 200 elections: provisional.
+
+**With laziness** (Hive; as above, `--strategic 0 --adaptive 1` with `--lazy 0.5` and `--lazy 0.1`, laziness then still one cut for everyone):
+
+- At 0.5 the methods collapsed already with honest ballots: honest VSE 85–90 for almost every method (Plurality 69.2, DSC 75.2), the Condorcet methods' honest WME 100 → about 86 and their VSE 82.8 → 88.7; rank correlation with the base for honest VSE 0.24 and WME 0.25 (noise references 0.89 and 0.97). With everyone cutting at the middle of their range, every format says roughly "these candidates are acceptable", so the methods behave like approval with a cut at the midpoint. A property of the laziness model, not of the adaptive voters.
+- At 0.1 only ranked ballots changed (rated and approval results identical to no laziness, honest and strategic): the Condorcet methods' honest WME 100 → 97.2, VSE 82.8 → 84.5, strategic WME\* 98.3 (without laziness 99.0). Order close to the base: VSE\* 0.80 (0.68), WME\* 0.85 (0.94), sincerity 0.96 (0.98).
 
 ## Electorate models, and the new defaults (2026-10-14 to 2026-10-16)
 

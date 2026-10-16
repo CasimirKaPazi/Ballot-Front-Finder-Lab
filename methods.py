@@ -35,9 +35,11 @@ Sincere ballots from utilities u[v, c]:
   trunc    - rank every candidate above the voter's mean utility, leave the rest unranked
   trunc3   - rank the 3 best-liked candidates (all, with 3 or fewer), leave the rest unranked
   (trunc and trunc3 with laziness: only those of them the voter also cares about)
-Laziness (LAZY, 0..1): a voter ranks (approves, scores) a candidate only if its utility, stretched
-to 0..1 between the voter's least and most liked candidate, is at least LAZY; scores and grades of
-the others are left blank = 0. 0 = full ballots, 1 = only the favourite. Not for the Inverse-* methods.
+Laziness: a voter ranks (approves, scores) a candidate only if its utility, stretched to 0..1
+between the voter's least and most liked candidate, is at least the voter's own cut; scores and
+grades of the others are left blank = 0. Cut 0 = full ballot, 1 = only the favourite. In a run each
+voter's cut is drawn uniformly between 0 and LAZY (--lazy) per election (VOTER_LAZY, set_voter_lazy);
+without per-voter cuts, LAZY is everyone's cut. Not for the Inverse-* methods.
   grade3   - 0..2, stretched to the voter's own utility range, rounded (as score, with 3 levels)
 """
 import importlib.util
@@ -52,6 +54,7 @@ import numpy as np
 EPS = 1e-9
 MAXS = 5          # top of the score range; change it with set_max_score, not directly
 LAZY = 0.0        # laziness of honest rankings, 0..1; change it with set_lazy, not directly
+VOTER_LAZY = None # per-voter laziness cuts of the current election (set_voter_lazy), or None
 
 
 def set_lazy(x):
@@ -63,6 +66,19 @@ def set_lazy(x):
     if not 0 <= float(x) <= 1:
         raise ValueError("laziness must be between 0 and 1")
     LAZY = float(x)
+
+
+def set_voter_lazy(cuts):
+    """Per-voter laziness cuts for the current election (one per voter, 0..1), or None: everyone
+    uses LAZY. run.py draws them uniformly between 0 and --lazy. Sincere ballots of the whole
+    electorate then use each voter's own cut; call with None when the election is done."""
+    global VOTER_LAZY
+    VOTER_LAZY = None if cuts is None else np.asarray(cuts, float)
+
+
+def lazy_of(voters):
+    """The laziness cut for a group of voters (indices): their mean cut, or LAZY without per-voter cuts."""
+    return LAZY if VOTER_LAZY is None else float(VOTER_LAZY[voters].mean())
 
 
 def set_max_score(m):
@@ -1319,10 +1335,16 @@ class Method:
         Sincerity and strategy types are measured against these."""
         return -u if self.inverse else u
 
-    def sincere(self, u):
+    def sincere(self, u, lazy=None):
+        """Sincere ballots. lazy: the cut(s) to use; None = each voter's own (VOTER_LAZY, which needs
+        one row of u per voter) or LAZY."""
         b = BALLOTS[self.ballot]
+        if lazy is None:
+            lazy = LAZY if VOTER_LAZY is None else VOTER_LAZY
+            if VOTER_LAZY is not None and len(VOTER_LAZY) != u.shape[0]:
+                raise ValueError("per-voter laziness needs one row per voter; pass lazy= for other rows")
         with self.applied():
-            return b.sincere(self.pref(u), LAZY if b.lazy and not self.inverse else 0.0)   # Inverse-*: never lazy
+            return b.sincere(self.pref(u), lazy if b.lazy and not self.inverse else 0.0)   # Inverse-*: never lazy
 
     def honest(self, u):
         return self.tally(self.sincere(u))
