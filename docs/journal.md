@@ -1,4 +1,4 @@
-# Voting Pareto Lab — development journal
+# Ballot Front Finder Lab — development journal
 
 How the lab developed: the experiments, what they showed and the decisions they led to, each with the settings and commands that produced it. Newest first. The software itself (model, parameters, definitions) is described in [README.md](../README.md) and the other files in this folder. Numbers are point estimates; differences only count where the paired comparison or the noise reference says so.
 
@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-17 | Project renamed Ballot Front Finder Lab (was Voting Pareto Lab); licensed under the GNU GPL, version 3 or later | Voting Pareto Lab |
 | 2026-10-17 | `--cluster-salience` removed: `--cluster-salience-exponent 0` gives exactly the electorates of `none` (column `salience` filled in from the exponent) | `--cluster-salience none` or `cluster` |
 | 2026-10-17 | Default strategy: every voter adaptive (`--strategic 0`, `--adaptive` left out = everyone not always strategic; with `--converge` 0) | `--strategic 0.5 --adaptive 0` (half the voters always strategic) |
 | 2026-10-17 | Honest approval: a personal threshold between the voter's mean and favourite (uniform draw per voter), for Approval, Approval runoff, Approval cond. runoff, MDDA, MAMPO (and Inverse-Approval) | every candidate above the voter's mean approved (ranked for MDDA, MAMPO) |

@@ -782,7 +782,7 @@ def main():
                 tracked.append((m, fn))
 
     # report.md
-    L = ["# Voting Pareto Lab — analysis", ""]
+    L = ["# Ballot Front Finder Lab — analysis", ""]
     L += [f"Input: {', '.join(source_name(p) for p in a.csv)} (simulator version {', '.join(versions)}"
           + ("; mixed versions" if len(versions) > 1 else "") + f"; analysis version {VERSION}). "
           f"Bootstrap: {a.boot} paired replicates over elections. Brackets are 95% intervals.", ""]

@@ -1,4 +1,4 @@
-# Voting Pareto Lab
+# Ballot Front Finder Lab
 
 A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 63 in all (one of them, IDS, as an add-on; more can be added), plus three reference methods and eight test methods. A standard set of 29, the most discussed and the strongest, is what a run uses unless told otherwise. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
 
@@ -80,3 +80,7 @@ Every run or sweep writes into its own folder in `output/`, and `analyze.py` wri
 | [docs/running.md](docs/running.md) | Running: output folders and what a run writes, progress and resuming, all parameters of `run.py`, `sweep.py` and `analyze.py`, combining runs, older results files, renamed methods, the files of the code, checking changes |
 | [docs/addons.md](docs/addons.md) | Tutorial: writing your own method as an add-on |
 | [docs/journal.md](docs/journal.md) | Development journal: how the lab developed, the experiments, what they showed and the decisions they led to, with the settings and commands |
+
+## License
+
+Ballot Front Finder Lab is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but without any warranty; see [LICENSE](LICENSE) for details.

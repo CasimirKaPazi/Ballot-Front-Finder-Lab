@@ -1555,7 +1555,7 @@ def _load_addons(folder=ADDON_DIR):
     for fn in sorted(os.listdir(folder)):
         if not fn.endswith(".py") or fn.startswith("_"):
             continue
-        name = "vpl_addon_" + fn[:-3]
+        name = "bffl_addon_" + fn[:-3]
         spec = importlib.util.spec_from_file_location(name, os.path.join(folder, fn))
         mod = importlib.util.module_from_spec(spec)
         sys.modules[name] = mod                     # so worker processes and pickling find it

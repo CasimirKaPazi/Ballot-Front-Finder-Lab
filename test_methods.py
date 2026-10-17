@@ -934,11 +934,11 @@ print("approval threshold ok")
 # Add-ons (addons/*.py): each file's own test(), and the template as a check of the loader contract
 import methods as _ma, importlib.util as _iu, os as _os
 for _fn in sorted(set(_ma.ADDONS.values())):
-    _mod = __import__("sys").modules["vpl_addon_" + _fn[:-3]]
+    _mod = __import__("sys").modules["bffl_addon_" + _fn[:-3]]
     if hasattr(_mod, "test"):
         _mod.test()
     print(f"add-on {_fn} ok: {', '.join(k for k, v in _ma.ADDONS.items() if v == _fn)}")
-_spec = _iu.spec_from_file_location("vpl_template", _os.path.join(_ma.ADDON_DIR, "_template.py"))
+_spec = _iu.spec_from_file_location("bffl_template", _os.path.join(_ma.ADDON_DIR, "_template.py"))
 _tm = _iu.module_from_spec(_spec)
 _spec.loader.exec_module(_tm)
 _ma.FEATURES.update(_tm.FEATURES)
