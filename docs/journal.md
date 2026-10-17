@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-17 | Ranked pairs no longer hangs with many tied margins (11+ candidates); BTR methods and 321 use at most 720 tie orders (from 7 tied candidates) | all tie orders |
 | 2026-10-16 | Laziness per voter: each voter's cut uniform between 0 and `--lazy` | one cut (`--lazy`) for everyone |
 | 2026-10-16 | Adaptive voters (`--adaptive`): strategic per round by their stake in the leading race; the default `--adaptive 0` leaves results unchanged | — |
 | 2026-10-16 | Default electorate `noise` (strength 5, 6 dimensions, width 0.7); `clusters` defaults 20 clusters, no Zipf, fixed total variance, salience per cluster with exponent 0.5 (see Electorate models, and the new defaults) | `clusters`, 10 Zipf dimensions, 5 clusters, width 1.0 |
@@ -20,6 +21,12 @@ How the lab developed: the experiments, what they showed and the decisions they 
 | 2026-10-07 | Renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (ACR), Minimax-wv → MMWV | use the new names |
 | 2026-10-06 | Axes VSE and WME, both 0 = random ballot and 100 = best candidate ([analysis.md](analysis.md), Axes). Within a condition a fixed rescaling of each axis, so order, dominance and rank stability are unaffected | PE (0 = utility-proportional lottery) and WM (worst margin in % of voters) |
 | earlier | Plain dimensions before Zipf; CE as an axis before WM | |
+
+## Hang with 11 or more candidates fixed (2026-10-17)
+
+A sweep over 3 to 12 candidates (Hive) got stuck from 11 candidates on. The cause was an integer overflow in Ranked pairs: equal margins are locked in every order (averaged), up to 240 orders, and the number of orders was counted with `np.prod`, which overflows from 21 tied pairs and can turn negative; a negative count passed the limit, and the method then tried to list every order of 21 or more pairs. With 11 candidates there are 55 pairs, and small polls give few distinct margins, so such groups occur. Now counted with exact integers. Same kind of limit added to the tie orders of the BTR methods and 321 (`orders_by`): beyond 720 orders (from 7 tied candidates), 720 fixed random orders instead of all. Regression unchanged (at most 5 candidates there). Run time per election with all methods, one measurement: 9 candidates 50 s, 10: 70 s, 11: 130 s, 12: 180 s.
+
+The part of that sweep that finished (3 to 10 candidates, 200 elections each) was too noisy to be useful; a candidate sweep needs more elections per condition, which is affordable with fewer methods (`--methods`).
 
 ## Laziness per voter (2026-10-16)
 

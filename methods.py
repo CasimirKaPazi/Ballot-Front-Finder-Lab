@@ -43,6 +43,7 @@ without per-voter cuts, LAZY is everyone's cut. Not for the Inverse-* methods.
   grade3   - 0..2, stretched to the voter's own utility range, rounded (as score, with 3 levels)
 """
 import importlib.util
+import math
 from contextlib import contextmanager
 import os
 import sys
@@ -142,13 +143,23 @@ def uniform_max(v):
     return top / top.sum()
 
 
+TIE_MAX_ORDERS = 720
+
+
 def orders_by(values):
-    """All orderings high-to-low consistent with values (every order of tied groups)."""
+    """All orderings high-to-low consistent with values (every order of tied groups); with more than
+    TIE_MAX_ORDERS of them (from 7 candidates tied), that many fixed random ones."""
     order = np.argsort(-values, kind="stable")
     if np.all(np.diff(values[order]) < -1e-8):   # no ties: exactly one order
         return [list(order)]
     vals = np.unique(np.round(values, 9))[::-1]
     groups = [list(np.flatnonzero(np.abs(values - x) < 1e-8)) for x in vals]
+    n = 1
+    for g in groups:
+        n *= math.factorial(len(g))
+        if n > TIE_MAX_ORDERS:
+            r = np.random.default_rng(0)
+            return [[g[i] for g in groups for i in r.permutation(len(g))] for _ in range(TIE_MAX_ORDERS)]
     return [[c for p in parts for c in p] for parts in product(*[permutations(g) for g in groups])]
 
 
@@ -762,8 +773,10 @@ def d_ranked_pairs(s):
     vals = sorted({M[a, b] for a, b in pairs}, reverse=True)
     groups = [[p for p in pairs if M[p] == v] for v in vals]
     n_orders = 1
-    for g in groups:
-        n_orders *= int(np.prod(range(1, len(g) + 1)))
+    for g in groups:                                   # exact integers: np.prod overflowed from 21 tied pairs
+        n_orders *= math.factorial(len(g))
+        if n_orders > RP_MAX_ORDERS:
+            break
     if n_orders <= RP_MAX_ORDERS:
         orders = [[p for part in parts for p in part] for parts in product(*[permutations(g) for g in groups])]
     else:
