@@ -31,6 +31,11 @@ check("BTR-Borda", METHODS["BTR-Borda"].honest(u), [0, 1, 0, 0])
 check("Minimax", METHODS["Minimax"].honest(u), [0, 1, 0, 0])
 check("Baldwin (K out, B out, G beats R)", METHODS["Baldwin"].honest(u), [0, 1, 0, 0])
 check("MJ (R and G median 3, R wins on removal)", METHODS["MJ"].honest(u), [1, 0, 0, 0])
+# MAV: grades R 5,5,5,5,1,1,1,3,3; G 3x4, 3x3, 5x2. First majority at grade 3 (R 6, G 9 of 9);
+# of those, the most votes at grade 4 or more: R 4, G 2 (Bucklin would elect G, the larger majority)
+check("MAV (majorities at grade 3: R has more votes above)", METHODS["MAV"].honest(u), [1, 0, 0, 0])
+check("MAV (a majority at the top grade: the largest wins)",
+      METHODS["MAV"].honest(profile([(3, [1.0, 0.0, 0.5]), (2, [0.0, 1.0, 0.5])])), [1, 0, 0])
 check("ARA-Top", METHODS["ARA-Top"].honest(u), [1, 0, 0, 0])
 
 # More methods on the same 4-3-2 profile (G is the Condorcet winner)
@@ -870,6 +875,10 @@ with _tf.TemporaryDirectory() as _d:
         _w.writerows(_old_rows)
     assert {r["method"] for r in _an.load([_p])} == {"TTR"}
     assert _an.RENAMED_SEEN == {"Top-two runoff": "TTR"}
+# the standard set: existing methods, the default selection, overlapping the groups
+from methods import COMPARISONS as _CMP, run_selection as _rs
+assert all(m in METHODS for m in _CMP["standard"]) and _rs() == [m for m in METHODS if m in _CMP["standard"]]
+assert _rs(exclude=["Plurality"]) == [m for m in _rs() if m != "Plurality"] and "Kemeny-Young" in _rs(["Kemeny-Young"])
 print("renamed methods ok")
 
 # Add-ons (addons/*.py): each file's own test(), and the template as a check of the loader contract

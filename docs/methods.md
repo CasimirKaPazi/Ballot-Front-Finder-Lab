@@ -73,6 +73,7 @@ The voting methods, their groups and how to add your own. How each ballot type i
 |---|---|---|
 | Score | 0–5 | highest total; sincere: stretched to the voter's range |
 | MJ | 0–5 | majority judgment: highest median grade; ties broken by repeatedly removing the median |
+| MAV | 0–5 | Majority Approval Voting (graded Bucklin; [electowiki](https://electowiki.miraheze.org/wiki/Majority_Approval_Voting)): grades are counted from the top down; at the first grade where some candidate is graded that high or higher by a majority, the candidate with a majority and the most votes at the grade above wins (at the top grade: the largest majority). Unlike Bucklin, a larger majority at the lower grade does not decide; vse-sim uses five grades and a fractional median score instead |
 | MCA | three grades | majority choice approval, MCA-A variant: the first grade level (good, then good or OK, then all) at which some candidate is rated that high by more than half the voters decides; one such candidate wins, among several the most approved (good or OK) |
 | Reciprocal score | 0–5 | interpretation of [electowiki](https://electowiki.org/wiki/Reciprocal_Score_Voting): a voter's faction is their top-rated candidate(s). R(X→Y) is the mean rating supporters of X give Y, as a share of the top score. A score for c is multiplied by min(1, R(c→F)/R(F→c)), F the voter's faction: support that c's supporters do not return is cut. Scores for the voter's own top and for candidates nobody top-rates stay unchanged; highest total wins |
 | INS | 0–5 | iterated normalized score, a score elimination: each round every ballot is stretched to the full range over the remaining candidates (lowest 0, highest the top score; a ballot rating them all the same counts for none), the lowest total is eliminated (ties for last split the win), until one is left |
@@ -155,14 +156,17 @@ The ballot type (one of the built-in ones in ballots.py) decides the sincere bal
 | `condorcet-based` | Black, Baldwin, Baldwin-ER, Nanson, BTR-Borda, BTR-IRV, Benham, Smith//Score (Condorcet methods built on a Borda, IRV or score count) |
 | `plurality-based` | Plurality, TTR, Supplementary vote, IRV, ER-IRV, IRV-3, Coombs, DSC, DAC (first choices, eliminations and coalitions of top preferences; Coombs eliminates by last places) |
 | `approval-based` | Approval, Approval runoff, Approval cond. runoff, MDDA, MAMPO |
-| `rated` | Score, MJ, MCA, Reciprocal score, INS, Geometric median (add-ons can join groups, see Add-ons) |
+| `rated` | Score, MJ, MAV, MCA, Reciprocal score, INS, Geometric median (add-ons can join groups, see Add-ons) |
 | `hybrid` | STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D (ratings combined with pairwise comparisons or runoffs) |
 | `positional` | Borda, Borda-ER, Dowdall |
 | `references` | Random pair runoff, Anti-plurality, TRASH (benchmarks, not proposals; not run unless named, e.g. `--methods all` or `--methods references STAR`, and hidden in the plots by default) |
 | `inverse` | Inverse-Plurality, Inverse-Approval, Inverse-Minimax, Inverse-IRV, Inverse-ER-IRV, Inverse-TTR, Inverse-Borda, Inverse-Score (tests of the strategy model, below; not run unless named; hidden in the plots by default) |
 
-**Comparison sets**, selection names across groups (not plot panels): `er-pairs`, each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Ranked Robin-SR/Ranked Robin. Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.
+**Sets**, selection names across groups (not plot panels):
 
-Example: `--methods condorcet STAR`, `--methods er-pairs`, `--methods all --exclude inverse`. Without `--methods`, run.py and sweep.py run every method except the groups references and inverse (benchmarks and model tests); the inverse group, too, is only run when named.
+- `standard`, the default selection: the methods most discussed, those of Quinn's vse-sim (Plurality, IRV, Borda, Approval, Score, STAR, MJ, MAV, 321, Ranked pairs, Schulze) the common single-winner proposals and methods in use (TTR, Supplementary vote, ER-IRV, IRV-3, Approval runoff, Approval cond. runoff, Copeland, Kemeny-Young, Ranked Robin, Minimax, MMWV, MMPO, BTR-IRV), with the strongest found here (MARS, ARA, BTR-score, Smith//Score, Soft Minimax-D): 29 methods. Geometric median and Condorcet-random-drop are left out: idealised reference cases rather than practical methods.
+- `er-pairs`, each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Ranked Robin-SR/Ranked Robin. Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.
+
+Example: `--methods condorcet STAR`, `--methods er-pairs`, `--methods all --exclude inverse`. Without `--methods`, run.py and sweep.py run the `standard` set; `--exclude` then takes methods out of it. Every other method, group, add-on, or `all` can be named in `--methods`.
 
 Pairwise preferences always come from the ballot itself, so equal ratings count as no preference. All ties are broken uniformly among the tied candidates and counted exactly.

@@ -555,6 +555,23 @@ def d_mj(s):
     return top / top.sum()
 
 
+def d_mav(s):
+    """Majority Approval Voting (graded Bucklin) on 0..MAXS grades: votes are counted grade by grade
+    from the top. At the first grade where some candidate is graded at least that high by a majority,
+    the candidate with a majority and the most votes at the grade above wins (at the top grade: the
+    largest majority); remaining ties by the votes at this grade, then shared."""
+    h = _common_total(s["grades"])                        # h[c, g]: voters giving c grade g
+    n = h[0].sum()
+    at_least = np.cumsum(h[:, ::-1], axis=1)[:, ::-1]     # at_least[c, g]: voters giving c grade g or more
+    top = h.shape[1] - 1
+    for g in range(top, -1, -1):
+        maj = at_least[:, g] > n / 2
+        if maj.any():
+            above = at_least[:, g + 1] if g < top else at_least[:, g]
+            return uniform_max(np.where(maj, above * (n + 1) + at_least[:, g], -1.0))
+    return uniform_max(at_least[:, 0].astype(float))
+
+
 def d_minimax(s):
     """Winner has the smallest worst pairwise defeat (by margin)."""
     worst = np.clip(margins_of(s), 0, None).max(axis=0)   # largest margin by which anyone beats c
@@ -1409,6 +1426,7 @@ METHODS = {
     # rated
     "Score": M_("score", d_sum, ("sum",)),
     "MJ": M_("score", d_mj, ("grades",)),
+    "MAV": M_("score", d_mav, ("grades",)),
     "MCA": M_("grade3", d_mca, ("n", "ge2", "ge1")),
     "Reciprocal score": M_("score", d_reciprocal_score, ("fset", "fsetB")),
     "INS": M_("score", d_iterated_normalized_score, ("nscore_sub",)),
@@ -1463,7 +1481,7 @@ GROUPS = {
     "condorcet-based": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
     "plurality-based": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs", "DSC", "DAC"],
     "approval-based": ["Approval", "Approval runoff", "Approval cond. runoff", "MDDA", "MAMPO"],
-    "rated": ["Score", "MJ", "MCA", "Reciprocal score", "INS", "Geometric median"],
+    "rated": ["Score", "MJ", "MAV", "MCA", "Reciprocal score", "INS", "Geometric median"],
     "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "MARS-T", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore", "STLR", "Soft Minimax",
                "Soft Minimax-40", "Soft Minimax-L", "Soft Minimax-D"],
     "positional": ["Borda", "Borda-ER", "Dowdall"],
@@ -1556,6 +1574,12 @@ assert not set(RENAMED_GROUPS) & set(GROUPS), "an old group name (RENAMED_GROUPS
 
 # Comparison sets: selection names like the groups, across groups (not plot panels)
 COMPARISONS = {
+    # the default selection of run.py and sweep.py: the methods most discussed (those of Quinn's vse-sim
+    # and the common single-winner proposals) and the strongest found here; overlaps the groups
+    "standard": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Borda", "Approval",
+                 "Approval runoff", "Approval cond. runoff", "Score", "MJ", "MAV", "STAR", "321", "MARS", "ARA",
+                 "BTR-score", "Smith//Score", "BTR-IRV", "Soft Minimax-D", "Ranked pairs", "Schulze", "Kemeny-Young",
+                 "Copeland", "Ranked Robin", "Minimax", "MMWV", "MMPO"],
     "er-pairs": ["IRV", "ER-IRV", "Borda", "Borda-ER", "Baldwin", "Baldwin-ER", "Minimax",
                  "Minimax-ER", "MMWV", "Schulze", "Schulze-ER", "Ranked Robin-SR", "Ranked Robin"],
 }
@@ -1575,7 +1599,6 @@ def group_of(method):
     return next((g for g, ms in GROUPS.items() if method in ms), "other")
 
 
-DEFAULT_LEFT_OUT = ("references", "inverse")   # groups run.py and sweep.py leave out unless asked for
 
 
 def select(include=None, exclude=None):
@@ -1601,9 +1624,9 @@ def select(include=None, exclude=None):
 
 
 def run_selection(include=None, exclude=None):
-    """The methods a run uses: as select, but without --methods the default is every method except
-    the groups in DEFAULT_LEFT_OUT (references, inverse: benchmarks and model tests, not proposals).
-    Name them, or "all", in --methods to run them."""
+    """The methods a run uses: as select, but without --methods the default is the "standard" set
+    (COMPARISONS): the most discussed and the strongest methods. Name others, groups or "all" in
+    --methods to run them (add-ons too); --exclude then takes methods out of that."""
     if not include:
-        exclude = list(exclude or []) + list(DEFAULT_LEFT_OUT)
+        include = ["standard"]
     return select(include, exclude)

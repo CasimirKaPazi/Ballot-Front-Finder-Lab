@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-17 | Default selection: the standard set (29 methods); new method MAV | every method except references and inverse |
 | 2026-10-17 | Ranked pairs no longer hangs with many tied margins (11+ candidates); BTR methods and 321 use at most 720 tie orders (from 7 tied candidates) | all tie orders |
 | 2026-10-16 | Laziness per voter: each voter's cut uniform between 0 and `--lazy` | one cut (`--lazy`) for everyone |
 | 2026-10-16 | Adaptive voters (`--adaptive`): strategic per round by their stake in the leading race; the default `--adaptive 0` leaves results unchanged | — |
@@ -21,6 +22,12 @@ How the lab developed: the experiments, what they showed and the decisions they 
 | 2026-10-07 | Renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (ACR), Minimax-wv → MMWV | use the new names |
 | 2026-10-06 | Axes VSE and WME, both 0 = random ballot and 100 = best candidate ([analysis.md](analysis.md), Axes). Within a condition a fixed rescaling of each axis, so order, dominance and rank stability are unaffected | PE (0 = utility-proportional lottery) and WM (worst margin in % of voters) |
 | earlier | Plain dimensions before Zipf; CE as an axis before WM | |
+
+## Standard set and MAV (2026-10-17)
+
+**Standard set** (docs/methods.md, Groups): a selection across the groups, now the default of run.py and sweep.py, so a standard run concentrates on the methods that matter most and the others stay available by name (`--methods all` for every one). Chosen by Hive: the methods in Quinn's vse-sim (Plurality, IRV, Borda, Approval, Score, STAR, MJ, MAV, 321, Ranked pairs, Schulze), common proposals (TTR, ER-IRV, IRV-3, Approval runoff, Approval cond. runoff, Ranked Robin, Minimax, MMWV, MMPO) and the strongest found here (MARS, ARA, BTR-score, Smith//Score, Soft Minimax-D; of the Soft Minimax variants the one undominated most often in the recent runs), plus Copeland (the simplest Condorcet method), Kemeny-Young (the textbook reference), Supplementary vote (in real use) and BTR-IRV (an IRV–Condorcet hybrid): 29 methods. Geometric median and Condorcet-random-drop are left out as idealised reference cases rather than practical methods. Default runs before this change ran every method except the references and the inverse methods.
+
+**MAV**, Majority Approval Voting (graded Bucklin), new in the group rated, on score ballots (0..`--max-score`): counted grade by grade from the top; at the first grade where some candidate has a majority, the one with a majority and the most votes at the grade above wins. Rules from electowiki; vse-sim's version uses five grades and a fractional median score instead (its `candScore`), which is close but not identical.
 
 ## Hang with 11 or more candidates fixed (2026-10-17)
 
