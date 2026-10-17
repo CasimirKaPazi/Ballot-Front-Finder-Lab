@@ -5,7 +5,7 @@
 
 A refactor (moving code, renaming internals, splitting files) should not change a single number.
 This script runs a few tiny conditions (a few elections each, every method including the
-references, the Inverse-* methods and the add-ons) with fixed seeds, and compares every column
+references, the Inverse-* methods and the add-ons, with the manipulation test) with fixed seeds, and compares every column
 of every row with the stored reference, regression.csv. It takes about a minute.
 
     all equal                  nothing changed: the refactor kept the results
@@ -65,7 +65,8 @@ def simulate_all(workers=None):
     rows = []
     for label, change in CONDITIONS:
         p = {**BASE, **change}
-        rows += [{"condition": label, **r} for r in run.simulate(p, ELECTIONS, workers, names, label=f"{label}: ")]
+        rows += [{"condition": label, **r} for r in run.simulate(p, ELECTIONS, workers, names, label=f"{label}: ",
+                                                                  manipulation=True)]
     return rows
 
 

@@ -320,6 +320,17 @@ respond(METHODS["Plurality"], _ui, np.random.default_rng(3), rounds=1, strategic
 assert abs(_act[1] - 19 / 25) < 1e-12, _act        # the last six are indifferent between the leaders
 print("adaptive voters ok")
 
+# Manipulation test: 4 A>B>C, 3 B>C>A, 2 C>B>A. Plurality elects A; the 5 voters preferring B (or C) to A
+# win by voting for it, and A's 4 supporters cannot stop that. Minimax elects the Condorcet winner B: A's
+# supporters burying B make C the Condorcet winner (worse for them), C's supporters cannot move B
+from manipulation import manipulation
+_um = profile([(4, [1.0, 0.5, 0.0]), (3, [0.0, 1.0, 0.5]), (2, [0.0, 0.5, 1.0])])
+_r = manipulation(METHODS["Plurality"], METHODS["Plurality"].sincere(_um), _um, _um, lambda P: P)
+assert _r["manip1"] == 1 and _r["manip2"] == 1 and _r["U_manip1"] < _um.sum(axis=0)[0] + 1e-9, _r
+_r = manipulation(METHODS["Minimax"], METHODS["Minimax"].sincere(_um), _um, _um, lambda P: P)
+assert _r["manip1"] == 0 and _r["manip2"] == 0 and abs(_r["U_manip1"] - _um.sum(axis=0)[1]) < 1e-9, _r
+print("manipulation ok")
+
 # Equal-ranking variants equal their strict versions on sincere (strict) ballots
 r = np.random.default_rng(11)
 pairs = [("Borda", "Borda-ER"), ("Baldwin", "Baldwin-ER"), ("Minimax", "Minimax-ER"),

@@ -61,11 +61,12 @@ from methods import GROUPS, METHODS, select, group_of, sincerity_defined, curren
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
 FRONT = ["VSE*", "WME*", "sincerity"]   # the axes dominance is judged on
-EXTRA = ["CE", "CE*"]           # reported, not used for dominance
+EXTRA = ["CE", "CE*", "Low", "Low*"]   # reported, not used for dominance (Low: winner below the median candidate)
 TYPES = ["compromise", "burial", "pushover"]
 PARAMS = [k for k in RUN_PARAMS if k != "seed"]      # condition parameters, as run.py writes them
 NOM = ["nom_changed", "nom_exits", "nom_clones", "nom_settled"]     # per method and election (sincere rows)
 PART = ["noshow", "noshow_voters", "noshow_gain"]   # participation check (run.py --participation), both ballot sets
+MANIP = ["manip1", "manip2", "um1", "um2"]          # manipulation test (run.py --manipulation), sincere rows; um = U_manip - U_rb
 def input_paths(p):
     """The elections CSVs of one input: a run folder (its elections.csv), a sweep folder (every CSV in
     its runs/ folder, one per run; also an older sweep's elections.csv), or a CSV file. A bare name
@@ -122,6 +123,10 @@ ADDED_COLUMNS = {
     "lazy": ("0.0", "2026-10-13, laziness: older runs had full ballots"),
     "fidelity": (None, "2026-10-12, fidelity, with the current sincerity measure"),
     "bcw": (None, "2026-10-12, Condorcet winner in the ballots"),
+    "manip1": (None, "2026-10-17, manipulation test (run.py --manipulation)"),
+    "manip2": (None, "2026-10-17, manipulation test (run.py --manipulation)"),
+    "U_manip1": (None, "2026-10-17, manipulation test (run.py --manipulation)"),
+    "U_manip2": (None, "2026-10-17, manipulation test (run.py --manipulation)"),
     "p_bcw": (None, "2026-10-12, Condorcet winner in the ballots"),
 }
 REQUIRED_COLUMNS = ["WM_best", "U_rb", "sincerity", "U_cands", "nom_changed", "noshow"]
@@ -261,9 +266,10 @@ def arrays(rows):
     mi = {m: j for j, m in enumerate(methods)}
     E, M = len(eids), len(methods)
     A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "wm_s", "wm_l", "sin"] + TYPES + NOM}
-    A.update({k: np.full((E, M), np.nan) for k in ["fid_s", "fid_l", "pbcw_s", "pbcw_l", "adapted"]})   # absent in older CSVs
+    A.update({k: np.full((E, M), np.nan) for k in ["fid_s", "fid_l", "pbcw_s", "pbcw_l", "adapted", "us", "ul"]})   # absent in older CSVs
     A.update({k: np.full((E, M), "", dtype=object) for k in ["bcw_s", "bcw_l"]})    # ballot Condorcet winner
     A.update({k + sfx: np.full((E, M), np.nan) for k in PART for sfx in ("_s", "_l")})
+    A.update({k: np.full((E, M), np.nan) for k in MANIP})
     den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
     dwm = np.zeros(E)          # per election: WM_best - WM_rb (WME denominator)
     has = np.zeros(E)
@@ -276,6 +282,7 @@ def arrays(rows):
         pcw = float(r["p_cw"]) if r["has_cw"] == "1" else 0.0
         if r["ballots"] == "sincere":
             A["num_s"][i, j], A["cw_s"][i, j], A["wm_s"][i, j] = num, pcw, nwm
+            A["us"][i, j] = float(r["U_method"])
             for k in NOM:
                 A[k][i, j] = float(r[k])
             A["bcw_s"][i, j], A["pbcw_s"][i, j] = r.get("bcw", ""), float(r.get("p_bcw") or "nan")
@@ -283,6 +290,10 @@ def arrays(rows):
                 A["fid_s"][i, j] = float(r.get("fidelity") or "nan")
             for k in PART:
                 A[k + "_s"][i, j] = float(r[k])               # nan: participation not checked
+            if r.get("manip1"):                               # blank: manipulation not tested
+                A["manip1"][i, j], A["manip2"][i, j] = float(r["manip1"]), float(r["manip2"])
+                A["um1"][i, j] = float(r["U_manip1"]) - float(r["U_rb"])
+                A["um2"][i, j] = float(r["U_manip2"]) - float(r["U_rb"])
             den[i] = float(r["U_best"]) - float(r["U_rb"])
             dwm[i] = float(r["WM_best"]) - float(r["WM_rb"])
             has[i] = float(r["has_cw"])
@@ -292,6 +303,7 @@ def arrays(rows):
                 cands[i] = (np.array(r["U_cands"].split(";"), float), np.array(r["WM_cands"].split(";"), float))
         else:
             A["num_l"][i, j], A["cw_l"][i, j], A["wm_l"][i, j] = num, pcw, nwm
+            A["ul"][i, j] = float(r["U_method"])
             A["bcw_l"][i, j], A["pbcw_l"][i, j] = r.get("bcw", ""), float(r.get("p_bcw") or "nan")
             if sincerity_defined(r["method"]):
                 A["sin"][i, j] = float(r["sincerity"] or "nan")
@@ -303,6 +315,11 @@ def arrays(rows):
             A["adapted"][i, j] = float(r.get("adapted") or "nan")   # blank without adaptive voters
             for k in PART:
                 A[k + "_l"][i, j] = float(r[k])
+    # tails: the winner (expected utility of the winner lottery) below the median candidate's total utility;
+    # nan where the CSV has no candidate utilities (runs from before the frontier columns)
+    med = np.array([np.median(c[0]) if c is not None else np.nan for c in cands])
+    for k, src in (("low_s", "us"), ("low_l", "ul")):
+        A[k] = np.where(np.isnan(med)[:, None], np.nan, (A[src] < med[:, None] - 1e-9 * np.abs(med)[:, None]).astype(float))
     return methods, A, (den, dwm), has, ele, cands
 
 
@@ -317,6 +334,8 @@ def axis_values(W, A, dens, has):
         "WME*": (W @ A["wm_l"]) / dw[:, None],
         "CE": (W @ A["cw_s"]) / np.where(h > 0, h, np.nan)[:, None],     # no Condorcet winner drawn: undefined
         "CE*": (W @ A["cw_l"]) / np.where(h > 0, h, np.nan)[:, None],
+        **{x: (W @ np.nan_to_num(A[k])) / np.where(W @ ~np.isnan(A[k]) > 0, W @ ~np.isnan(A[k]), np.nan)
+           for x, k in (("Low", "low_s"), ("Low*", "low_l"))},
         "sincerity": (W @ A["sin"]) / W.sum(axis=1)[:, None],
         "fidelity": (W @ A["fid_l"]) / W.sum(axis=1)[:, None],
         "fidelity_honest": (W @ A["fid_s"]) / W.sum(axis=1)[:, None],
@@ -465,6 +484,7 @@ def analyse_condition(rows, boot, rng):
            "nomination": {k: A[k].mean(axis=0) for k in NOM},
            "adapted": nanmean0(A["adapted"]),
            "participation": participation_summary(A, W),
+           "manipulation": manipulation_summary(A, W, dens[0]),
            "ballot_cw": ballot_cw_summary(A, has),
            # Pareto front on point estimates; undefined sincerity (TRASH, Inverse-*) counts as worst
            "pareto": set(pareto(np.nan_to_num(np.stack([point[a][0] for a in FRONT], axis=1), nan=-np.inf)))}
@@ -497,6 +517,30 @@ def ballot_cw_summary(A, has):
             p = A["pbcw" + sfx][:, j]
             d["ce_ballots" + sfx] = float(np.nanmean(p)) if (~np.isnan(p)).any() else float("nan")
         out[j] = d
+    return out
+
+
+def manipulation_summary(A, W, den):
+    """Per method: share of elections in which a coalition can manipulate one-sided (manip1) and still
+    against the defence (manip2), with bootstrap 95% intervals, and the VSE of the recorded outcomes
+    (ratio of sums, as VSE). None when the condition was run without --manipulation; methods without
+    values (from a run without it) are nan."""
+    if np.isnan(A["manip1"]).all():
+        return None
+    out = {}
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        for k in ("manip1", "manip2"):
+            x = A[k]
+            out[k] = np.nanmean(x, axis=0)
+            bs = (W @ np.nan_to_num(x)) / W.sum(axis=1)[:, None]
+            out[k + "_lo"], out[k + "_hi"] = np.percentile(bs, [2.5, 97.5], axis=0)
+        for k, v in (("um1", "vse1"), ("um2", "vse2")):
+            x = A[k]
+            has = ~np.isnan(x)
+            out[v] = np.where(has.any(axis=0), np.nansum(x, axis=0) / np.maximum((den[:, None] * has).sum(axis=0), 1e-12), np.nan)
+            bs = (W @ np.nan_to_num(x)) / np.maximum(W @ (den[:, None] * has), 1e-12)
+            out[v + "_lo"], out[v + "_hi"] = np.percentile(bs, [2.5, 97.5], axis=0)
     return out
 
 
@@ -619,7 +663,7 @@ def nanmean0(X):
         warnings.simplefilter("ignore", RuntimeWarning)
         return np.nanmean(X, axis=0)
 
-MD_STARRED = re.compile(r"(?<![\\\w])(VSE|WME|CE|Inverse-)\*(?!\*)")
+MD_STARRED = re.compile(r"(?<![\\\w])(VSE|WME|CE|Low|Inverse-)\*(?!\*)")
 
 
 def md_stars(text):
@@ -787,7 +831,10 @@ def main():
           "election (values above 100 cannot be reached). VSE measures total utility; WME the winner's worst "
           "head-to-head margin by sincere preferences (a refined Condorcet measure; every election counts; Minimax "
           "reaches 100 with honest ballots by construction). CE (Condorcet efficiency, elections with a Condorcet "
-          "winner only, elected or not) is shown for comparison and not used for dominance."]
+          "winner only, elected or not) is shown for comparison and not used for dominance. **Low** and **Low\\***: "
+          "the share of elections whose winner (the expected total utility of the winner lottery) lies below the "
+          "median candidate's total utility, with honest and with learned ballots: how often a method elects a "
+          "poor candidate, which the averages of VSE hide. Not used for dominance."]
     if a.errorbars:
         L += ["- **Error bars** in the arrow plots are 95% intervals relative to the average of the methods shown: "
               "the variation all methods share (some elections are harder for everyone) is removed, so clearly "
@@ -872,9 +919,9 @@ def main():
               "these axes and clearly worse on none): "
               + ", ".join(r["methods"][j] for j in np.argsort(-r["VSE*"], kind="stable") if not r["dominated_by"][j])
               + ".", "",
-              "| Method | Group | VSE* | WME* | Sincerity | Fidelity | (honest) | VSE | WME | CE | CE* | Compromise | Burial "
-              "| Push-over | Dominated by |",
-              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+              "| Method | Group | VSE* | WME* | Sincerity | Fidelity | (honest) | VSE | WME | CE | CE* | Low | Low* "
+              "| Compromise | Burial | Push-over | Dominated by |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for j in np.argsort(-r["VSE*"], kind="stable"):
             L.append(f"| {r['methods'][j]} | {group_of(r['methods'][j])} | "
                      + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in ["VSE*", "WME*", "sincerity"])
@@ -923,6 +970,22 @@ def main():
                          f"| {fp(pt['noshow_l'][j], pt['noshow_l_lo'][j], pt['noshow_l_hi'][j])} "
                          f"| {g(pt['noshow_voters_l'][j])} | {g(pt['noshow_gain_l'][j])} |")
             L += [""]
+        mp = r["manipulation"]
+        if mp is not None:
+            L += ["**Manipulation** (from honest ballots, see manipulation.py; after John Huang's votesim): for each "
+                  "candidate X other than the honest winner T, the voters who prefer X to T try the naive "
+                  "exaggerations of their ballot type for X against T, everyone else votes sincerely. One-sided: the "
+                  "share of elections in which some such coalition gains, and the VSE when the worst successful "
+                  "manipulation for the electorate is recorded (the honest result where none succeeds). Two-sided: "
+                  "T's supporters answer with whichever exaggeration for T counters it best; the share in which a coalition still "
+                  "gains, and the VSE recorded the same way. Compare VSE in the main table (honest).", "",
+                  "| Method | Manipulable (one-sided) | VSE (one-sided) | Manipulable (two-sided) | VSE (two-sided) |",
+                  "|---|---|---|---|---|"]
+            fp = lambda k, j: "—" if np.isnan(mp[k][j]) else fmt(mp[k][j], mp[k + "_lo"][j], mp[k + "_hi"][j]) + "%"
+            fv = lambda k, j: "—" if np.isnan(mp[k][j]) else fmt(mp[k][j], mp[k + "_lo"][j], mp[k + "_hi"][j])
+            for j in np.argsort(-np.nan_to_num(mp["vse1"], nan=-9), kind="stable"):
+                L.append(f"| {r['methods'][j]} | {fp('manip1', j)} | {fv('vse1', j)} | {fp('manip2', j)} | {fv('vse2', j)} |")
+            L += [""]
         bc = r["ballot_cw"]
         if any(bc[j] for j in bc):
             n_real, n_none = r["with_cw"], r["elections"] - r["with_cw"]
@@ -956,7 +1019,7 @@ def main():
                   f"![trade-off](tradeoff-{r['tag']}.png)", ""]
         if a.compare:
             L += ["Paired differences (first minus second), percentage points:", "",
-                  "| Pair | " + " | ".join(AXES + EXTRA + ["sincerity"]) + " |", "|---|" + "---|" * 7]
+                  "| Pair | " + " | ".join(AXES + EXTRA + ["sincerity"]) + " |", "|---|" + "---|" * len(AXES + EXTRA + ["sincerity"])]
             for pair in a.compare:
                 m1, m2 = pair.split(":")
                 if m1 not in r["methods"] or m2 not in r["methods"]:

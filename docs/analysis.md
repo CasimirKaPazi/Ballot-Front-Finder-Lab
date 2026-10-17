@@ -28,6 +28,8 @@ A method's distance to the curve is what it loses to having only ballots, not ut
 
 **Condorcet efficiency (CE)**, reported alongside but not an axis: among elections with a Condorcet winner by sincere utilities, the probability the method elects it. It ignores elections without a Condorcet winner and does not distinguish narrow from clear ones.
 
+**Low** (and Low\* with learned ballots), reported alongside but not an axis: the share of elections whose winner lies below the median candidate by total utility (for a lottery, its expected total utility below the median of the candidates' totals). VSE and WME are averages over elections, ratios of sums, so a method that is usually excellent and sometimes disastrous can match one that is always good; Low shows how often a method elects a poor candidate. After John Huang's votesim, which reports the worst 5% of elections; a share of poor outcomes is used instead because one election's VSE is unstable (its denominator can be small). Computed from the candidates' totals stored in every row (U_cands), so older runs with that column get it too.
+
 VSE, WME and CE use sincere ballots; VSE\*, WME\* and CE\* (in the CSV: VSE_learned, WME_learned, CE_learned) the strategic ballots ("learned": after the poll rounds, or after convergent learning). In all cases the preferences that count are the sincere ones.
 
 **Strategy types** (`strategy.strategy_types`), among voters whose learned ballot reverses at least one real preference:
@@ -74,9 +76,10 @@ The exaggerated score ballot and the approval ballot say the same and get the sa
 
 | Output | Meaning |
 |---|---|
-| VSE, WME, VSE\*, WME\*, CE, CE\*, sincerity | point estimate and 95% interval of each value on its own |
+| VSE, WME, VSE\*, WME\*, CE, CE\*, Low, Low\*, sincerity | point estimate and 95% interval of each value on its own |
 | dominated by | methods clearly better on at least one of the three front axes (VSE\*, WME\*, sincerity) and clearly worse on none, each with the axes on which it is better; the report shows at most three, the CSV all. Clearly: the paired 95% interval of the difference excludes 0, smaller differences count as ties. Without this, methods level on one axis would be kept apart by noise-sized differences. Sincerity is measured very precisely, so at equal VSE\* and WME\* the more honest method dominates |
 | adaptive voters (with `--adaptive`) | share of the adaptive voters who turned strategic, per method |
+| manipulation (with `--manipulation`) | share of elections in which a coalition can manipulate from honest ballots, one- and two-sided, and the VSE of the worst successful manipulations ([model.md](model.md), Manipulation test) |
 | paired differences (`--compare "A:B"`) | difference A − B per axis with a 95% interval; marked as a tie when the interval includes 0 |
 
 **How to interpret:**

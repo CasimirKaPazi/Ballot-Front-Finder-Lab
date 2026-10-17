@@ -38,10 +38,10 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 - Poll rounds: voters see only the method's own poll counts, with realistic poll error, and answer them all at once; groups with the same preferences act as blocs. Aggressive voters exaggerate whenever it cannot hurt, kind ones only for a clear gain.
 - Who strategises: a fixed share of strategic voters, or adaptive voters who strategise in a round when the race between the two leaders matters enough to them, so attack and defence come from the same rule.
 - Laziness: truncated rankings and fewer approvals or scores, each voter with their own cut.
-- Also: convergent learning as a long-run alternative, strategic nomination (candidates withdraw or field clones), a first poll from a previous election (does a method let the electorate leave a strategic state?), and a check of the no-show paradox.
+- Also: convergent learning as a long-run alternative, strategic nomination (candidates withdraw or field clones), a first poll from a previous election (does a method let the electorate leave a strategic state?), a check of the no-show paradox, and a manipulation test (how often and how badly an informed coalition can manipulate from honest ballots, one- and two-sided).
 
 **Measures** ([analysis](docs/analysis.md))
-- VSE and WME with the same reference points (random ballot and best candidate), with honest and with strategic ballots, plus Condorcet efficiency.
+- VSE and WME with the same reference points (random ballot and best candidate), with honest and with strategic ballots, plus Condorcet efficiency and how often the winner is a poor candidate (below the median candidate), which averages hide.
 - The reachable frontier and region: what any rule could reach knowing every voter's utilities.
 - Sincerity (how far strategic ballots go against the voters' own preferences, scaled per ballot format) and fidelity (how much of their preferences the ballots convey), the kinds of strategy used (compromise, burial, push-over), and the Condorcet winner as cast ballots would show it.
 
@@ -73,7 +73,7 @@ Every run or sweep writes into its own folder in `output/`, and `analyze.py` wri
 
 | File | Contents |
 |---|---|
-| [docs/model.md](docs/model.md) | The model: electorates and their defaults, ballots and sincere voting (with laziness and the score range), the strategy engine (poll rounds, partial strategy and adaptive voters, convergent learning), starting information, strategic nomination, participation |
+| [docs/model.md](docs/model.md) | The model: electorates and their defaults, ballots and sincere voting (with laziness and the score range), the strategy engine (poll rounds, partial strategy and adaptive voters, convergent learning), starting information, strategic nomination, participation, manipulation test |
 | [docs/methods.md](docs/methods.md) | Groups and sets, every method's rule, add-ons |
 | [docs/analysis.md](docs/analysis.md) | Measures and analysis: the axes (VSE, WME, CE), the reachable frontier, strategy types, sincerity and fidelity, the front, the report and its plots, robustness and rank stability |
 | [docs/running.md](docs/running.md) | Running: output folders and what a run writes, progress and resuming, all parameters of `run.py`, `sweep.py` and `analyze.py`, combining runs, older results files, renamed methods, the files of the code, checking changes |

@@ -255,3 +255,17 @@ Cost: each candidate move is checked with one sincere tally on the changed field
 - Score, Approval and Borda satisfy participation with sincere ballots, so they fail only with learned ones; IRV, TTR and the Condorcet methods (with 4 or more candidates) can fail with sincere ballots too.
 
 Cost: one tally per group and share (feature sums minus the absent ballots), a few hundred per method and election; with all methods at the defaults the run takes about 5% longer.
+
+## Manipulation test
+
+`--manipulation` asks how bad deliberate, informed manipulation from honest ballots can get (`manipulation.py`), after John Huang's votesim ([summary report](http://votesim.usa4r.org/summary-report.html)) and the vulnerability measure of Green-Armytage, Tideman & Cosman (2016, "Statistical evaluation of voting rules", *Social Choice and Welfare* 46). It is a diagnostic beside the poll rounds: the poll rounds show what typical strategy does, this test the worst a coalition with perfect information can do. It changes no other result.
+
+- **Coalitions.** T is the honest winner (the most likely one if the honest result is a lottery). For every other candidate X, the coalition is every voter who prefers X to T.
+- **Tactics.** The coalition tries each naive exaggeration of its ballot type for X against T, the same ones the poll rounds start from (X to the top and T to the bottom of a ranking, approve everyone liked at least as much as X, top score down to X and 0 from T down, …; see Strategy engine). Every member uses the same tactic on their own utilities; a member whose ballot type offers none keeps their sincere ballot. Everyone else votes sincerely.
+- **One-sided.** A tactic succeeds if the coalition gains (expected utility summed over its members). Recorded: whether some coalition succeeds, and the total utility of the successful manipulation that is worst for the electorate; without a success, the honest result.
+- **Two-sided.** For each successful tactic, T's supporters (everyone not in the coalition) answer with an exaggeration for T against X: of their ballot type's naive exaggerations, the one that leaves the coalition the least gain, so a manipulation stands only if it pays against every answer. Recorded the same way, among the manipulations that stand. votesim lets the defence bullet-vote and keeps backfired two-sided outcomes too; here the defence tries every exaggeration of its ballot type and only manipulations that still pay count.
+- **Report.** Per method: the share of elections in which some coalition can manipulate, one-sided and two-sided (with 95% intervals), and the VSE of the recorded outcomes (ratio of sums, as VSE). Columns `manip1`, `manip2`, `U_manip1`, `U_manip2` in the sincere rows of the elections CSV.
+- With strategic nomination, the test runs on the field the voters face and is judged on the original field, like everything else.
+
+Cost: a few tallies per candidate and tactic, a few dozen per method and election; with the standard set a run takes only slightly longer.
+

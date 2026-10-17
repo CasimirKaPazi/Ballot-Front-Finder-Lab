@@ -82,6 +82,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--clones` | 0 | most clones in the race at once, fielded strategically; 0 = none (see [model.md](model.md), Strategic nomination) |
 | `--start` | honest | what the first poll shows: `honest` ballots, or `previous`: the result of a previous election (see [model.md](model.md), Starting information) |
 | `--participation` | off | also check participation (no-show paradox) on sincere and learned ballots (see [model.md](model.md), Participation); slower |
+| `--manipulation` | off | also test coalition manipulation from honest ballots, one- and two-sided (see [model.md](model.md), Manipulation test) |
 | `--workers` | all cores | parallel processes |
 | `--methods` | the `standard` set (29 methods) | run only these methods (start from none); method, group or set names (see [methods.md](methods.md), Groups), case ignored; `all` for every method |
 | `--exclude` | none | leave these out (from the default, or from `--methods`) |
@@ -132,6 +133,7 @@ The terminal and the report list each older input and what was filled in or left
 | lazy | 2026-10-13 | read as 0.0 (full ballots). From 2026-10-16 each voter has their own cut between 0 and `lazy`; lazy runs from before (one cut for everyone) are read the same way, so do not combine them with newer ones |
 | fidelity | 2026-10-12 | blank; their sincerity column holds the earlier measure (the report warns) |
 | bcw, p_bcw | 2026-10-12 | blank |
+| manip1, manip2, U_manip1, U_manip2 | 2026-10-17 | blank (manipulation not tested) |
 
 **Renamed methods.** The results files store each method by its name. When a method is renamed, the old name goes into `RENAMED` in methods.py (old name → current name; groups in `RENAMED_GROUPS`), so older runs keep combining with newer ones: `analyze.py` reads old names as the current ones and says so in the report, and the old names still work in `--methods`, `--exclude`, `--show`, `--hide` and `--track`. This is only for a pure rename, with the same rule and the same results. A method whose rule changes gets a new name and no entry, so old and new results are never mixed. A removed method gets no entry either: its rows in old runs stay under their old name. An add-on may not use an old name.
 
@@ -163,6 +165,7 @@ How the files are combined (the report lists what was done, and `analyze.py` pri
 | `strategy.py` | Learning engine, sincerity and strategy types |
 | `nomination.py` | Strategic nomination: exits, re-entry and clones from the initial field |
 | `participation.py` | Participation check (no-show paradox) |
+| `manipulation.py` | Manipulation test: coalitions for each candidate against the honest winner, one- and two-sided |
 | `outcomes.py` | What an outcome is (winner probabilities) and what it is worth, `value(P, v)`: the one place all judging of outcomes goes through |
 | `metrics.py` | Efficiencies for three baselines, winner's worst margin, Condorcet efficiency, electorate properties, Pareto front |
 | `run.py` | Tallies every electorate with sincere and learned ballots, runs in parallel, writes CSV with the run's parameters as columns |
@@ -178,6 +181,6 @@ How the files are combined (the report lists what was done, and `analyze.py` pri
 Two checks, both quick:
 
 - `python test_methods.py`: hand-built checks. Each method on small profiles with a known winner, the ballot types, truncation and laziness, sincerity and fidelity, the add-ons.
-- `python regression.py`: does the simulator still give the same numbers? It runs twelve tiny conditions (two elections each: the base, five candidates, laziness with scores 0..10, convergent learning, strategic nomination, the first poll from a previous election, one for each electorate model and the salience option, and adaptive voters with laziness) with every method, including the references, the Inverse-\* methods and the add-ons, and compares every column of every row with `regression.csv`. About a minute or less.
+- `python regression.py`: does the simulator still give the same numbers? It runs twelve tiny conditions (two elections each: the base, five candidates, laziness with scores 0..10, convergent learning, strategic nomination, the first poll from a previous election, one for each electorate model and the salience option, and adaptive voters with laziness) with every method, including the references, the Inverse-\* methods and the add-ons, and with the manipulation test, and compares every column of every row with `regression.csv`. About a minute or less.
 
 A change that only reorganises the code (moving, renaming, splitting files) must leave `regression.py` at "all equal". A change meant to alter results (a fixed bug, a new rule) shows up as differences, listed by method and column; once they are understood, `python regression.py --update` writes the new reference, and `regression.csv` is committed together with that change, so the history shows which commit changed which numbers. New methods (a new add-on) are listed but not counted as differences; `--update` adds them. Numbers count as equal within a relative tolerance of 1e-9, since the last digits can differ between numpy versions or machines.

@@ -6,6 +6,9 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-17 | Manipulation test, two-sided: the defence tries every exaggeration of its ballot type and counters with the most effective one | the first exaggeration only |
+| 2026-10-17 | Report: Low and Low\* (winner below the median candidate) | — |
+| 2026-10-17 | Manipulation test (`--manipulation`), new diagnostic | — |
 | 2026-10-17 | Default selection: the standard set (29 methods); new method MAV | every method except references and inverse |
 | 2026-10-17 | Ranked pairs no longer hangs with many tied margins (11+ candidates); BTR methods and 321 use at most 720 tie orders (from 7 tied candidates) | all tie orders |
 | 2026-10-16 | Laziness per voter: each voter's cut uniform between 0 and `--lazy` | one cut (`--lazy`) for everyone |
@@ -22,6 +25,41 @@ How the lab developed: the experiments, what they showed and the decisions they 
 | 2026-10-07 | Renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (ACR), Minimax-wv → MMWV | use the new names |
 | 2026-10-06 | Axes VSE and WME, both 0 = random ballot and 100 = best candidate ([analysis.md](analysis.md), Axes). Within a condition a fixed rescaling of each axis, so order, dominance and rank stability are unaffected | PE (0 = utility-proportional lottery) and WM (worst margin in % of voters) |
 | earlier | Plain dimensions before Zipf; CE as an axis before WM | |
+
+## Manipulation and tails with adaptive voters; the defence fixed (2026-10-17)
+
+**Run** (Hive): defaults (noise model, 99 voters, 6 candidates, 3 poll rounds, 10 polls, aggressive share 0.5), standard set, 600 elections, seed 1, adaptive voters only:
+
+```
+python run.py --strategic 0 --adaptive 1 --elections 600 --manipulation
+```
+
+Condorcet winner in 97.8% of the electorates (587 of 600).
+
+- **Main result.** Score has the highest VSE\* (90.0 / WME\* 92.7), followed by ARA, MAV, 321 and MJ (88–89). The Condorcet and minimax methods have WME\* 99.0–99.5 at VSE\* 83.4–84.4. Strategy helps Approval (honest 79.4 → 86.0) and Plurality (69.7 → 80.3) most, as in the earlier adaptive runs. Undominated: Score, Smith//Score, Soft Minimax-D, MARS, MMPO, MMWV. 40–51% of the adaptive voters are strategic per method (most under Plurality, least under Approval cond. runoff).
+- **Low and Low\*** (share of elections with a winner below the median candidate, honest → learned): Plurality 11.7% → 7.2%, Supplementary vote 7.3% → 5.2%, TTR 4.8% → 6.0%, the Condorcet methods 4.5–5.0%, Score 3.5% → 3.3%, MJ 2.3%, Approval 1.8% and Approval cond. runoff 2.0–2.3%, the lowest. The order differs from VSE: Approval's honest VSE is low (79.4) but it almost never elects a poor candidate; its losses are many small ones. At 600 elections the intervals are about ±1.5 points, so only the extremes are clear.
+- **One-sided manipulation** (share of elections manipulable; VSE when the worst successful manipulation is recorded; honest VSE in the main table): the runoffs protect best: TTR 23% (VSE 73.6), IRV-3 37% (65.2), Approval runoff 40% (71.2), then BTR-score and Smith//Score 48–49% (63.2, 61.1), the Condorcet and minimax methods 58–59% (53–55), IRV 53% (49.3). Most exposed: Borda 92% (−10.0), Score 88% (6.3), Approval 85% (28.6), Plurality 73% (−10.0). Broadly Huang's picture: Score is the most manipulable rated method, Smith//Score and STAR hold up better than Score and Approval. Not used for dominance; a worst case with informed coalitions, beside the poll rounds' typical strategy.
+- **Two-sided, and a flaw it showed.** Every Condorcet method with strict rankings (Ranked pairs, Schulze, Kemeny-Young, Minimax, Copeland, BTR-IRV) was manipulable against the defence in exactly 2.2% of the elections: the 13 of 600 without a Condorcet winner. With one, T's supporters always restore T. Ranked Robin, MMWV and MMPO, however, reached 20–28%. They use rankings with ties, whose first exaggeration (the one the defence used) ties T with every candidate the defender likes more than T instead of ranking T first and X last: a weak defence. The defence used the first exaggeration of each ballot type, which is not always the strongest.
+
+**Fix** ([model.md](model.md), Manipulation test): the defence now tries every exaggeration of its ballot type and answers with the one that leaves the coalition the least gain; a manipulation stands only if it pays against every answer. A first attempt, the answer best for the defenders' own total utility, was not kept: it raised Schulze to 18% (60 elections), because the defenders sometimes prefer an answer that elects a third candidate the coalition likes too. Check (60 elections, one poll round, 11 methods; only two-sided changes): Ranked Robin, MMWV and MMPO now 1.7% like Schulze and Minimax; Borda 25% → 12%; IRV 27% → 20%; Score, Approval, STAR and Plurality unchanged (their first exaggeration was already the strongest). Regression: only manip2 and U_manip2 changed.
+
+**Rerun with the fix** (Hive; the same command; every other column identical to the first run, as expected). Two-sided (share manipulable against the defence; VSE when the worst standing manipulation is recorded):
+
+- Every Condorcet method, now including Ranked Robin, MMWV and MMPO (before 20–28%), is manipulable in 2.2% of the elections, only those without a Condorcet winner; VSE 82.2–83.5, about their honest VSE (83.8–84.3).
+- Then Approval runoff 8.3% (one-sided 39.7%; VSE 81.8), BTR-score 11.0%, Smith//Score 11.7%, Soft Minimax-D 12.3%, STAR 12.8%, MARS 13.0%, Borda 14.5% (first run 52.3%), ARA 14.7%, IRV and ER-IRV 16.3% (ER-IRV first run 27.0%), Score 17.7%, IRV-3 18.5%, TTR 18.7%.
+- Most exposed: MJ 21.3%, 321 21.7%, MAV 24.2%, Approval cond. runoff 25.8%, Approval 26.5%, Supplementary vote 27.2%, Plurality 37.2% (VSE 55.7).
+- One- and two-sided rank the methods differently. TTR resists best one-sided (23.2%) but the defence hardly helps (18.7%): plurality ballots give T's supporters little to answer with. The Condorcet methods are average one-sided (58%) but a defended Condorcet winner cannot be beaten. Score falls from 87.7% to 17.7% and from VSE 6.3 to 80.6: its worst cases rely on T's supporters staying sincere.
+- Changed by the fix beyond the check: 321 23.2% → 21.7%, Score 18.3% → 17.7%; the other shares unchanged (some two-sided VSE moved by up to 0.8, e.g. IRV 74.3 → 73.5).
+
+## Tails: how often the winner is poor (2026-10-17)
+
+Huang's votesim also reports the worst 5% of elections; the lab's efficiencies are ratios of sums and hide how often a method elects a poor candidate. Added to the report and summary.csv: **Low** and **Low\*** ([analysis.md](analysis.md), Axes and other measures), the share of elections whose winner lies below the median candidate by total utility, with honest and with learned ballots. A share of poor outcomes instead of a percentile of per-election VSE, because one election's VSE is unstable (small denominators). Computed in analyze.py from the stored candidate totals, so it needs no rerun and works for older runs too; not used for dominance.
+
+## Manipulation test (2026-10-17)
+
+John Huang's votesim ([summary report](http://votesim.usa4r.org/summary-report.html), 5 February 2021; [code](https://github.com/johnh865/election_sim)) measures strategy as a worst case: for each candidate X other than the honest winner T, the voters preferring X to T use a fixed tactic (bury, compromise, truncate, bullet, …) with perfect information; one-sided, the successful tactic worst for the electorate is recorded; two-sided, T's supporters answer with a bullet vote. His results (average of honest, one- and two-sided VSE): Smith//Score 0.870, STAR 0.858, Smith-minimax 0.850, Ranked pairs 0.849, MJ 0.812, Approval 0.772, Score 0.762, IRV 0.725, top-two 0.683, Plurality 0.515, broadly the order found here. The lab's poll rounds already have front-runners, blocs and both sides; what was missing is the worst case, which Huang argues matters because successful strategy invites more strategy.
+
+**Built** ([model.md](model.md), Manipulation test): `--manipulation`, a diagnostic beside the poll rounds. Coalitions for each X against T, the naive exaggerations of each ballot type as tactics; one-sided: share of elections with a successful coalition and the VSE of the worst successful manipulations; two-sided: the same when T's supporters answer (in this first version with their ballot type's first exaggeration for T; see the section above), counting only manipulations that still pay (votesim keeps backfires too and uses a bullet vote). Regression now runs it in every condition. A first look (20 elections, standard set, defaults; indicative only): Score and Plurality fall furthest one-sided (VSE 2.6 and −10.5), Condorcet methods are manipulable one-sided in about half the elections but almost never against the defence.
 
 ## Standard set and MAV (2026-10-17)
 

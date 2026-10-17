@@ -46,6 +46,7 @@ from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_l
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet
 import participation as part
+import manipulation as manip
 
 
 def lazy_cuts(rng, n, lazy):
@@ -73,10 +74,12 @@ def one_election(job):
         rounds        list of numbers of poll rounds to report
         names         the methods
         participation also run the no-show check (participation.py)
+        manipulation  also run the coalition manipulation test (manipulation.py) on the sincere ballots
         dummy         --start previous: the previous election's ballots per method, else None
     A new run parameter only needs to be in PARAMS and be read from p here."""
     sc, p, e, rounds, names = job["sc"], job["p"], job["e"], job["rounds"], job["names"]
     participation, dummy = job.get("participation", False), job.get("dummy")
+    manipulating = job.get("manipulation", False)
     seed, samples, group_size, share = p["seed"], p["samples"], p["group_size"], p["strategic"]
     adapt = p.get("adaptive", 0.0)
     exits, clones, poll_size, poll_error = p["exits"], p["clones"], p["poll_size"], p["poll_error"]
@@ -149,6 +152,7 @@ def one_election(job):
                               poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0,
                               adaptive=adaptive, activated=act)
             sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
+            sincere_row.update(manip.manipulation(m, m.sincere(uf), uf, u, back) if manipulating else manip.NAN)
             for r, (B, settled, sin) in zip(rounds, res):
                 P_l = back(m.tally(B))
                 out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row})
@@ -157,7 +161,7 @@ def one_election(job):
                             "sincerity": sin if defined else "",
                             "fidelity": float(fidelity(m, B, uf).mean()) if defined else "",
                             "settled": int(settled), "adapted": act[r] if adaptive is not None else "",
-                            **strategy_types(B, m.pref(uf)), **nstats, **check(B)})
+                            **strategy_types(B, m.pref(uf)), **nstats, **check(B), **manip.NAN})
     set_voter_lazy(None)
     return out
 
@@ -348,9 +352,11 @@ def _ignore_sigint():     # workers: Ctrl-C goes to the main process only, which
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
-def simulate(p, elections, workers=None, names=None, participation=False, sink=None, skip=(), label=""):
+def simulate(p, elections, workers=None, names=None, participation=False, sink=None, skip=(), label="",
+             manipulation=False):
     """Run one condition. p: dict with the keys in PARAMS; names: methods (default all);
-    participation: also run the no-show check (participation.py) on sincere and learned ballots.
+    participation: also run the no-show check (participation.py) on sincere and learned ballots;
+    manipulation: also run the coalition manipulation test (manipulation.py) on the sincere ballots.
     p["rounds"] may be a list of numbers of poll rounds: they all come from one run (the rounds
     up to the highest are computed once), one condition per value, in that order.
     sink: called with each election's rows as soon as it is done (in election order), so a
@@ -366,8 +372,8 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
                   field_kappa=p.get("field_kappa", 1.5), field_salience=p.get("field_salience", 0.0),
                   noise_strength=p.get("noise_strength", 3.0))
     todo = [e for e in range(elections) if e not in set(skip)]
-    jobs = [{"sc": sc, "p": p, "e": e, "rounds": rounds, "names": names, "participation": participation}
-            for e in todo]
+    jobs = [{"sc": sc, "p": p, "e": e, "rounds": rounds, "names": names, "participation": participation,
+             "manipulation": manipulation} for e in todo]
     meta = {k: p[k] for k in PARAMS if k != "rounds"} | {"version": VERSION}
     rows = []
     if not todo:
@@ -564,9 +570,11 @@ def main():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--methods", nargs="+", default=None, help="run only these methods or groups (start from none); \"all\" for every method")
-    ap.add_argument("--exclude", nargs="+", default=None, help="leave out these methods or groups (from the default: all but the references and inverse groups)")
+    ap.add_argument("--exclude", nargs="+", default=None, help="leave out these methods or groups (from the standard set, or from --methods)")
     ap.add_argument("--participation", action="store_true",
                     help="also check participation (no-show paradox) on sincere and learned ballots; slower")
+    ap.add_argument("--manipulation", action="store_true",
+                    help="also test coalition manipulation from honest ballots, one- and two-sided (manipulation.py)")
     ap.add_argument("--out", default=None,
                     help="folder for this run (in output/ unless it has a directory); default run-<date>-<time>")
     ap.add_argument("--overwrite", action="store_true", help="replace an existing run in --out")
@@ -586,7 +594,8 @@ def main():
         print(f"resuming: {len(done.get(key, ()))} of {a.elections} elections already done")
     sink = CsvSink(path, header)
     try:
-        simulate(p, a.elections, a.workers, names, a.participation, sink=sink, skip=done.get(key, set()))
+        simulate(p, a.elections, a.workers, names, a.participation, sink=sink, skip=done.get(key, set()),
+                 manipulation=a.manipulation)
     except KeyboardInterrupt:
         sink.close()
         with open(path, newline="") as f:

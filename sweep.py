@@ -76,11 +76,13 @@ def main():
     ap.add_argument("--seeds", type=int, nargs="+", default=[1])
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--methods", nargs="+", default=None, help="run only these methods or groups (start from none); \"all\" for every method")
-    ap.add_argument("--exclude", nargs="+", default=None, help="leave out these methods or groups (from the default: all but the references and inverse groups)")
+    ap.add_argument("--exclude", nargs="+", default=None, help="leave out these methods or groups (from the standard set, or from --methods)")
     ap.add_argument("--one-at-a-time", action="store_true",
                     help="vary one parameter at a time around the base (the first value of every flag)")
     ap.add_argument("--participation", action="store_true",
                     help="also check participation (no-show paradox) on sincere and learned ballots; slower")
+    ap.add_argument("--manipulation", action="store_true",
+                    help="also test coalition manipulation from honest ballots, one- and two-sided (manipulation.py)")
     ap.add_argument("--out", default=None,
                     help="folder for this sweep (in output/ unless it has a directory); default sweep-<date>-<time>")
     ap.add_argument("--overwrite", action="store_true", help="replace an existing sweep in --out")
@@ -144,7 +146,7 @@ def main():
             sink = CsvSink(path, header)
             try:
                 simulate(p, a.elections, a.workers, names, a.participation, sink=sink, skip=skip,
-                         label=f"[{i}/{len(grid)}] ")
+                         label=f"[{i}/{len(grid)}] ", manipulation=a.manipulation)
             finally:
                 sink.close()
             print(f"[{i}/{len(grid)}] {varying or 'single run'}: {time.time() - t:.0f}s")
