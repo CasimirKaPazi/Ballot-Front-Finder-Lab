@@ -23,6 +23,18 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 
 `--out` names the folder; a name without a directory goes into `output/` (created when needed), one with a directory (`--out runs/test`) is used as given. Without `--out` the folder is named by the time (`run-20261011-143000`, `sweep-…`), so nothing is overwritten by accident; an existing run is only replaced with `--overwrite`. `analyze.py` takes run or sweep folders (a sweep folder means all its run files) or elections CSV files, and looks up bare names in `output/`. Since a sweep keeps one file per run, single runs can be analysed alone, moved, or mixed with runs of other sweeps (see Combining runs). With several inputs (combining runs) it needs `--out` for the analysis folder.
 
+**What a run writes.** `elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns; the simulator version (column `version`, from `run.VERSION`; the report names it, and warns when CSVs of different versions are combined); the quantities for the axes: U_method, U_best, U_rb (random ballot), U_rand (random candidate, for the usual VSE), WM (the winner's worst margin, share of voters), WM_best, WM_rb; has_cw and p_cw (probability of electing the Condorcet winner); the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see [analysis.md](analysis.md), Robustness); sincerity, fidelity, settled, the strategy types and, with `--adaptive`, adapted. `summary.csv` and the printed table (`table.txt`) have one row per method:
+
+| Column | Meaning |
+|---|---|
+| VSE, WME | voter satisfaction and worst-margin efficiency, sincere ballots |
+| VSE_learned, WME_learned | the same with learned ballots |
+| CE, CE_learned | Condorcet efficiency, sincere and learned ballots |
+| sincerity | mean sincerity of the learned ballots, over all voters ([analysis.md](analysis.md), Sincerity and fidelity; elections.csv also has `fidelity`, for both ballot sets) |
+| settled | poll rounds: share of elections where the last round gave the same ballots as the round before (a fixed point); convergent learning: no group changed its ballot in the last round. Cycles never settle |
+
+`on_front` in the summary is a quick check on point estimates (VSE_learned, WME_learned, sincerity; no uncertainty). The analysis uses the tie-aware "Dominated by" instead ([analysis.md](analysis.md), Analysis).
+
 **Progress, saving and resuming.** While a run or sweep works, a line shows the elections done, the time so far and an estimate of the time left (redrawn in place after every election in a terminal; when the output goes to a file, a new line at every tenth of the way). Each election is written to `elections.csv` as soon as it is done, so nothing finished is lost, and a run in progress can already be analysed. If a run stops (Ctrl-C, a crash, the computer shut down), the same command with `--resume` (and the same `--out`) continues it: complete elections are kept, an incomplete last one is dropped, and only the missing ones are run. Since every election depends only on its parameters, seed and number, the result is identical to an uninterrupted run, row for row. After Ctrl-C the exact command to continue is printed. `--resume` stops if the command differs (other methods, parameters or simulator version).
 
 200 elections with all methods (`--methods all --exclude inverse`) at the default settings (three poll rounds, 10 polls per round) took about 20 minutes in one measurement; time scales linearly with cores, with the number of poll rounds and with the polls per round. To try a new method, there is no need to rerun the others: see Combining runs. More candidates and more voters take longer: one election with all methods took about 50 s with 9 candidates, 70 s with 10, 130 s with 11 and 180 s with 12 in one measurement (one core per election), the slowest methods there being Ranked pairs, DAC and DSC. Several methods enumerate subsets of candidates, so beyond 12 the time grows quickly. Use `--methods` or `--exclude` to run fewer, by name or by group (see [methods.md](methods.md), Methods).
@@ -47,12 +59,12 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--fixed-variance` | 1 | model `clusters`: 1 = scale positions so the dimensions' total variance is π²/6 whatever their number |
 | `--field-kappa` | 1.5 | model `field`: saturation of opinions (small: smooth, nearly Gaussian; large: two camps per issue) |
 | `--field-salience` | 0 | model `field`: strength of the salience field (0 = every issue weighed alike) |
-| `--ks-alpha` | 1.5 | model `ks`: faction alpha (higher: more, smaller factions); see Electorates |
+| `--ks-alpha` | 1.5 | model `ks`: faction alpha (higher: more, smaller factions); see [model.md](model.md), Electorates |
 | `--ks-cut` | 0.2 | model `ks`: importance below which no further issue bundles or dimensions are drawn (lower: more dimensions) |
 | `--ks-shared` | 0 | model `ks`: 1 = the same factions in every issue bundle (a test variant without cross-cutting cleavages) |
 | `--width` | 0.7 | distance scale of the utility fall-off |
-| `--cand-dispersion` | 1.0 | candidates' distance from the electorate's centre × this (< 1 clustered, > 1 spread out); see Electorates |
-| `--cand-shift` | 0.0 | candidates moved along the main dimension by this many voter SDs; see Electorates |
+| `--cand-dispersion` | 1.0 | candidates' distance from the electorate's centre × this (< 1 clustered, > 1 spread out); see [model.md](model.md), Candidates unlike the electorate |
+| `--cand-shift` | 0.0 | candidates moved along the main dimension by this many voter SDs; see [model.md](model.md), Candidates unlike the electorate |
 | `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |
 | `--rounds` | 3 | poll rounds before the vote (0 = everyone sincere); see [model.md](model.md), Strategy engine. Three rounds take voters past the first answer to the honest poll, which leans on the modelling of sincere ballots, toward the state they settle in |
 | `--samples` | 10 | polls per round (they stand for the uncertainty); with `--converge`, bootstrap resamples per round |

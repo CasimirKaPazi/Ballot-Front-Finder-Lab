@@ -2,9 +2,35 @@
 
 The voting methods, their groups and how to add your own. How each ballot type is filled in sincerely is in [model.md](model.md), Ballots and sincere voting.
 
+## Groups and sets
+
+Every method belongs to exactly one group. Groups can be used wherever methods are named (`--methods`, `--exclude` in run.py and sweep.py; `--show`, `--hide`, `--track` in analyze.py), they are the panels of the chain plots, and the report and summary.csv show each method's group.
+
+| Group | Methods |
+|---|---|
+| `condorcet` | Ranked pairs, Schulze, Schulze-ER, Kemeny-Young, Copeland, Ranked Robin, Ranked Robin-SR, SICT, Condorcet-random-drop (Condorcet methods decided by the pairwise counts alone) |
+| `minimax-family` | Minimax, Minimax-ER, MMWV, MMPO, MMPOWV (the minimax family; MMPO and MMPOWV are not Condorcet methods) |
+| `condorcet-based` | Black, Baldwin, Baldwin-ER, Nanson, BTR-Borda, BTR-IRV, Benham, Smith//Score (Condorcet methods built on a Borda, IRV or score count) |
+| `plurality-based` | Plurality, TTR, Supplementary vote, IRV, ER-IRV, IRV-3, Coombs, DSC, DAC (first choices, eliminations and coalitions of top preferences; Coombs eliminates by last places) |
+| `approval-based` | Approval, Approval runoff, Approval cond. runoff, MDDA, MAMPO |
+| `rated` | Score, MJ, MAV, MCA, Reciprocal score, INS, Geometric median (add-ons can join groups, see Add-ons) |
+| `hybrid` | STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D (ratings combined with pairwise comparisons or runoffs) |
+| `positional` | Borda, Borda-ER, Dowdall |
+| `references` | Random pair runoff, Anti-plurality, TRASH (benchmarks, not proposals; not run unless named, e.g. `--methods all` or `--methods references STAR`, and hidden in the plots by default) |
+| `inverse` | Inverse-Plurality, Inverse-Approval, Inverse-Minimax, Inverse-IRV, Inverse-ER-IRV, Inverse-TTR, Inverse-Borda, Inverse-Score (tests of the strategy model, below; not run unless named; hidden in the plots by default) |
+
+**Sets** are selection names across groups (not plot panels):
+
+- `standard`, the default selection: the methods most discussed, those of Quinn's vse-sim (Plurality, IRV, Borda, Approval, Score, STAR, MJ, MAV, 321, Ranked pairs, Schulze) the common single-winner proposals and methods in use (TTR, Supplementary vote, ER-IRV, IRV-3, Approval runoff, Approval cond. runoff, Copeland, Kemeny-Young, Ranked Robin, Minimax, MMWV, MMPO, BTR-IRV), with the strongest found here (MARS, ARA, BTR-score, Smith//Score, Soft Minimax-D): 29 methods. Geometric median and Condorcet-random-drop are left out: idealised reference cases rather than practical methods.
+- `er-pairs`, each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Ranked Robin-SR/Ranked Robin. Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.
+
+Example: `--methods condorcet STAR`, `--methods er-pairs`, `--methods all --exclude inverse`. Without `--methods`, run.py and sweep.py run the `standard` set; `--exclude` then takes methods out of it. Every other method, group, add-on, or `all` can be named in `--methods`.
+
 ## Methods
 
-72 built-in methods, listed by group (see Groups below), plus any add-ons (see Add-ons); all but the references and inverse groups run by default. "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
+73 built-in methods, listed by group (see Groups and sets, above), plus any add-ons (see Add-ons, below); a run uses the `standard` set unless `--methods` names others. "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
+
+Pairwise preferences always come from the ballot itself, so equal ratings count as no preference. All ties are broken uniformly among the tied candidates and counted exactly.
 
 **condorcet**
 
@@ -129,7 +155,9 @@ The voting methods, their groups and how to add your own. How each ballot type i
 | Inverse-Borda | ranking | Borda; the sincere ballot ranks upside down |
 | Inverse-Score | 0–5 | Score; the sincere ballot scores upside down (the least liked gets the top score) |
 
-**Add-ons: methods in separate files.** A new method does not have to go into methods.py: put a Python file into the folder `addons/`, and its methods are loaded at start and used like the built-in ones, by name or group, in run.py, sweep.py and analyze.py. Delete the file to remove them; to share a method, share the file. Files starting with `_` are not loaded. `addons/_template.py` is a commented starting point; `addons/ids.py` (IDS, iterated dropped score) is a working example. [addons.md](addons.md) is a tutorial for writing one with little Python: a line-by-line walkthrough of IDS, and a new method (Bucklin) built step by step. A file defines:
+## Add-ons: methods in separate files
+
+A new method does not have to go into methods.py: put a Python file into the folder `addons/`, and its methods are loaded at start and used like the built-in ones, by name or group, in run.py, sweep.py and analyze.py. Delete the file to remove them; to share a method, share the file. Files starting with `_` are not loaded. `addons/_template.py` is a commented starting point; `addons/ids.py` (IDS, iterated dropped score) is a working example. [addons.md](addons.md) is a tutorial for writing one with little Python: a line-by-line walkthrough of IDS, and a new method (Bucklin) built step by step. A file defines:
 
 | Name | Required | Meaning |
 |---|---|---|
@@ -146,27 +174,3 @@ The ballot type (one of the built-in ones in ballots.py) decides the sincere bal
 | Method | Ballot | File | Description |
 |---|---|---|---|
 | IDS | 0–5 | `addons/ids.py` | iterated dropped score, a score elimination: each round every ballot's lowest-rated remaining candidates are struck out (count 0; a ballot rating them all the same counts for none), the other scores stay as given; the lowest total is eliminated (ties for last split the win), until one is left. Unlike INS a ballot only changes where its own lowest remaining rating is, and it can be counted by hand. Group: rated |
-
-**Groups.** Every method belongs to exactly one group. Groups can be used wherever methods are named (`--methods`, `--exclude` in run.py and sweep.py; `--show`, `--hide`, `--track` in analyze.py), they are the panels of the chain plots, and the report and summary.csv show each method's group.
-
-| Group | Methods |
-|---|---|
-| `condorcet` | Ranked pairs, Schulze, Schulze-ER, Kemeny-Young, Copeland, Ranked Robin, Ranked Robin-SR, SICT, Condorcet-random-drop (Condorcet methods decided by the pairwise counts alone) |
-| `minimax-family` | Minimax, Minimax-ER, MMWV, MMPO, MMPOWV (the minimax family; MMPO and MMPOWV are not Condorcet methods) |
-| `condorcet-based` | Black, Baldwin, Baldwin-ER, Nanson, BTR-Borda, BTR-IRV, Benham, Smith//Score (Condorcet methods built on a Borda, IRV or score count) |
-| `plurality-based` | Plurality, TTR, Supplementary vote, IRV, ER-IRV, IRV-3, Coombs, DSC, DAC (first choices, eliminations and coalitions of top preferences; Coombs eliminates by last places) |
-| `approval-based` | Approval, Approval runoff, Approval cond. runoff, MDDA, MAMPO |
-| `rated` | Score, MJ, MAV, MCA, Reciprocal score, INS, Geometric median (add-ons can join groups, see Add-ons) |
-| `hybrid` | STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D (ratings combined with pairwise comparisons or runoffs) |
-| `positional` | Borda, Borda-ER, Dowdall |
-| `references` | Random pair runoff, Anti-plurality, TRASH (benchmarks, not proposals; not run unless named, e.g. `--methods all` or `--methods references STAR`, and hidden in the plots by default) |
-| `inverse` | Inverse-Plurality, Inverse-Approval, Inverse-Minimax, Inverse-IRV, Inverse-ER-IRV, Inverse-TTR, Inverse-Borda, Inverse-Score (tests of the strategy model, below; not run unless named; hidden in the plots by default) |
-
-**Sets**, selection names across groups (not plot panels):
-
-- `standard`, the default selection: the methods most discussed, those of Quinn's vse-sim (Plurality, IRV, Borda, Approval, Score, STAR, MJ, MAV, 321, Ranked pairs, Schulze) the common single-winner proposals and methods in use (TTR, Supplementary vote, ER-IRV, IRV-3, Approval runoff, Approval cond. runoff, Copeland, Kemeny-Young, Ranked Robin, Minimax, MMWV, MMPO, BTR-IRV), with the strongest found here (MARS, ARA, BTR-score, Smith//Score, Soft Minimax-D): 29 methods. Geometric median and Condorcet-random-drop are left out: idealised reference cases rather than practical methods.
-- `er-pairs`, each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Ranked Robin-SR/Ranked Robin. Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.
-
-Example: `--methods condorcet STAR`, `--methods er-pairs`, `--methods all --exclude inverse`. Without `--methods`, run.py and sweep.py run the `standard` set; `--exclude` then takes methods out of it. Every other method, group, add-on, or `all` can be named in `--methods`.
-
-Pairwise preferences always come from the ballot itself, so equal ratings count as no preference. All ties are broken uniformly among the tied candidates and counted exactly.

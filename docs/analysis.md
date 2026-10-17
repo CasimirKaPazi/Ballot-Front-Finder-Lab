@@ -2,7 +2,7 @@
 
 What is measured and how `analyze.py` reports it. How to run the simulations is in [running.md](running.md).
 
-## Axes and other outputs
+## Axes and other measures
 
 Both axes are **efficiencies with the same two reference points**, as ratios of sums over all elections:
 
@@ -29,18 +29,6 @@ A method's distance to the curve is what it loses to having only ballots, not ut
 **Condorcet efficiency (CE)**, reported alongside but not an axis: among elections with a Condorcet winner by sincere utilities, the probability the method elects it. It ignores elections without a Condorcet winner and does not distinguish narrow from clear ones.
 
 VSE, WME and CE use sincere ballots; VSE\*, WME\* and CE\* (in the CSV: VSE_learned, WME_learned, CE_learned) the strategic ballots ("learned": after the poll rounds, or after convergent learning). In all cases the preferences that count are the sincere ones.
-
-**Output files of `run.py`:** `elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns; the simulator version (column `version`, from `run.VERSION`; the report names it, and warns when CSVs of different versions are combined); the quantities for the axes: U_method, U_best, U_rb (random ballot), U_rand (random candidate, for the usual VSE), WM (the winner's worst margin, share of voters), WM_best, WM_rb; has_cw and p_cw (probability of electing the Condorcet winner); the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see Robustness); sincerity, settled and the strategy types. `<out>-summary.csv` and the printed table have one row per method:
-
-| Column | Meaning |
-|---|---|
-| VSE, WME | voter satisfaction and worst-margin efficiency, sincere ballots |
-| VSE_learned, WME_learned | the same with learned ballots |
-| CE, CE_learned | Condorcet efficiency, sincere and learned ballots |
-| sincerity | mean sincerity of the learned ballots, over all voters (below; elections.csv also has `fidelity`, for both ballot sets) |
-| settled | poll rounds: share of elections where the last round gave the same ballots as the round before (a fixed point); convergent learning: no group changed its ballot in the last round. Cycles never settle |
-
-`on_front` in the summary is a quick check on point estimates (VSE_learned, WME_learned, sincerity; no uncertainty). The analysis uses the tie-aware "Dominated by" instead (see Analysis).
 
 **Strategy types** (`strategy.strategy_types`), among voters whose learned ballot reverses at least one real preference:
 - *compromise*: the favourite is not at the top, and the best-liked top candidate is liked above the voter's mean (a viable second choice raised);
@@ -108,7 +96,7 @@ The exaggerated score ballot and the approval ballot say the same and get the sa
 | `tradeoff-<c>.png` | ternary map of the Pareto front: each point of the triangle is a weighting of VSE\*, WME\* and sincerity (corners: all weight on one axis), coloured by the Pareto method with the highest weighted sum; each axis stretched to the range the Pareto methods span on it (shown at the corners), so it shows the trade-offs within the front, not their absolute size. Pareto methods best for no weighting (in a dent of the front) are listed below. Methods hidden with `--hide` (or not in `--show`) are left out before the front is found |
 | `axes-heatmap.png` | VSE\*, WME\*, sincerity, VSE and WME, methods × conditions (when there are several; methods present in every condition, sorted by VSE\*) |
 | `track-<method>.png` | with `--track`: one method across all conditions in the VSE\*/WME\* plane (learned ballots filled, honest open). One varied parameter: a chain in its order; two (a grid, e.g. `--aggressive` × `--rounds`): lines along the parameter with more values, colour for the other; more: points with condition tags |
-| `chain-<parameter>.png` | sweeps: for each parameter varied around the base (the first condition), each method's learned values as a chain of arrows through the parameter's values, light to dark; one panel per method group, all on the same scale. If the parameter only affects voters' strategy (strategic and aggressive shares, poll rounds, polls, group size), the electorates are the same and each chain starts at the method's honest point; otherwise the honest values form their own dashed chain |
+| `chain-<parameter>.png` | sweeps: for each parameter varied around the base (the first condition), each method's learned values as a chain of arrows through the parameter's values, light to dark; one panel per method group, all on the same scale. If the parameter only affects voters' strategy (strategic, adaptive and aggressive shares, poll rounds, polls, group size), the electorates are the same and each chain starts at the method's honest point; otherwise the honest values form their own dashed chain |
 
 Sweep plots appear automatically for every parameter that has at least two conditions differing from the base only in that parameter: a one-at-a-time sweep (`sweep.py --one-at-a-time`) or a grid over a single parameter. They show point estimates only; with few elections the zigzags in a chain are mostly noise. One far-off method (often Plurality) sets the shared scale for all panels; `--hide` or `--show` zooms in.
 
