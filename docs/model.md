@@ -137,7 +137,7 @@ Rules that refer to the range scale with it: ARA approves ratings above the midd
 
 ## Strategy engine
 
-Two models of strategic voting (`strategy.py`). **Poll rounds** is the default; **convergent learning**, a long-run model kept for comparison, is available with `--converge N`.
+Two models of strategic voting (`strategy.py`); the front-runners, the groups answering around them and the attention to both sides (attack and defence) take inspiration from John Huang's votesim ([summary report](http://votesim.usa4r.org/summary-report.html), [code](https://github.com/johnh865/election_sim)), which measures one-sided strategy (only the challenger's coalition uses tactics) and two-sided strategy (the honest winner's supporters answer with a bullet vote). **Poll rounds** is the default; **convergent learning**, a long-run model kept for comparison, is available with `--converge N`.
 
 ### Poll rounds (default)
 

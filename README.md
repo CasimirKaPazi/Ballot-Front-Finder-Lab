@@ -20,7 +20,7 @@ The two pull apart, so no method can reach 100 on both; the lab computes the bou
 
 **What you get.** `run.py` and `sweep.py` produce CSV files with one row per election, method and ballot set; `analyze.py` turns them into a Markdown report with paired bootstrap intervals, the methods no other method beats (the front), paired comparisons and plots: how strategy moves each method in the VSE/WME plane, how methods change across parameter sweeps, and where they stand relative to the frontier.
 
-The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulations) and on Chris Smith's spatial voter model; in the strategy model, rounds of best responses to the previous poll (level-k reasoning), the leader rule of Myerson and Weber (1993) emerges instead of being coded. Its assumptions are spelled out in [the model](docs/model.md), and eight Inverse-\* methods (honest voting elects the worst candidate) test whether voters learn their way back.
+The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulations) and on Chris Smith's spatial voter model, and the strategy model takes inspiration from John Huang's votesim ([summary report](http://votesim.usa4r.org/summary-report.html), [code](https://github.com/johnh865/election_sim)): front-runners, coalitions of the voters who prefer one of them, and one- and two-sided strategy; in the strategy model, rounds of best responses to the previous poll (level-k reasoning), the leader rule of Myerson and Weber (1993) emerges instead of being coded. Its assumptions are spelled out in [the model](docs/model.md), and eight Inverse-\* methods (honest voting elects the worst candidate) test whether voters learn their way back.
 
 ## Features
 
