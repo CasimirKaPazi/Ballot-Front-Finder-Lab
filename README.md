@@ -38,6 +38,7 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 - Poll rounds: voters see only the method's own poll counts, with realistic poll error, and answer them all at once; groups with the same preferences act as blocs. Aggressive voters exaggerate whenever it cannot hurt, kind ones only for a clear gain.
 - Who strategises: a fixed share of strategic voters, or adaptive voters who strategise in a round when the race between the two leaders matters enough to them, so attack and defence come from the same rule.
 - Laziness: truncated rankings and fewer approvals or scores, each voter with their own cut.
+- Honest approval fitted to real approval elections: each voter approves above a personal threshold between their mean and their favourite, so approvals stay few as the field grows ([model](docs/model.md), Honest approval).
 - Also: convergent learning as a long-run alternative, strategic nomination (candidates withdraw or field clones), a first poll from a previous election (does a method let the electorate leave a strategic state?), a check of the no-show paradox, and a manipulation test (how often and how badly an informed coalition can manipulate from honest ballots, one- and two-sided).
 
 **Measures** ([analysis](docs/analysis.md))

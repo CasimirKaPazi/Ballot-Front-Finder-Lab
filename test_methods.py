@@ -2,6 +2,8 @@
 import numpy as np
 from methods import METHODS
 from metrics import election_row, worst_margins
+import methods as _methods_mod
+_methods_mod.APPROVAL_DEFAULT = 0.0   # the hand-built checks below use the threshold at the voter's mean (draw 0)
 
 
 def profile(groups):
@@ -891,6 +893,26 @@ from methods import COMPARISONS as _CMP, run_selection as _rs
 assert all(m in METHODS for m in _CMP["standard"]) and _rs() == [m for m in METHODS if m in _CMP["standard"]]
 assert _rs(exclude=["Plurality"]) == [m for m in _rs() if m != "Plurality"] and "Kemeny-Young" in _rs(["Kemeny-Young"])
 print("renamed methods ok")
+
+# Honest approval: a personal threshold between the voter's mean and favourite (ballots.approves)
+from ballots import approves as _apv
+_ua = np.array([[1.0, 0.8, 0.5, 0.2, 0.0]])                          # stretched already; mean 0.5
+assert _apv(_ua, 0.0).tolist() == [[True, True, True, False, False]]   # draw 0: down to the mean
+assert _apv(_ua, 1.0).tolist() == [[True, False, False, False, False]] # draw 1: the favourite only
+assert _apv(_ua, 0.5).tolist() == [[True, True, False, False, False]]  # halfway: threshold 0.75
+_d = np.linspace(0, 1, 1001)                                        # chance rises linearly from mean to favourite
+assert abs(_apv(np.repeat(_ua, len(_d), 0), _d)[:, 1].mean() - 0.6) < 0.01   # (0.8 - 0.5) / (1 - 0.5)
+_methods_mod.set_voter_approval([0.0, 1.0])                         # per voter, through Method.sincere
+_two = np.array([[0.9, 0.6, 0.3, 0.0], [0.9, 0.6, 0.3, 0.0]])
+assert METHODS["Approval"].sincere(_two).tolist() == [[1, 1, 0, 0], [1, 0, 0, 0]]
+assert METHODS["MDDA"].sincere(_two).tolist() == [[2, 1, 0, 0], [1, 0, 0, 0]]    # trunc: ranks the approval set
+assert abs(_methods_mod.approval_of(np.array([0, 1])) - 0.5) < 1e-12
+try:
+    METHODS["Approval"].sincere(_two[:1]); raise AssertionError("row mismatch not caught")
+except ValueError:
+    pass
+_methods_mod.set_voter_approval(None)
+print("approval threshold ok")
 
 # Add-ons (addons/*.py): each file's own test(), and the template as a check of the loader contract
 import methods as _ma, importlib.util as _iu, os as _os

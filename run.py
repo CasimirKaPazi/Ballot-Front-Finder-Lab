@@ -42,7 +42,7 @@ import numpy as np
 from scenario import Scenario, electorate_positions
 from models import draw_electorate, model_text, MODELS
 from nomination import nominate, clone_setup, utilities, to_original
-from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, sincerity_defined
+from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet
 import participation as part
@@ -92,6 +92,8 @@ def one_election(job):
     C = u.shape[1]
     # laziness: each voter's own cut, uniform between 0 and --lazy (own stream, the same for every method)
     set_voter_lazy(lazy_cuts(np.random.default_rng([seed, e, zlib.crc32(b"lazy")]), len(u), p.get("lazy", 0.0)))
+    # honest approval: each voter's draw for their threshold between mean and favourite (ballots.approves)
+    set_voter_approval(np.random.default_rng([seed, e, zlib.crc32(b"approval")]).random(len(u)))
     nominating = bool(exits or clones)
     if nominating:   # clones' positions: own random stream, the same for every method
         u_clone, cu = clone_setup(voters, cands, sc.width,
@@ -163,6 +165,7 @@ def one_election(job):
                             "settled": int(settled), "adapted": act[r] if adaptive is not None else "",
                             **strategy_types(B, m.pref(uf)), **nstats, **check(B), **manip.NAN})
     set_voter_lazy(None)
+    set_voter_approval(None)
     return out
 
 
@@ -299,6 +302,7 @@ def previous_election(args):
     rng = np.random.default_rng([p["seed"], zlib.crc32(b"previous")])
     u = electorate_positions(sc, rng)[0]
     set_voter_lazy(lazy_cuts(np.random.default_rng([p["seed"], zlib.crc32(b"previous-lazy")]), len(u), p.get("lazy", 0.0)))
+    set_voter_approval(np.random.default_rng([p["seed"], zlib.crc32(b"previous-approval")]).random(len(u)))
     draw = rng.random(len(u))
     strategic = draw < p["strategic"]
     adaptive = personal_thresholds(draw, p["strategic"], p.get("adaptive", 0.0))
@@ -309,6 +313,7 @@ def previous_election(args):
                           samples=p["samples"], poll_size=p["poll_size"], search=p["search"], strategic=strategic,
                           poll_error=p["poll_error"], aggressive=aggressive, adaptive=adaptive)
     set_voter_lazy(None)
+    set_voter_approval(None)
     return B
 
 

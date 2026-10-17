@@ -25,14 +25,14 @@ the tied candidates and counted exactly.
 Sincere ballots from utilities u[v, c]:
   rank     - order by utility; with laziness (set_lazy) only the candidates the voter cares about
   strict   - order by utility, always complete
-  approval - every candidate above the voter's mean utility
+  approval - the candidates above the voter's personal threshold between mean and favourite (ballots.approves)
   score    - 0..MAXS, stretched to the voter's own utility range, rounded
   fav_run  - mark the favourite; ranking by utility
-  app_run  - approve every candidate above the voter's mean utility; ranking by utility
+  app_run  - approvals as for approval; ranking by utility
   veto     - against the least liked candidate
   weak     - strict ranking by utility (ties are only used strategically); laziness as rank, the
              unranked at level 0
-  trunc    - rank every candidate above the voter's mean utility, leave the rest unranked
+  trunc    - rank the candidates the voter would approve (ballots.approves), leave the rest unranked
   trunc3   - rank the 3 best-liked candidates (all, with 3 or fewer), leave the rest unranked
   (trunc and trunc3 with laziness: only those of them the voter also cares about)
 Laziness: a voter ranks (approves, scores) a candidate only if its utility, stretched to 0..1
@@ -56,6 +56,8 @@ EPS = 1e-9
 MAXS = 5          # top of the score range; change it with set_max_score, not directly
 LAZY = 0.0        # laziness of honest rankings, 0..1; change it with set_lazy, not directly
 VOTER_LAZY = None # per-voter laziness cuts of the current election (set_voter_lazy), or None
+VOTER_APPROVAL = None  # per-voter approval draws of the current election (set_voter_approval), or None
+APPROVAL_DEFAULT = 0.5  # the draw used without per-voter draws: the threshold halfway from mean to favourite
 
 
 def set_lazy(x):
@@ -80,6 +82,19 @@ def set_voter_lazy(cuts):
 def lazy_of(voters):
     """The laziness cut for a group of voters (indices): their mean cut, or LAZY without per-voter cuts."""
     return LAZY if VOTER_LAZY is None else float(VOTER_LAZY[voters].mean())
+
+
+def set_voter_approval(draws):
+    """Per-voter approval draws for the current election (one per voter, 0..1), or None. A voter's
+    honest approval threshold lies this far from their mean utility to their favourite (ballots.approves);
+    run.py draws them uniformly. Call with None when the election is done."""
+    global VOTER_APPROVAL
+    VOTER_APPROVAL = None if draws is None else np.asarray(draws, float)
+
+
+def approval_of(voters):
+    """The approval draw for a group of voters (indices): their mean draw, or APPROVAL_DEFAULT."""
+    return APPROVAL_DEFAULT if VOTER_APPROVAL is None else float(VOTER_APPROVAL[voters].mean())
 
 
 def set_max_score(m):
@@ -1365,16 +1380,24 @@ class Method:
         Sincerity and strategy types are measured against these."""
         return -u if self.inverse else u
 
-    def sincere(self, u, lazy=None):
+    def sincere(self, u, lazy=None, approval=None):
         """Sincere ballots. lazy: the cut(s) to use; None = each voter's own (VOTER_LAZY, which needs
-        one row of u per voter) or LAZY."""
+        one row of u per voter) or LAZY. approval: the approval draw(s) for ballots with an approval
+        threshold (ballots.approves); None = each voter's own (VOTER_APPROVAL) or APPROVAL_DEFAULT."""
         b = BALLOTS[self.ballot]
         if lazy is None:
             lazy = LAZY if VOTER_LAZY is None else VOTER_LAZY
             if VOTER_LAZY is not None and len(VOTER_LAZY) != u.shape[0]:
                 raise ValueError("per-voter laziness needs one row per voter; pass lazy= for other rows")
+        if approval is None:
+            approval = APPROVAL_DEFAULT if VOTER_APPROVAL is None else VOTER_APPROVAL
+            if VOTER_APPROVAL is not None and len(VOTER_APPROVAL) != u.shape[0]:
+                raise ValueError("per-voter approval draws need one row per voter; pass approval= for other rows")
         with self.applied():
-            return b.sincere(self.pref(u), lazy if b.lazy and not self.inverse else 0.0)   # Inverse-*: never lazy
+            lz = lazy if b.lazy and not self.inverse else 0.0                  # Inverse-*: never lazy
+            if b.approval:
+                return b.sincere(self.pref(u), lz, approval)
+            return b.sincere(self.pref(u), lz)
 
     def honest(self, u):
         return self.tally(self.sincere(u))

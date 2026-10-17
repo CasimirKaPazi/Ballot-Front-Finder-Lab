@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-17 | Honest approval: a personal threshold between the voter's mean and favourite (uniform draw per voter), for Approval, Approval runoff, Approval cond. runoff, MDDA, MAMPO (and Inverse-Approval) | every candidate above the voter's mean approved (ranked for MDDA, MAMPO) |
 | 2026-10-17 | Options of the clusters model renamed `--cluster-*` (`--cluster-count`, `--cluster-spread`, `--cluster-zipf`, `--cluster-salience`, `--cluster-salience-exponent`, `--cluster-fixed-variance`); file columns unchanged | `--clusters`, `--spread`, `--zipf`, `--salience`, `--salience-exponent`, `--fixed-variance` |
 | 2026-10-17 | Manipulation test, two-sided: the defence tries every exaggeration of its ballot type and counters with the most effective one | the first exaggeration only |
 | 2026-10-17 | Report: Low and Low\* (winner below the median candidate) | — |
@@ -26,6 +27,69 @@ How the lab developed: the experiments, what they showed and the decisions they 
 | 2026-10-07 | Renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (ACR), Minimax-wv → MMWV | use the new names |
 | 2026-10-06 | Axes VSE and WME, both 0 = random ballot and 100 = best candidate ([analysis.md](analysis.md), Axes). Within a condition a fixed rescaling of each axis, so order, dominance and rank stability are unaffected | PE (0 = utility-proportional lottery) and WM (worst margin in % of voters) |
 | earlier | Plain dimensions before Zipf; CE as an axis before WM | |
+
+## Laziness and approval against real ballots (2026-10-17)
+
+**Question:** which `--lazy` to use as a default, and does the model's honest ballot resemble real ones? IRV ballots were set aside: their truncation is partly strategic (lower preferences rarely count), and the strategic voters already model that. Data (Hive): PrefLib ([preflib.org](https://preflib.org)) sets 00001 (Irish STV, 2002: Dublin North, Dublin West, Meath), 00002 (Debian, Condorcet/Schulze: leader elections 2002–2012 with "None of the above", logo vote) and 00007 (ERS: 87 elections of organisations, mostly STV, 3–29 candidates); and a collection of approval elections and experiments (St. Louis 2021, Fargo 2022, the French presidential experiments 2002–2017, the US 2012 and 2016 experiments, Mesel 2008, Konstanz 2009). Model: defaults (noise model, 99 voters), sincere ballots, 40–200 electorates per candidate count.
+
+**Ranked ballots** (share ranking only one candidate / ranking all, i.e. at least C − 1; "None of the above" not counted as a candidate):
+
+| Data | Candidates | One | All | Model value that fits |
+|---|---|---|---|---|
+| Debian leader 2002, 2012 | 3 | 5%, 11% | 95%, 89% | about 0.1 (12% / 88%) |
+| Debian leader 2003, 2010 | 4 | 3–4% | 87–89% | below 0.1 (0.1: 2% / 75%) |
+| Debian leader 2005–2007 | 6–8 | 4–5% | 70–77% | below 0.1 (C = 8, 0.1: 0% / 56%) |
+| ERS, median | 3–4 / 5–6 / 7–9 / 10–14 / 15–30 | 23% / 16% / 6% / 4% / 5% | 66% / 36% / 28% / 20% / 9% | 0.3–0.5 / 0.5 / 0.3 / 0.2–0.3 / — |
+| Irish STV | 9 / 12 / 14 | 6% / 4% / 5% | 16% / 10% / 5% | about 0.5 (C = 12: 4% / 10%) |
+
+- Two regimes: in Debian's elections (engaged voters, few candidates, Schulze) almost everyone ranks fully, which fits a cut near 0.1 or below; in public and organisational STV elections with many candidates ballots are much shorter, fitting 0.2–0.5. Truncation grows with the number of candidates in the data, as in the model (the cut is in utility, so more candidates fall below it).
+- Every data set has a few percent of bullet votes even where nearly everyone else ranks fully. One uniform cut cannot produce both; a mixture (a share of bullet voters plus a small cut) would. Not built: one parameter suffices for a robustness check.
+- **Decision:** the default stays `--lazy 0`; 0.1 and 0.5 are documented as robustness values ([model.md](model.md), Truncation and laziness).
+
+**Approval ballots** (approvals per ballot): real voters approve 1.5–3 candidates almost regardless of the field (St. Louis mayor, 4 candidates: 1.56; Konstanz, 6: 1.94; Fargo, 7: 1.58; Mesel, 8: 1.86; the French experiments with 10–12 candidates: 2.2–2.6, with 16: 3.15; Hérouville 2017, 11 candidates: 23% per candidate, about 2.5). The model's honest approval ballot (every candidate above the voter's mean utility) approves about 0.4 per candidate: 1.76 with 4, 2.53 with 6, 2.92 with 7, 4.03 with 10, 4.79 with 12, 6.38 with 16. Laziness hardly changes this (the mean lies above most cuts; even at `--lazy 1` 2.25 with 7 and 4.10 with 16), and neither do candidates spread wider (`--cand-dispersion` 3 with 11 candidates: 3.60 approvals, but the top candidate approved by 95%, real 37–65%). Real voters seem to approve the few candidates near their favourite, not everyone above their average; part of that may be strategy (approving relative to the front-runners). Learned ballots do not close the gap (approvals per ballot after 3 poll rounds, 200 elections, defaults otherwise; Approval, the two approval runoffs within 0.1 of each other): honest → learned with `--strategic 0.5` / `--strategic 0 --adaptive 1` / `--strategic 1`: 4 candidates 1.74 → 1.61 / 1.62 / 1.48; 6: 2.52 → 2.30 / 2.29 / 2.06; 7: 2.91 → 2.64 / 2.64 / 2.36; 11: 4.44 → 3.98 / 4.01 / 3.54; 16: 6.36 → 5.62 / 5.80 / 4.9. Strategy removes about a tenth of the approvals (a fifth if everyone is strategic); with many candidates the model still approves 1.5–2 times as many as real voters, so the honest rule is the main cause. Other honest rules, approvals per ballot for 4 / 6 / 7 / 11 / 16 candidates (30 electorates each): mean (current) 1.72 / 2.64 / 2.98 / 4.40 / 6.38; midpoint of the voter's range 1.65 / 2.41 / 2.58 / 3.34 / 4.37; 70% of the range 1.36 / 1.68 / 1.84 / 2.10 / 2.56; mean + 1 standard deviation 1.00 / 1.20 / 1.41 / 1.92 / 2.67; mean of the better half 1.00 / 1.35 / 1.81 / 2.47 / 3.24. Not changed yet: it affects Approval, Approval runoff and Approval cond. runoff.
+
+**Fitting the whole curve, not only the count** (scratch analysis; Hive's point: which candidates get the few approvals carries information, a cut fitted to the count may fix the wrong end; real fields are pre-selected, so a few candidates matter and the rest hardly). Target: the sorted approval shares of the 11 real approval elections with at least 4 candidates and complete shares (France 2007 lists 8 of 12 and is left out). Model: defaults, 199 voters, 80 electorates per candidate count; mean over elections of the error in the count, the root mean square difference of the sorted shares, and the error in the top candidate's share:
+
+| Honest approval rule | Count | RMS of shares | Top share |
+|---|---|---|---|
+| a: above the voter's mean (current) | +1.30 | 0.169 | +15% |
+| c: as a, candidates spread wider (`--cand-dispersion 2`) | +1.05 | 0.177 | +28% |
+| b: personal threshold centred at N/(N+k), N = sum of stretched utilities ("effective number"), k = 1 / 2 / 4 | −0.37 / +0.37 / +1.55 | 0.093 / 0.104 / 0.227 | −11% / 0% / +12% |
+| b': as b with k = 1 and the number of candidates for N | −0.67 | 0.115 | −16% |
+| d: b (k = 1) with `--cand-dispersion 2` | −0.47 | 0.100 | +5% |
+| e: vse-sim's BulletyApproval60 (60% bullet votes, 40% rule a); with 40 / 50 / 70% bullet votes | −0.04; +0.39 / +0.18 / −0.28 | 0.079; 0.088 / 0.079 / 0.089 | −9%; −2% / −5% / −12% |
+| **g: personal threshold uniform between the voter's mean and their favourite** | −0.11 | **0.076** | −8% |
+
+- g fits best and has no fitted constant: a candidate's chance of approval rises linearly from 0 at the voter's mean to 1 at the favourite, a gradient instead of a hard cut. Its count grows like the data (4 candidates 1.28, 9: 1.96, 11: 2.21, 16: 2.93; real 1.24–1.56, 1.73, 2.41, 3.00). Every good variant approves the top candidate somewhat less often than real voters (Fargo 65%, the US 2012 experiment 90%).
+- A selected field alone (c) does not help: the mean rule approves the near candidates however far the rest are.
+
+**Effect on the results** (scratch run: the rule g for the approval and approval-runoff ballots only, each voter's draw fixed by their utilities so it is the same for every method; defaults, 200 elections, seed 1; Score, STAR, Smith//Score, IRV and Plurality unchanged, as they should be). Honest VSE / WME → learned VSE\* / WME\*, current rule vs g:
+
+| Method | `--strategic 0.5`, current | g | `--strategic 0 --adaptive 1`, current | g |
+|---|---|---|---|---|
+| Approval | 77.7 / 83.1 → 81.4 / 89.5 | 86.5 / 84.1 → 84.5 / 89.1 | 77.7 / 83.1 → 85.0 / 90.1 | 86.5 / 84.1 → 86.9 / 84.7 |
+| Approval cond. runoff | 77.6 / 83.7 → 82.7 / 89.3 | 86.3 / 90.8 → 84.6 / 95.4 | 77.6 / 83.7 → 83.3 / 91.0 | 86.3 / 90.8 → 86.4 / 94.2 |
+| Approval runoff | 86.2 / 96.0 → 85.1 / 98.2 | 85.7 / 92.1 → 84.0 / 94.0 | 86.2 / 96.0 → 86.1 / 96.9 | 85.7 / 92.1 → 86.7 / 94.1 |
+| (Score, for comparison) | 89.2 / 92.5 → 86.9 / 94.3 | same | 89.2 / 92.5 → 89.1 / 93.2 | same |
+
+- Honest Approval gains 9 points of VSE: approving fewer, but by degree of liking, makes the expected approval ballot a score ballot above the voter's mean (randomly rounded), so Approval moves toward Score. This matches vse-sim's remark that its "ideal" (mean) approval was not ideal, and that BulletyApproval60 did not hurt.
+- Strategy then adds little to Approval's VSE, and under adaptive voters its WME\* falls (90.1 → 84.7): strategy no longer repairs an overly generous honest ballot. Approval cond. runoff improves on every axis; Approval runoff loses some WME (fewer approvals make the top two less consensual).
+- The approval methods' results depend strongly on the honest rule: worth stating whichever rule is used.
+
+**Adopted** ([model.md](model.md), Honest approval): rule g replaces the mean rule, with each voter's draw from its own random stream (the same for every method; a strategic group's reference ballot uses the mean draw), for the approval ballot, the round-1 approvals of the approval runoffs and the truncated ranking of MDDA and MAMPO (ranked = approved by their definition). ARA, ARA-Top and the other score-based methods are not affected: their ballots are scores (stretched to the voter's range), and reading scores above the middle as approval is part of the method's count, not a voter's decision. Regression: only Approval, Approval runoff, Approval cond. runoff, MDDA, MAMPO and Inverse-Approval changed.
+
+Check (defaults, 200 elections, seed 1; earlier rule = every draw 0, which is the threshold at the mean). Honest VSE / WME → learned VSE\* / WME\*:
+
+| Method | `--strategic 0.5`, earlier | new | `--strategic 0 --adaptive 1`, earlier | new |
+|---|---|---|---|---|
+| Approval | 77.7 / 83.1 → 81.4 / 89.5 | 86.9 / 85.7 → 86.0 / 87.8 | 77.7 / 83.1 → 85.0 / 90.1 | 86.9 / 85.7 → 88.5 / 88.4 |
+| Approval cond. runoff | 77.6 / 83.7 → 82.7 / 89.3 | 87.5 / 92.2 → 85.6 / 96.3 | 77.6 / 83.7 → 83.3 / 91.0 | 87.5 / 92.2 → 86.6 / 92.1 |
+| Approval runoff | 86.2 / 96.0 → 85.1 / 98.2 | 86.1 / 93.4 → 84.7 / 95.0 | 86.2 / 96.0 → 86.1 / 96.9 | 86.1 / 93.4 → 84.6 / 93.5 |
+| MDDA | 83.5 / 91.6 → 83.0 / 94.0 | 86.9 / 85.7 → 86.9 / 89.5 | 83.5 / 91.6 → 84.7 / 92.3 | 86.9 / 85.7 → 86.0 / 88.5 |
+| MAMPO | 87.1 / 90.9 → 87.8 / 94.1 | 86.5 / 85.2 → 87.5 / 89.8 | 87.1 / 90.9 → 87.6 / 91.6 | 86.5 / 85.2 → 85.2 / 88.2 |
+| ARA, Score, STAR | unchanged | | | |
+
+- With short honest rankings MDDA's majority disqualification almost never acts (a majority must rank a rival above a candidate, and unranked candidates are only tied last): honest MDDA equals Approval (86.9 / 85.7 in both), and MDDA and MAMPO lose 5–6 points of honest WME. Their Condorcet-like protection depended on the long rankings the mean rule produced. Real voters rank most candidates when asked to rank (Debian, above), so whether a voter facing "ranked = approved" behaves like an approval voter (few) or a ranking voter (many) is open. A variant with an explicit approval cutoff (a full ranking plus approval marks, as the approval runoffs' ballot) would separate the two; not built.
 
 ## Manipulation and tails with adaptive voters; the defence fixed (2026-10-17)
 

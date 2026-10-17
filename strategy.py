@@ -177,7 +177,7 @@ def learn(method, u, rng, rounds=20, samples=10, group_size=0, strategic=None):
     if group_size > 0:   # split each ranking group at random into subgroups of at most group_size
         groups = [part for m in groups for part in np.array_split(rng.permutation(m), -(-len(m) // group_size))]
     shared = [None] * len(groups)              # None = members vote sincerely
-    ref = [method.sincere(u[m].mean(axis=0, keepdims=True), methods.lazy_of(m))[0] for m in groups]
+    ref = [method.sincere(u[m].mean(axis=0, keepdims=True), methods.lazy_of(m), methods.approval_of(m))[0] for m in groups]
     Ug = [u[m].sum(axis=0) for m in groups]
     # Methods with features (all but Condorcet-random-drop) keep the summed features per poll sample
     # and update them only for the group that changes; the result is the same as recounting.
@@ -308,7 +308,7 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
     def setup(gkeys):
         groups = [np.array(x) for x in gkeys.values()]
         return (list(gkeys), groups, [k[1] for k in gkeys],
-                [method.sincere(u[g].mean(axis=0, keepdims=True), methods.lazy_of(g))[0] for g in groups],
+                [method.sincere(u[g].mean(axis=0, keepdims=True), methods.lazy_of(g), methods.approval_of(g))[0] for g in groups],
                 [u[g].sum(axis=0) for g in groups])
 
     names, groups, eager, ref, Ug = setup(gkeys)

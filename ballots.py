@@ -90,10 +90,27 @@ def rank_ballots(u, lazy=0.0):
     return B
 
 
-def approval_ballots(u, lazy=0.0):
-    """Every candidate above the voter's mean utility (at least the favourite); with laziness only
-    those the voter also cares about (cares): at 1 a bullet vote for the favourite."""
-    a = u > u.mean(axis=1, keepdims=True) + 1e-12
+def approves(u, draw):
+    """The honest approval set, per voter and candidate. Each voter has a personal threshold between
+    their mean utility and their favourite, at the fraction `draw` (0..1, one per voter or one for all)
+    of the way: on utilities stretched to 0..1, mean + draw x (1 - mean). With draws uniform on 0..1, a
+    candidate's chance of approval rises linearly from 0 at the voter's mean to 1 at the favourite (a
+    gradient, not one cut for everyone); fitted to real approval elections (docs/model.md, Approval).
+    The favourite is always approved."""
+    mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
+    p = (u - mn) / np.where(mx - mn > 1e-12, mx - mn, 1)
+    mu = p.mean(axis=1, keepdims=True)
+    d = np.asarray(draw, float)
+    d = d[:, None] if d.ndim == 1 else d
+    a = p >= mu + d * (1 - mu) - 1e-12
+    a[np.arange(len(u)), u.argmax(axis=1)] = True
+    return a
+
+
+def approval_ballots(u, lazy=0.0, draw=0.5):
+    """The approval set (approves); with laziness only those the voter also cares about (cares):
+    at 1 a bullet vote for the favourite."""
+    a = approves(u, draw)
     if lazy_on(lazy):
         a &= cares(u, lazy)
     none = ~a.any(axis=1)
@@ -116,10 +133,9 @@ def fav_run_ballots(u, lazy=0.0):
     return rank_ballots(u) + u.shape[1] * fav_ballots(u)
 
 
-def app_run_ballots(u, lazy=0.0):
-    """Approve every candidate above the voter's mean utility; ranking by utility. Laziness: the
-    round-1 approvals only."""
-    return rank_ballots(u) + u.shape[1] * approval_ballots(u, lazy)
+def app_run_ballots(u, lazy=0.0, draw=0.5):
+    """Round 1: the approval set (approves); ranking by utility. Laziness: the round-1 approvals only."""
+    return rank_ballots(u) + u.shape[1] * approval_ballots(u, lazy, draw)
 
 
 def veto_ballots(u, lazy=0.0):
@@ -137,11 +153,11 @@ def lazy_rank_ballots(u, lazy=None):
     return truncate(R, cares(u, lazy)) if lazy_on(lazy) else R
 
 
-def trunc_ballots(u, lazy=None):
-    """Rank every candidate above the voter's mean utility, leave the rest unranked; with laziness
-    only those of them the voter also cares about."""
+def trunc_ballots(u, lazy=None, draw=0.5):
+    """Rank the approval set (approves), leave the rest unranked; with laziness only those of them
+    the voter also cares about. (MDDA and MAMPO read the ranked candidates as approved.)"""
     lazy = methods.LAZY if lazy is None else lazy
-    R, A = rank_ballots(u), approval_ballots(u)
+    R, A = rank_ballots(u), approval_ballots(u, 0.0, draw)
     if lazy_on(lazy):
         A = A * cares(u, lazy)
     k = A.sum(axis=1, keepdims=True)
@@ -556,6 +572,7 @@ class Ballot:
     worst: Callable             # (P) -> per voter: reversal mass of the most dishonest ballot allowed
     marks: Callable = None      # (X) -> the part the voter chooses (None: the whole ballot)
     lazy: bool = False          # laziness applies
+    approval: bool = False      # the honest ballot uses the approval threshold (approves): sincere(u, lazy, draw)
     ordered: bool = False       # records an order of the candidates
 
     def chosen(self, X):
@@ -569,18 +586,18 @@ BALLOTS = {b.name: b for b in [
            lazy=True, ordered=True),
     Ballot("strict", rank_ballots, _mutate_strict, _exag_strict, _implied_rank, _worst_ranking, ordered=True),
     Ballot("approval", approval_ballots, _mutate_approval, _exag_approval, _implied_marks, _worst_approval,
-           lazy=True),
+           lazy=True, approval=True),
     Ballot("score", score_ballots, _mutate_score, _exag_score, _implied_score, _worst_score,
            lazy=True, ordered=True),
     Ballot("fav_run", fav_run_ballots, _mutate_fav_run, _exag_fav_run, _implied_marks, _worst_fav,
            marks=_marks_run),
     Ballot("app_run", app_run_ballots, _mutate_app_run, _exag_app_run, _implied_marks, _worst_approval,
-           marks=_marks_run, lazy=True),
+           marks=_marks_run, lazy=True, approval=True),
     Ballot("veto", veto_ballots, _mutate_veto, _exag_veto, _implied_veto, _worst_veto),
     Ballot("weak", lazy_rank_ballots, _mutate_weak, _exag_weak, _implied_rank, _worst_ranking,
            lazy=True, ordered=True),                                      # honest: strict; ties only strategic
     Ballot("trunc", trunc_ballots, _mutate_trunc, _exag_trunc, _implied_trunc, _worst_ranking,
-           lazy=True, ordered=True),
+           lazy=True, ordered=True, approval=True),
     Ballot("trunc3", trunc3_ballots, _mutate_trunc3, _exag_trunc3, _implied_trunc, _worst_trunc3,
            lazy=True, ordered=True),
     Ballot("grade3", grade3_ballots, _mutate_grade3, _exag_grade3, _implied_grade3,

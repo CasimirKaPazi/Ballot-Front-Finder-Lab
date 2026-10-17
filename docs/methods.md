@@ -87,10 +87,10 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 
 | Method | Ballot | Rule |
 |---|---|---|
-| Approval | approval | most approvals; sincere: above the voter's mean |
+| Approval | approval | most approvals; sincere: above the voter's personal threshold between mean and favourite ([model.md](model.md), Honest approval) |
 | Approval runoff | two-round, approval first round | top two by approvals go to a separate runoff, decided by sincere preferences; a runoff tie goes to more approvals |
 | Approval cond. runoff | two-round, approval first round | as Approval runoff, but a candidate approved by more than half the voters wins outright |
-| MDDA | truncated ranking (ranked = approved) | disqualify every candidate that more than half the voters rank some other candidate above (unless all would be); most approved remaining wins. Sincere: rank everyone above the mean |
+| MDDA | truncated ranking (ranked = approved) | disqualify every candidate that more than half the voters rank some other candidate above (unless all would be); most approved remaining wins. Sincere: rank the candidates the voter would approve ([model.md](model.md), Honest approval) |
 | MAMPO | truncated ranking | Majority Approval, Minimum Pairwise Opposition (Kevin Venzke): ranked = approved. If nobody is approved by more than half the voters, the most approved wins; otherwise, among those approved by more than half, the one with the smallest largest pairwise opposition (most voters ranking some rival above it) wins. Devised to show that favourite betrayal, strong defensive strategy and strategy-freeness are compatible |
 
 **rated**
@@ -147,7 +147,7 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | Method | Ballot | Rule |
 |---|---|---|
 | Inverse-Plurality | one name | most named wins; the sincere ballot names the least liked candidate |
-| Inverse-Approval | approve or not | most approvals win; the sincere ballot approves every candidate below the voter's mean utility |
+| Inverse-Approval | approve or not | most approvals win; the sincere ballot is the approval rule applied to the reversed preferences (the least liked always, others below the voter's mean by chance) |
 | Inverse-Minimax | ranking | Minimax; the sincere ballot ranks upside down, so honestly the Condorcet loser (if any) wins |
 | Inverse-IRV | ranking | IRV; the sincere ballot ranks upside down |
 | Inverse-ER-IRV | ranking, ties allowed | ER-IRV; the sincere ballot ranks upside down (strictly, like every sincere ballot); strategic voters can tie candidates |
