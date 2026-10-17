@@ -344,8 +344,9 @@ def main():
                     help="also map the candidates from approval ballots as Alós-Ferrer & Granić (2015) do (sav.png)")
     ap.add_argument("--sav-voters", type=int, default=1000, help="--sav: voters per electorate")
     ap.add_argument("--sav-elections", type=int, default=100, help="--sav: electorates per model")
-    ap.add_argument("--sav-noise", type=float, default=0.0,
-                    help="--sav: blur utilities before approving, x each voter's own utility spread (0 = none)")
+    ap.add_argument("--sav-noise", type=float, default=1.0,
+                    help="--sav: blur utilities before approving, x each voter's own utility spread (0 = none); "
+                         "the default 1 leaves no pair of candidates that nobody approves together")
     ap.add_argument("--out", default="electorates", help="folder (in output/ unless it has a directory)")
     a = ap.parse_args()
 

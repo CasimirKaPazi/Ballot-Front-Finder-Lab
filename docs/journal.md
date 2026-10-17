@@ -103,6 +103,8 @@ Check (defaults, 200 elections, seed 1; earlier rule = every draw 0, which is th
 
 The first dimension explains 3–8 points less in every model, a step toward the real maps (which stay flatter, especially Messel). With fewer approvals, pairs nobody approves together become common (given half a voter, see [model.md](model.md)), which makes the map less reliable; real ballots of about 1000 voters rarely leave such gaps, a hint that real approvals are noisier than the model's (`--sav-noise` blurs them).
 
+`--sav-noise` (blurring each utility by a normal error of s × the voter's spread before approving), noise model, 60 electorates of 1000 voters, 6 / 8 candidates: s = 0: 67 / 93 / 100 / 100 (gaps in 88% of elections), 57 / 84 / 95 / 99 (97%); 0.25: about the same; 0.5: 72 / 92 / 100 / 100 (47%), 58 / 83 / 94 / 98 (55%); 1: 65 / 88 / 98 / 100 (0%), 51 / 76 / 88 / 95 (0%). **Decision:** default 1 (was 0): no gaps left to patch, and with 8 candidates closer to Messel (35 / 58 / 73 / 84). Only the approval map is affected; the methods' honest approval has no noise beyond the personal threshold.
+
 ## Manipulation and tails with adaptive voters; the defence fixed (2026-10-17)
 
 **Run** (Hive): defaults (noise model, 99 voters, 6 candidates, 3 poll rounds, 10 polls, aggressive share 0.5), standard set, 600 elections, seed 1, adaptive voters only:
