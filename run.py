@@ -14,10 +14,11 @@ CE, CE* (Condorcet efficiency) are reported alongside, as are the sincerity of t
 ballots (see strategy.sincerity) and the share of elections where the strategic ballots settled
 (poll rounds: the last round repeated the one before).
 
-Partial strategy: --strategic p makes a random share p of the voters strategic (the same voters
-for every method). --adaptive a makes a further share a adaptive: each poll round they vote
+Partial strategy: --strategic p makes a random share p of the voters always strategic (the same
+voters for every method). --adaptive a makes a further share a adaptive: each poll round they vote
 strategically if the race between the two leaders matters enough to them. The rest always vote
-sincerely.
+sincerely. Default: no one always strategic, everyone adaptive (--adaptive left out: everyone not
+in --strategic; with --converge nobody, as adaptive voters need poll rounds).
 
 Outputs, in one folder per run (--out; a name without a directory goes into output/; default
 run-<date>-<time>). `python analyze.py <folder>` puts its analysis into <folder>/analysis/.
@@ -209,6 +210,21 @@ def write_command(path, resume=False):
         f.write(f"simulator version {VERSION}, started {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
 
 
+def resolve_salience(p):
+    """The clusters model's salience follows --cluster-salience-exponent: 0 means every issue weighed
+    alike ("none", the same electorates as weights of 1), above 0 salience per cluster ("cluster").
+    Kept as a column so older files stay readable."""
+    return {**p, "salience": "cluster" if p.get("salience_exponent", 0) > 0 else "none"}
+
+
+def resolve_adaptive(p):
+    """--adaptive left out (None): every voter who is not always strategic is adaptive (1 - --strategic),
+    or nobody with --converge (adaptive voters need poll rounds). Returns p with a number."""
+    if p.get("adaptive") is None:
+        p = {**p, "adaptive": 0.0 if p.get("converge", 0) > 0 else round(1.0 - p["strategic"], 12)}
+    return p
+
+
 def valid_combination(p):
     """A condition the simulation can run: shares of strategic and adaptive voters within 1, and no
     adaptive voters with convergent learning (sweep.py skips the others)."""
@@ -222,13 +238,18 @@ def check_params(a, error):
         if any(v < lo for v in vals(k)):
             error(f"--{k.replace('_', '-')} must be at least {lo}")
     for k in ("strategic", "adaptive", "aggressive", "lazy"):
-        if any(not 0 <= v <= 1 for v in vals(k)):
+        if any(v is not None and not 0 <= v <= 1 for v in vals(k)):
             error(f"--{k} must be between 0 and 1")
-    # (sweep.py skips the combinations that break these two; here only all of them breaking is an error)
-    if min(vals("strategic")) + min(vals("adaptive")) > 1 + 1e-9:
-        error("--strategic and --adaptive together must be at most 1 (shares of the voters)")
-    if min(vals("adaptive")) > 0 and min(vals("converge")) > 0:
-        error("--adaptive is for poll rounds: not with --converge")
+    # (sweep.py skips the combinations that break these two; here only all of them breaking is an error;
+    # an --adaptive left out (None) adapts to the others, see resolve_adaptive)
+    if min(vals("converge")) > 0 and max(vals("strategic")) == 0:
+        error("--converge needs a --strategic share (adaptive voters, the default, need poll rounds)")
+    given = [v for v in vals("adaptive") if v is not None]
+    if given and len(given) == len(vals("adaptive")):
+        if min(vals("strategic")) + min(given) > 1 + 1e-9:
+            error("--strategic and --adaptive together must be at most 1 (shares of the voters)")
+        if min(given) > 0 and min(vals("converge")) > 0:
+            error("--adaptive is for poll rounds: not with --converge")
     if any(v <= 0 for v in vals("field_kappa")):
         error("--field-kappa must be above 0")
     if any(v < 0 for v in vals("noise_strength")):
@@ -501,11 +522,9 @@ def main():
                     help="1: dimension i has scale 1/i (Zipf dimensions, see scenario.py)")
     ap.add_argument("--cluster-count", dest="clusters", metavar="CLUSTER_COUNT", type=int, default=20)
     ap.add_argument("--cluster-spread", dest="spread", metavar="CLUSTER_SPREAD", type=float, default=0.5)
-    ap.add_argument("--cluster-salience", dest="salience", default="cluster", choices=["none", "cluster"],
-                    help="model clusters: 'cluster' = each cluster weighs the issues 1, 1/2, 1/3, ... in its own "
-                         "random order (see models.py); 'none' = every voter weighs every dimension alike")
     ap.add_argument("--cluster-salience-exponent", dest="salience_exponent", metavar="CLUSTER_SALIENCE_EXPONENT", type=float, default=0.5,
-                    help="model clusters, --cluster-salience cluster: weights 1/i^s (1 = Zipf, 0 = all alike)")
+                    help="model clusters: each cluster weighs the issues 1/i^s in its own random order (1 = Zipf; "
+                         "0 = every issue weighed alike, no salience; see models.py)")
     ap.add_argument("--cluster-fixed-variance", dest="fixed_variance", type=int, default=1, choices=[0, 1],
                     help="model clusters: 1 = scale positions so the dimensions' total variance is pi^2/6 whatever "
                          "their number (more dimensions spread the same disagreement over more issues)")
@@ -557,12 +576,12 @@ def main():
                     help="--converge only (poll rounds use whole ranking groups): max voters coordinating as one "
                          "group: a number of voters (1 = individual), a share of the electorate between 0 and 1 "
                          "(0.05 = 5%%), or 0 = whole ranking group")
-    ap.add_argument("--strategic", type=float, default=0.5,
+    ap.add_argument("--strategic", type=float, default=0.0,
                     help="share of voters who always vote strategically (random, the same for every method)")
-    ap.add_argument("--adaptive", type=float, default=0.0,
+    ap.add_argument("--adaptive", type=float, default=None,
                     help="share of voters who decide each poll round whether to vote strategically, by how much "
                          "the race between the two leaders matters to them (see docs/model.md, Partial strategy); "
-                         "the rest always vote sincerely")
+                         "the rest always vote sincerely. Default: everyone not in --strategic (with --converge: 0)")
     ap.add_argument("--max-score", type=int, default=5,
                     help="score ballots range over 0..max (Score, STAR, MJ, ARA, ...; MCA and 321 keep 3 grades)")
     ap.add_argument("--exits", type=int, default=0, choices=[0, 1],
@@ -590,7 +609,8 @@ def main():
     check_params(a, ap.error)
     out = run_dir(a.out, "run", a.overwrite, a.resume)
     write_command(out, a.resume)
-    p = {k: getattr(a, k) for k in PARAMS}
+    a.salience = resolve_salience(vars(a))["salience"]   # from the exponent (resolve_salience)
+    p = resolve_salience(resolve_adaptive({k: getattr(a, k) for k in PARAMS}))
     names = run_selection(a.methods, a.exclude)
     path = os.path.join(out, "elections.csv")
     key = run_key(p, PARAMS)
@@ -632,7 +652,7 @@ def main():
     lines = []
     lines.append(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {model_text(a)}, "
           f"width {a.width}{cand_text(a.cand_dispersion, a.cand_shift)}; {strategy_text(a, a.voters)}, "
-          f"strategic share {a.strategic}, scores 0..{a.max_score}"
+          f"strategic share {a.strategic}, adaptive share {p['adaptive']}, scores 0..{a.max_score}"
           f"{f', nomination: exits {a.exits}, clones {a.clones}' if a.exits or a.clones else ''}; seed {a.seed}")
     lines.append(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
     for m in sorted(names, key=lambda m: -summ[m]["VSE_learned"]):

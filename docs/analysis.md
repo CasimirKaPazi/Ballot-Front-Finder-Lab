@@ -113,7 +113,7 @@ To see how much a model assumption matters, vary each parameter on its own aroun
 
 ```
 python sweep.py --one-at-a-time --noise-strength 5 3 7 --dims 6 10 --width 0.7 1.0 \
-    --rounds 1 3 --aggressive 0.5 0 1 --strategic 0.5 1 --seeds 1 2 --elections 400 --out model
+    --rounds 1 3 --aggressive 0.5 0 1 --strategic 0 0.5 1 --seeds 1 2 --elections 400 --out model
 python analyze.py model                                   # -> output/model/analysis/
 ```
 

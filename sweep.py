@@ -32,6 +32,7 @@ import time
 
 from models import MODELS
 from run import (simulate, PARAMS, run_dir, write_command, group_size_arg, check_params, run_key, valid_combination,
+                 resolve_adaptive, resolve_salience,
                  resume_state, CsvSink, interrupted)
 from methods import run_selection
 
@@ -46,7 +47,6 @@ def main():
     ap.add_argument("--cluster-zipf", dest="zipf", type=int, nargs="+", default=[0], choices=[0, 1])
     ap.add_argument("--cluster-count", dest="clusters", metavar="CLUSTER_COUNT", type=int, nargs="+", default=[20])
     ap.add_argument("--cluster-spread", dest="spread", metavar="CLUSTER_SPREAD", type=float, nargs="+", default=[0.5])
-    ap.add_argument("--cluster-salience", dest="salience", nargs="+", default=["cluster"], choices=["none", "cluster"])
     ap.add_argument("--cluster-salience-exponent", dest="salience_exponent", metavar="CLUSTER_SALIENCE_EXPONENT", type=float, nargs="+", default=[0.5])
     ap.add_argument("--cluster-fixed-variance", dest="fixed_variance", type=int, nargs="+", default=[1], choices=[0, 1])
     ap.add_argument("--field-kappa", type=float, nargs="+", default=[1.5])
@@ -61,8 +61,9 @@ def main():
     ap.add_argument("--rounds", type=int, nargs="+", default=[3])
     ap.add_argument("--samples", type=int, nargs="+", default=[10])
     ap.add_argument("--group-size", type=group_size_arg, nargs="+", default=[10])
-    ap.add_argument("--strategic", type=float, nargs="+", default=[0.5])
-    ap.add_argument("--adaptive", type=float, nargs="+", default=[0.0])
+    ap.add_argument("--strategic", type=float, nargs="+", default=[0.0])
+    ap.add_argument("--adaptive", type=float, nargs="+", default=[None],
+                    help="default: everyone not in --strategic, per condition (with --converge: 0)")
     ap.add_argument("--max-score", type=int, nargs="+", default=[5])
     ap.add_argument("--exits", type=int, nargs="+", default=[0], choices=[0, 1])
     ap.add_argument("--clones", type=int, nargs="+", default=[0])
@@ -104,6 +105,7 @@ def main():
             print(f"note: {', '.join(idle)} only matter for poll rounds, not with --converge; "
                   "these conditions will be identical")
 
+    a.salience = [None]                              # set from the exponent per condition (resolve_salience)
     values = {k: getattr(a, k if k != "seed" else "seeds") for k in PARAMS}
     if a.one_at_a_time:
         base = {k: v[0] for k, v in values.items() if k != "seed"}
@@ -111,6 +113,7 @@ def main():
         grid = [{**c, "seed": sd} for c in conds for sd in values["seed"]]
     else:
         grid = [dict(zip(PARAMS, combo)) for combo in itertools.product(*values.values())]
+    grid = [resolve_salience(resolve_adaptive(p)) for p in grid]   # --adaptive left out: the rest of the voters
     skipped = [p for p in grid if not valid_combination(p)]
     if skipped:
         grid = [p for p in grid if valid_combination(p)]

@@ -54,8 +54,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--cluster-zipf` | 0 | model `clusters`: 1 = dimension i has scale 1/i ([model.md](model.md), Zipf dimensions); 0 = all dimensions equal |
 | `--cluster-count` | 20 | model `clusters`: voter clusters |
 | `--cluster-spread` | 0.5 | model `clusters`: standard deviation of voters around their cluster centre (centres have 1), before the Zipf scaling |
-| `--cluster-salience` | cluster | model `clusters`: `cluster` = each cluster weighs the issues 1, 1/2, 1/3, … in its own random order (see [model.md](model.md), Electorates) |
-| `--cluster-salience-exponent` | 0.5 | model `clusters` with `--cluster-salience cluster`: weights 1/i^s (1 = Zipf, 0 = all alike) |
+| `--cluster-salience-exponent` | 0.5 | model `clusters`: each cluster weighs the issues 1/i^s in its own random order (1 = Zipf; 0 = every issue alike, no salience; see [model.md](model.md), Electorates) |
 | `--cluster-fixed-variance` | 1 | model `clusters`: 1 = scale positions so the dimensions' total variance is π²/6 whatever their number |
 | `--field-kappa` | 1.5 | model `field`: saturation of opinions (small: smooth, nearly Gaussian; large: two camps per issue) |
 | `--field-salience` | 0 | model `field`: strength of the salience field (0 = every issue weighed alike) |
@@ -75,8 +74,8 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--search` | 10 | random ballot changes a group tries per poll round, after the naive exaggerations |
 | `--converge` | 0 | N > 0: convergent learning with N rounds instead of poll rounds (e.g. `--converge 20 --samples 10`) |
 | `--group-size` | 10 | convergent learning only: most voters that coordinate as one group: a number of voters (1 = every voter alone), a share of the electorate between 0 and 1 (0.05 = 5% of the voters, rounded, at least 1), or 0 = whole ranking group |
-| `--strategic` | 0.5 | share of voters who always vote strategically (see [model.md](model.md), Partial strategy) |
-| `--adaptive` | 0 | share of voters who decide each poll round whether to vote strategically, by how much the race between the two leaders matters to them (poll rounds only; `--strategic` + `--adaptive` ≤ 1, sweep.py skips other combinations; see [model.md](model.md), Partial strategy) |
+| `--strategic` | 0 | share of voters who always vote strategically (see [model.md](model.md), Partial strategy) |
+| `--adaptive` | the rest | share of voters who decide each poll round whether to vote strategically, by how much the race between the two leaders matters to them (poll rounds only; `--strategic` + `--adaptive` ≤ 1, sweep.py skips other combinations; see [model.md](model.md), Partial strategy); left out: everyone not in `--strategic` (1 − `--strategic`), with `--converge` 0 |
 | `--max-score` | 5 | score ballots range over 0–max (see [model.md](model.md), Score range) |
 | `--exits` | 0 | 1: candidates may withdraw and re-enter strategically (see [model.md](model.md), Strategic nomination) |
 | `--clones` | 0 | most clones in the race at once, fielded strategically; 0 = none (see [model.md](model.md), Strategic nomination) |
@@ -122,7 +121,7 @@ python analyze.py reference mine --out compare            # reference: the folde
 
 The terminal and the report list each older input and what was filled in or left blank. A file that lacks a column without such an entry (in `REQUIRED_COLUMNS`, or a run parameter) is too old and has to be regenerated; `analyze.py` says which columns are missing. When adding a run parameter: put it into `PARAMS` in run.py, read it in `one_election` from `p`, and add it to `ADDED_COLUMNS` with the value it had before.
 
-Column names are the option names with underscores, except for the options of the clusters model, renamed on 2026-10-17, whose columns kept their earlier names so older files stay readable: `--cluster-count` → `clusters`, `--cluster-spread` → `spread`, `--cluster-zipf` → `zipf`, `--cluster-salience` → `salience`, `--cluster-salience-exponent` → `salience_exponent`, `--cluster-fixed-variance` → `fixed_variance`.
+Column names are the option names with underscores, except for the options of the clusters model, renamed on 2026-10-17, whose columns kept their earlier names so older files stay readable: `--cluster-count` → `clusters`, `--cluster-spread` → `spread`, `--cluster-zipf` → `zipf`, `--cluster-salience-exponent` → `salience_exponent`, `--cluster-fixed-variance` → `fixed_variance`. The column `salience` (`cluster` or `none`) is filled in from the exponent (above 0 or 0).
 
 | Column | Added | Older files |
 |---|---|---|

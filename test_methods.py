@@ -331,6 +331,23 @@ _r = manipulation(METHODS["Plurality"], METHODS["Plurality"].sincere(_um), _um, 
 assert _r["manip1"] == 1 and _r["manip2"] == 1 and _r["U_manip1"] < _um.sum(axis=0)[0] + 1e-9, _r
 _r = manipulation(METHODS["Minimax"], METHODS["Minimax"].sincere(_um), _um, _um, lambda P: P)
 assert _r["manip1"] == 0 and _r["manip2"] == 0 and abs(_r["U_manip1"] - _um.sum(axis=0)[1]) < 1e-9, _r
+# the defence tries every exaggeration of its ballot type: with a sincere Condorcet winner, no Condorcet
+# method is manipulable two-sided, whether on strict rankings (Minimax) or rankings with ties (MMWV, whose
+# first exaggeration is a weak defence; using only that one let MMWV fail in about a fifth of elections)
+import models as _mdm
+from scenario import Scenario as _Sc
+_rg = np.random.default_rng(5)
+_n_cw = 0
+for _k in range(25):
+    _ue = _mdm.draw_electorate(_Sc(n_voters=31, n_cands=4, model="noise"), _rg).u
+    _wins = ((_ue[:, :, None] > _ue[:, None, :]).sum(0) > len(_ue) / 2)
+    if not (_wins.sum(1) == 3).any():
+        continue
+    _n_cw += 1
+    for _mn in ("Minimax", "MMWV"):
+        _m = METHODS[_mn]
+        assert manipulation(_m, _m.sincere(_ue), _ue, _ue, lambda P: P)["manip2"] == 0, _mn
+assert _n_cw >= 15
 print("manipulation ok")
 
 # Equal-ranking variants equal their strict versions on sincere (strict) ballots

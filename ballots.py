@@ -6,6 +6,8 @@ Ballot entry in BALLOTS (name -> Ballot), and a method names its type by that na
     sincere   the honest ballots from utilities: function (u, lazy) -> B (lazy: laziness 0..1;
               types without laziness ignore it)
     lazy      True if laziness (--lazy) applies to this type
+    approval  True if the honest ballot uses the approval threshold (approves): then sincere is
+              (u, lazy, draw) -> B, with each voter's approval draw (methods.VOTER_APPROVAL)
     mutate    one small random change of a single ballot: function (b, rng) -> ballot (the random
               search of the strategy models)
     exaggerate  the naive exaggerations a group tries around the two poll leaders: function

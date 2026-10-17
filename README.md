@@ -8,7 +8,7 @@ A simulator for comparing single-winner voting methods: plurality, runoffs, IRV,
 
 1. **An electorate.** Voters and candidates are points in an issue space (by default six issues, with voters gathered in clumps within clumps). A voter likes a candidate less the farther away they are. Each election draws a new electorate ([model](docs/model.md), Electorates).
 2. **Honest ballots.** Each voter fills in the method's ballot sincerely: a name, a ranking, approvals or scores, depending on the method ([model](docs/model.md), Ballots and sincere voting).
-3. **Poll rounds.** Polls show the method's own counts from a sample of the electorate. Strategic voters (by default half the electorate), in groups with the same preferences, change their ballot if that improves the result for them in the polls; all groups answer the same poll at once, and the next poll shows the new ballots ([model](docs/model.md), Strategy engine).
+3. **Poll rounds.** Polls show the method's own counts from a sample of the electorate. Voters (by default each one adaptive: strategic in a round when the race between the two leaders matters enough to them), in groups with the same preferences, change their ballot if that improves the result for them in the polls; all groups answer the same poll at once, and the next poll shows the new ballots ([model](docs/model.md), Strategy engine).
 4. **Optionally**, candidates may withdraw or field clones beforehand (Strategic nomination), and a diagnostic checks whether some voters would do better by staying home (Participation; both in [model](docs/model.md)).
 
 **What is measured.** Two efficiencies, both 0 for a random ballot and 100 for the best candidate of each election ([analysis](docs/analysis.md), Axes):
@@ -30,13 +30,13 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 - New methods as add-ons: one Python file in `addons/` with a counting rule; ballots, strategy and measures come with the ballot type. A [tutorial](docs/addons.md) walks through writing one with little Python.
 
 **Electorates** ([model](docs/model.md), Electorates)
-- Five electorate models: fractal-noise clumps (the default, tuned against real data: Condorcet winners as often as in real ranked elections, an approval map like that of real ballots), voter clusters with Zipf dimensions and per-group salience, scale-free opinion fields, and Quinn's hierarchical model (as the lab's version and as in vse-sim's code).
+- Five electorate models: fractal-noise clumps (the default, tuned against real data: Condorcet winners as often as in real ranked elections, an approval map close to that of real ballots with a few candidates), voter clusters with Zipf dimensions and per-group salience, scale-free opinion fields, and Quinn's hierarchical model (as the lab's version and as in vse-sim's code).
 - `show_electorates.py` draws and measures the electorates without any method: example plots, dimensionality, how costly the Condorcet winner is, and the candidates' map from approval ballots compared with real data.
 - Candidates can be made unlike the electorate (clustered in the centre, spread out or shifted).
 
 **Voters and strategy** ([model](docs/model.md), Strategy engine)
 - Poll rounds: voters see only the method's own poll counts, with realistic poll error, and answer them all at once; groups with the same preferences act as blocs. Aggressive voters exaggerate whenever it cannot hurt, kind ones only for a clear gain.
-- Who strategises: a fixed share of strategic voters, or adaptive voters who strategise in a round when the race between the two leaders matters enough to them, so attack and defence come from the same rule.
+- Who strategises: by default adaptive voters, who strategise in a round when the race between the two leaders matters enough to them, so attack and defence come from the same rule; or a fixed share of always-strategic voters, as in other simulations.
 - Laziness: truncated rankings and fewer approvals or scores, each voter with their own cut.
 - Honest approval fitted to real approval elections: each voter approves above a personal threshold between their mean and their favourite, so approvals stay few as the field grows ([model](docs/model.md), Honest approval).
 - Also: convergent learning as a long-run alternative, strategic nomination (candidates withdraw or field clones), a first poll from a previous election (does a method let the electorate leave a strategic state?), a check of the no-show paradox, and a manipulation test (how often and how badly an informed coalition can manipulate from honest ballots, one- and two-sided).
@@ -74,7 +74,7 @@ Every run or sweep writes into its own folder in `output/`, and `analyze.py` wri
 
 | File | Contents |
 |---|---|
-| [docs/model.md](docs/model.md) | The model: electorates and their defaults, ballots and sincere voting (with laziness and the score range), the strategy engine (poll rounds, partial strategy and adaptive voters, convergent learning), starting information, strategic nomination, participation, manipulation test |
+| [docs/model.md](docs/model.md) | The model: electorates and their defaults, ballots and sincere voting (honest approval, laziness, the score range), the strategy engine (poll rounds, partial strategy and adaptive voters, convergent learning), starting information, strategic nomination, participation, manipulation test |
 | [docs/methods.md](docs/methods.md) | Groups and sets, every method's rule, add-ons |
 | [docs/analysis.md](docs/analysis.md) | Measures and analysis: the axes (VSE, WME, CE), the reachable frontier, strategy types, sincerity and fidelity, the front, the report and its plots, robustness and rank stability |
 | [docs/running.md](docs/running.md) | Running: output folders and what a run writes, progress and resuming, all parameters of `run.py`, `sweep.py` and `analyze.py`, combining runs, older results files, renamed methods, the files of the code, checking changes |

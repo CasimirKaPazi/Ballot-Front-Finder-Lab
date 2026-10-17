@@ -6,6 +6,8 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-17 | `--cluster-salience` removed: `--cluster-salience-exponent 0` gives exactly the electorates of `none` (column `salience` filled in from the exponent) | `--cluster-salience none` or `cluster` |
+| 2026-10-17 | Default strategy: every voter adaptive (`--strategic 0`, `--adaptive` left out = everyone not always strategic; with `--converge` 0) | `--strategic 0.5 --adaptive 0` (half the voters always strategic) |
 | 2026-10-17 | Honest approval: a personal threshold between the voter's mean and favourite (uniform draw per voter), for Approval, Approval runoff, Approval cond. runoff, MDDA, MAMPO (and Inverse-Approval) | every candidate above the voter's mean approved (ranked for MDDA, MAMPO) |
 | 2026-10-17 | Options of the clusters model renamed `--cluster-*` (`--cluster-count`, `--cluster-spread`, `--cluster-zipf`, `--cluster-salience`, `--cluster-salience-exponent`, `--cluster-fixed-variance`); file columns unchanged | `--clusters`, `--spread`, `--zipf`, `--salience`, `--salience-exponent`, `--fixed-variance` |
 | 2026-10-17 | Manipulation test, two-sided: the defence tries every exaggeration of its ballot type and counters with the most effective one | the first exaggeration only |
@@ -104,6 +106,17 @@ Check (defaults, 200 elections, seed 1; earlier rule = every draw 0, which is th
 The first dimension explains 3–8 points less in every model, a step toward the real maps (which stay flatter, especially Messel). With fewer approvals, pairs nobody approves together become common (given half a voter, see [model.md](model.md)), which makes the map less reliable; real ballots of about 1000 voters rarely leave such gaps, a hint that real approvals are noisier than the model's (`--sav-noise` blurs them).
 
 `--sav-noise` (blurring each utility by a normal error of s × the voter's spread before approving), noise model, 60 electorates of 1000 voters, 6 / 8 candidates: s = 0: 67 / 93 / 100 / 100 (gaps in 88% of elections), 57 / 84 / 95 / 99 (97%); 0.25: about the same; 0.5: 72 / 92 / 100 / 100 (47%), 58 / 83 / 94 / 98 (55%); 1: 65 / 88 / 98 / 100 (0%), 51 / 76 / 88 / 95 (0%). **Decision:** default 1 (was 0): no gaps left to patch, and with 8 candidates closer to Messel (35 / 58 / 73 / 84). Only the approval map is affected; the methods' honest approval has no noise beyond the personal threshold.
+
+**Score ballots** (a first check, 2026-10-17): the honest score ballot (the voter's range stretched over the scale, rounded) against the in-situ evaluation ballots of Voter Autrement 2017 in Hérouville-Saint-Clair (11 candidates; per candidate the share of grades in the lower half; from Baujard et al.'s slides, the only figures at hand). Model: defaults, 60 electorates of 499 voters, 11 candidates. Sorted shares of lower-half grades per candidate:
+
+| Ballot | Model | Real | Mean, model / real |
+|---|---|---|---|
+| 6 levels (0..5), lower half 0–2 | 43 49 55 60 66 71 76 79 83 88 93 | 48 49 50 76 81 87 88 88 94 95 95 | 69% / 77% |
+| 4 levels, lower half | as above | 44 50 52 80 80 87 87 87 97 97 97 | 69% / 78% |
+| approval (new rule), not approved | 59 65 70 74 78 81 84 87 89 92 95 | 46 48 51 75 81 85 87 88 95 95 95 | 80% / 77% |
+
+- The honest score ballot is somewhat more generous than real grades (8 points), far less than the earlier approval rule was; not changed.
+- The larger difference is the field: in the data three serious candidates are graded low by about half the voters and the other eight by 75–97%, a cliff; the model's candidates spread evenly. This is the selection of candidates (a few likely winners, many who hardly matter), a property of the candidate model, not of the ballots. Open for a later version; one town, one non-binding experiment.
 
 ## Manipulation and tails with adaptive voters; the defence fixed (2026-10-17)
 

@@ -327,7 +327,6 @@ def main():
     ap.add_argument("--cluster-zipf", dest="zipf", type=int, default=0, choices=[0, 1])
     ap.add_argument("--cluster-count", dest="clusters", metavar="CLUSTER_COUNT", type=int, default=20)
     ap.add_argument("--cluster-spread", dest="spread", metavar="CLUSTER_SPREAD", type=float, default=0.5)
-    ap.add_argument("--cluster-salience", dest="salience", default="cluster", choices=["none", "cluster"])
     ap.add_argument("--cluster-salience-exponent", dest="salience_exponent", metavar="CLUSTER_SALIENCE_EXPONENT", type=float, default=0.5)
     ap.add_argument("--cluster-fixed-variance", dest="fixed_variance", type=int, default=1, choices=[0, 1])
     ap.add_argument("--field-kappa", type=float, default=1.5)
@@ -353,7 +352,7 @@ def main():
     out = out_path(a.out)
     os.makedirs(out, exist_ok=True)
     scs = [Scenario(a.voters, a.cands, a.dims, a.clusters, a.spread, a.width, a.zipf, a.cand_dispersion,
-                    a.cand_shift, m, a.ks_alpha, a.ks_cut, a.ks_shared, salience=a.salience,
+                    a.cand_shift, m, a.ks_alpha, a.ks_cut, a.ks_shared, salience="cluster" if a.salience_exponent > 0 else "none",
                     salience_exponent=a.salience_exponent, fixed_variance=a.fixed_variance,
                     field_kappa=a.field_kappa, field_salience=a.field_salience,
                     noise_strength=a.noise_strength)
