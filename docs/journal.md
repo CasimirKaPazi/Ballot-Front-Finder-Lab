@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-17 | Options of the clusters model renamed `--cluster-*` (`--cluster-count`, `--cluster-spread`, `--cluster-zipf`, `--cluster-salience`, `--cluster-salience-exponent`, `--cluster-fixed-variance`); file columns unchanged | `--clusters`, `--spread`, `--zipf`, `--salience`, `--salience-exponent`, `--fixed-variance` |
 | 2026-10-17 | Manipulation test, two-sided: the defence tries every exaggeration of its ballot type and counters with the most effective one | the first exaggeration only |
 | 2026-10-17 | Report: Low and Low\* (winner below the median candidate) | — |
 | 2026-10-17 | Manipulation test (`--manipulation`), new diagnostic | — |

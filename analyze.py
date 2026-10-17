@@ -579,7 +579,8 @@ PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "
                "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion",
                "cand_shift": "candidate shift", "lazy": "laziness", "model": "electorate model",
                "ks_alpha": "ks faction alpha", "ks_cut": "ks cut",
-               "ks_shared": "ks shared factions", "salience": "salience", "salience_exponent": "salience exponent", "fixed_variance": "fixed total variance",
+               "ks_shared": "ks shared factions", "clusters": "cluster count", "spread": "cluster spread", "zipf": "cluster Zipf",
+               "salience": "cluster salience", "salience_exponent": "cluster salience exponent", "fixed_variance": "cluster fixed variance",
                "field_kappa": "field saturation", "field_salience": "salience field",
                "noise_strength": "noise strength", "adaptive": "adaptive share"}
 LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "adaptive", "poll_size", "poll_error", "search", "converge",

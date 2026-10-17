@@ -6,7 +6,7 @@ is run with all remaining flags at their base (one parameter varied at a time), 
 
 Usage:
     python sweep.py --one-at-a-time --noise-strength 5 3 7 --dims 6 3 10 --width 0.7 0.5 1.0 --out model
-    python sweep.py --model clusters --clusters 20 5 --out clusters
+    python sweep.py --model clusters --cluster-count 20 5 --out clusters
     python sweep.py --rounds 1 2 3 4 5 --strategic 0.5 1 --elections 200 --out rounds
     python sweep.py --aggressive 0 0.5 1 --methods STAR "BTR-score" Schulze
     python sweep.py --converge 20 --samples 10 --group-size 1 10 0 --out convergent
@@ -43,12 +43,12 @@ def main():
     ap.add_argument("--cands", type=int, nargs="+", default=[6])
     ap.add_argument("--model", nargs="+", default=["noise"], choices=list(MODELS))
     ap.add_argument("--dims", type=int, nargs="+", default=[6])
-    ap.add_argument("--zipf", type=int, nargs="+", default=[0], choices=[0, 1])
-    ap.add_argument("--clusters", type=int, nargs="+", default=[20])
-    ap.add_argument("--spread", type=float, nargs="+", default=[0.5])
-    ap.add_argument("--salience", nargs="+", default=["cluster"], choices=["none", "cluster"])
-    ap.add_argument("--salience-exponent", type=float, nargs="+", default=[0.5])
-    ap.add_argument("--fixed-variance", type=int, nargs="+", default=[1], choices=[0, 1])
+    ap.add_argument("--cluster-zipf", dest="zipf", type=int, nargs="+", default=[0], choices=[0, 1])
+    ap.add_argument("--cluster-count", dest="clusters", metavar="CLUSTER_COUNT", type=int, nargs="+", default=[20])
+    ap.add_argument("--cluster-spread", dest="spread", metavar="CLUSTER_SPREAD", type=float, nargs="+", default=[0.5])
+    ap.add_argument("--cluster-salience", dest="salience", nargs="+", default=["cluster"], choices=["none", "cluster"])
+    ap.add_argument("--cluster-salience-exponent", dest="salience_exponent", metavar="CLUSTER_SALIENCE_EXPONENT", type=float, nargs="+", default=[0.5])
+    ap.add_argument("--cluster-fixed-variance", dest="fixed_variance", type=int, nargs="+", default=[1], choices=[0, 1])
     ap.add_argument("--field-kappa", type=float, nargs="+", default=[1.5])
     ap.add_argument("--field-salience", type=float, nargs="+", default=[0.0])
     ap.add_argument("--noise-strength", type=float, nargs="+", default=[5.0])

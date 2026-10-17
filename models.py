@@ -49,7 +49,7 @@ it keeps vse-sim's one offset per person and bundle (4. below), and has no ks_sh
 differs from vse-sim is common to all models here: utilities exp(-distance / width) instead of
 -distance, and the candidate parameters (cand_dispersion, cand_shift). Parameters: ks_alpha (faction alpha), ks_cut (where importance stops), ks_shared
 (1: the same factions in every bundle, a test variant without cross-cutting cleavages); --dims,
---clusters, --spread and --zipf do not apply.
+the --cluster-* options do not apply.
     1. Issue bundles: the first bundle weighs 1, each further one a Beta(1, 3) fraction of the one
        before, until the weight falls below ks_cut (0.2). Within a bundle, its first dimension has
        the bundle's weight, each further one a Beta(1.5, 3) fraction of the one before, again down to

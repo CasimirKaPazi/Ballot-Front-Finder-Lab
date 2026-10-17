@@ -51,12 +51,12 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--model` | noise | electorate model: `noise`, `clusters`, `field`, `ks` or `ks-quinn` (see [model.md](model.md), Electorates; `models.py`) |
 | `--dims` | 6 | issue-space dimensions (models `noise`, `clusters`, `field`) |
 | `--noise-strength` | 5 | model `noise`: how strongly voters gather where the fractal noise is high (0 = a Gaussian blob; larger: sharper clumps) |
-| `--zipf` | 0 | model `clusters`: 1 = dimension i has scale 1/i ([model.md](model.md), Zipf dimensions); 0 = all dimensions equal |
-| `--clusters` | 20 | model `clusters`: voter clusters |
-| `--spread` | 0.5 | model `clusters`: standard deviation of voters around their cluster centre (centres have 1), before the Zipf scaling |
-| `--salience` | cluster | model `clusters`: `cluster` = each cluster weighs the issues 1, 1/2, 1/3, … in its own random order (see [model.md](model.md), Electorates) |
-| `--salience-exponent` | 0.5 | model `clusters` with `--salience cluster`: weights 1/i^s (1 = Zipf, 0 = all alike) |
-| `--fixed-variance` | 1 | model `clusters`: 1 = scale positions so the dimensions' total variance is π²/6 whatever their number |
+| `--cluster-zipf` | 0 | model `clusters`: 1 = dimension i has scale 1/i ([model.md](model.md), Zipf dimensions); 0 = all dimensions equal |
+| `--cluster-count` | 20 | model `clusters`: voter clusters |
+| `--cluster-spread` | 0.5 | model `clusters`: standard deviation of voters around their cluster centre (centres have 1), before the Zipf scaling |
+| `--cluster-salience` | cluster | model `clusters`: `cluster` = each cluster weighs the issues 1, 1/2, 1/3, … in its own random order (see [model.md](model.md), Electorates) |
+| `--cluster-salience-exponent` | 0.5 | model `clusters` with `--cluster-salience cluster`: weights 1/i^s (1 = Zipf, 0 = all alike) |
+| `--cluster-fixed-variance` | 1 | model `clusters`: 1 = scale positions so the dimensions' total variance is π²/6 whatever their number |
 | `--field-kappa` | 1.5 | model `field`: saturation of opinions (small: smooth, nearly Gaussian; large: two camps per issue) |
 | `--field-salience` | 0 | model `field`: strength of the salience field (0 = every issue weighed alike) |
 | `--ks-alpha` | 1.5 | model `ks`: faction alpha (higher: more, smaller factions); see [model.md](model.md), Electorates |
@@ -90,7 +90,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--overwrite` | off | replace an existing run in `--out` |
 | `--resume` | off | continue an interrupted run in `--out` with the same command (see Progress, saving and resuming) |
 
-`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--converge`, `--group-size`, `--strategic`, `--adaptive`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid, one run after another, and writes one elections CSV per run into `output/<out>/runs/`. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--cluster-zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--converge`, `--group-size`, `--strategic`, `--adaptive`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid, one run after another, and writes one elections CSV per run into `output/<out>/runs/`. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
 
 `analyze.py`:
 
@@ -121,6 +121,8 @@ python analyze.py reference mine --out compare            # reference: the folde
 - blank, for a measure older runs did not record (e.g. `fidelity`, the Condorcet winner in the ballots). Tables show it as missing for those runs.
 
 The terminal and the report list each older input and what was filled in or left blank. A file that lacks a column without such an entry (in `REQUIRED_COLUMNS`, or a run parameter) is too old and has to be regenerated; `analyze.py` says which columns are missing. When adding a run parameter: put it into `PARAMS` in run.py, read it in `one_election` from `p`, and add it to `ADDED_COLUMNS` with the value it had before.
+
+Column names are the option names with underscores, except for the options of the clusters model, renamed on 2026-10-17, whose columns kept their earlier names so older files stay readable: `--cluster-count` → `clusters`, `--cluster-spread` → `spread`, `--cluster-zipf` → `zipf`, `--cluster-salience` → `salience`, `--cluster-salience-exponent` → `salience_exponent`, `--cluster-fixed-variance` → `fixed_variance`.
 
 | Column | Added | Older files |
 |---|---|---|
