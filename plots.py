@@ -4,6 +4,8 @@ Method identity is carried by direct labels, never by colour, since there are fa
 than distinguishable hues. In the arrow plot, the learned-ballot points are coloured by sincerity
 from blue (sincere) through purple to dark red (much reversed preference). Heatmaps use blue.
 """
+import textwrap
+import zlib
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -357,7 +359,34 @@ def fidelity(r, path, hide):
     return True
 
 
-TINTS = ["#dbe7f7", "#f6e3cf", "#dcefe0", "#efdcef", "#f5f0cc", "#d6eef0", "#f3d9d9", "#e4e2f5"]   # region fills
+TINTS = ["#dbe7f7", "#f6e3cf", "#dcefe0", "#efdcef", "#f5f0cc", "#d6eef0", "#f3d9d9", "#e4e2f5",
+         "#e6efd2", "#f7dfe9", "#dfe3e8", "#f2e6d8"]   # region fills
+
+
+def method_tint(name):
+    """A method's own region colour: chosen from its name alone, so a method keeps its colour across
+    runs whatever other methods are present."""
+    return zlib.crc32(name.encode()) % len(TINTS)
+
+
+def _region_colours(lab, keys, names):
+    """Colour per region: each method's own tint (method_tint), except where two neighbouring regions
+    would share one; then the smaller region takes the next tint none of its neighbours has."""
+    adj = {k: set() for k in keys}
+    for a, b in ((lab[:, 1:], lab[:, :-1]), (lab[1:, :], lab[:-1, :])):
+        m = (a != b) & (a >= 0) & (b >= 0)
+        for x, y in set(zip(a[m].tolist(), b[m].tolist())):
+            adj[x].add(y)
+            adj[y].add(x)
+    size = {k: int((lab == k).sum()) for k in keys}
+    out = {}
+    for k in sorted(keys, key=lambda k: -size[k]):           # larger regions keep their own tint first
+        taken = {out[n] for n in adj[k] if n in out}
+        t = method_tint(names[k])
+        while t in taken and len(taken) < len(TINTS):
+            t = (t + 1) % len(TINTS)
+        out[k] = t
+    return {k: TINTS[t] for k, t in out.items()}
 
 
 def tradeoff(r, path, axes=("VSE*", "WME*", "sincerity"), hide=()):
@@ -389,7 +418,7 @@ def tradeoff(r, path, axes=("VSE*", "WME*", "sincerity"), hide=()):
     lab = np.where(inside, best, -1)
     fig, ax = plt.subplots(figsize=(8.6, 8.0))
     shown = sorted(set(lab[inside].ravel()))
-    colour = {k: TINTS[i % len(TINTS)] for i, k in enumerate(shown)}
+    colour = _region_colours(lab, shown, {k: r["methods"][idx[k]] for k in shown})
     img = np.ones(lab.shape + (4,))
     img[..., 3] = 0
     for k in shown:
@@ -415,16 +444,18 @@ def tradeoff(r, path, axes=("VSE*", "WME*", "sincerity"), hide=()):
     ax.text(0.5, h + 0.025, names[2], ha="center", va="bottom", fontsize=9, color=INK)
     never = [r["methods"][idx[k]] for k in range(len(idx)) if k not in shown]
     if never:
-        ax.text(0.5, -0.09, "Also on the Pareto front, best for no weighting: " + ", ".join(never),
-                ha="center", va="top", fontsize=7.5, color=INK2, wrap=True)
+        ax.text(0.5, -0.09, textwrap.fill("Also on the Pareto front, best for no weighting: " + ", ".join(never), 120),
+                ha="center", va="top", fontsize=7.5, color=INK2)
     ax.set_xlim(-0.05, 1.05)
     ax.set_ylim(-0.16, h + 0.08)
     ax.set_aspect("equal")
     ax.axis("off")
-    ax.set_title("Pareto front: the best method for each weighting of the three axes\n"
-                 f"corner = all weight on that axis; axes stretched to the range of the front (in brackets); "
-                 f"{r['label']}", loc="left", fontsize=10)
-    fig.tight_layout()
+    fig.suptitle("Pareto front: the best method for each weighting of the three axes",
+                 x=0.02, y=0.985, ha="left", fontsize=11, fontweight="bold")
+    fig.text(0.02, 0.952, textwrap.fill("corner = all weight on that axis; axes stretched to the range of the front "
+                                        f"(in brackets); {r['label']}", 110),
+             ha="left", va="top", fontsize=8.5, color=INK2)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return True
