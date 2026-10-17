@@ -34,6 +34,7 @@ import numpy as np
 import plots   # noqa: F401  (the lab's plot style)
 import matplotlib.pyplot as plt
 
+from ballots import approves
 from models import MODELS, draw_electorate
 from run import out_path
 from scenario import Scenario
@@ -213,12 +214,13 @@ SAV_REFERENCE = {
 
 
 def approvals(u, noise, rng):
-    """Approval ballots: each voter approves the candidates above their own mean utility (the lab's
-    sincere approval). With noise > 0 each utility is first blurred by a normal error of noise x the
-    voter's own spread of utilities, so approval near the cut-off is a matter of chance."""
+    """Approval ballots: the lab's honest approval (ballots.approves): each voter approves the
+    candidates above a personal threshold between their mean utility and their favourite, drawn
+    uniformly per voter. With noise > 0 each utility is first blurred by a normal error of noise x the
+    voter's own spread of utilities."""
     if noise > 0:
         u = u + rng.normal(0.0, 1.0, u.shape) * noise * u.std(axis=1, keepdims=True)
-    return (u > u.mean(axis=1, keepdims=True)).astype(float)
+    return approves(u, rng.random(len(u))).astype(float)
 
 
 def sav_space(A):

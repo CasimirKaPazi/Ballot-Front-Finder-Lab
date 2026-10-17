@@ -91,6 +91,18 @@ Check (defaults, 200 elections, seed 1; earlier rule = every draw 0, which is th
 
 - With short honest rankings MDDA's majority disqualification almost never acts (a majority must rank a rival above a candidate, and unranked candidates are only tied last): honest MDDA equals Approval (86.9 / 85.7 in both), and MDDA and MAMPO lose 5–6 points of honest WME. Their Condorcet-like protection depended on the long rankings the mean rule produced. Real voters rank most candidates when asked to rank (Debian, above), so whether a voter facing "ranked = approved" behaves like an approval voter (few) or a ranking voter (many) is open. A variant with an explicit approval cutoff (a full ranking plus approval marks, as the approval runoffs' ballot) would separate the two; not built.
 
+**Approval map** (`show_electorates.py --sav`, Alós-Ferrer & Granić's space from approval ballots) now uses the same honest approval. Cumulative inertia explained by 1 / 2 / 3 / 4 dimensions (median of 100 electorates of 1000 voters, seed 1, defaults: 6 dimensions, width 0.7, noise strength 5; no `--sav-noise`), mean rule → new rule, and the share of elections with a pair of candidates nobody approves together:
+
+| Model | 6 candidates | 8 candidates |
+|---|---|---|
+| noise | 73 / 94 / 100 / 100 → 67 / 93 / 100 / 100 (57% → 82%) | 62 / 85 / 94 / 99 → 56 / 83 / 95 / 99 (78% → 96%) |
+| clusters | 68 / 93 / 100 / 100 → 60 / 90 / 100 / 100 (34% → 67%) | 57 / 81 / 94 / 99 → 51 / 79 / 93 / 99 (31% → 79%) |
+| ks | 77 / 95 / 100 / 100 → 72 / 96 / 100 / 100 (88% → 95%) | 69 / 89 / 96 / 99 → 64 / 89 / 97 / 100 (98% → 100%) |
+| field | 56 / 86 / 100 / 100 → 52 / 83 / 99 / 100 (3% → 14%) | 48 / 75 / 91 / 99 → 45 / 72 / 89 / 99 (12% → 42%) |
+| real (Alós-Ferrer & Granić 2015) | Konstanz: 54 / 91 / 98 / 100 | Messel: 35 / 58 / 73 / 84 |
+
+The first dimension explains 3–8 points less in every model, a step toward the real maps (which stay flatter, especially Messel). With fewer approvals, pairs nobody approves together become common (given half a voter, see [model.md](model.md)), which makes the map less reliable; real ballots of about 1000 voters rarely leave such gaps, a hint that real approvals are noisier than the model's (`--sav-noise` blurs them).
+
 ## Manipulation and tails with adaptive voters; the defence fixed (2026-10-17)
 
 **Run** (Hive): defaults (noise model, 99 voters, 6 candidates, 3 poll rounds, 10 polls, aggressive share 0.5), standard set, 600 elections, seed 1, adaptive voters only:
