@@ -159,7 +159,7 @@ def main():
             if os.path.exists(path):
                 with open(path, newline="") as f:
                     n += len({r["election"] for r in csv.DictReader(f)})
-        interrupted(out, n)
+        interrupted(out, n, "runs/")
     print(f"wrote {out}/runs/ ({len(grid)} file(s), one per run) and command.txt; "
           f"analyse with: python analyze.py {out}")
 

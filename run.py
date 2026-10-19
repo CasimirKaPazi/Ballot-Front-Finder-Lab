@@ -462,6 +462,11 @@ def resume_state(path, names, rounds_per_run):
     if {r["method"] for r in rows} - set(names) or {r.get("version") for r in rows} != {VERSION}:
         raise SystemExit(f"{path} was made with other methods or another simulator version; "
                          "--resume needs the same command")
+    new = sorted(set(names) - {r["method"] for r in rows})
+    if new:          # otherwise no election would count as complete and the run would start over
+        raise SystemExit(f"{path} lacks the method(s) {', '.join(new)} (added to the selection since, e.g. a new "
+                         "add-on with --methods all); --resume needs the same methods. Leave them out with "
+                         "--exclude, and run them separately later to combine (docs/running.md, Combining runs)")
     if any(run_key(r, PARAMS) not in rounds_per_run
            or r["rounds"] not in {str(x) for x in rounds_per_run[run_key(r, PARAMS)]} for r in rows):
         raise SystemExit(f"{path} was made with other parameters; --resume needs the same command")
@@ -502,11 +507,11 @@ class CsvSink:
         self.f.close()
 
 
-def interrupted(out, n):
+def interrupted(out, n, where="elections.csv"):
     cmd = " ".join(shlex.quote(x) for x in sys.argv)
     if "--resume" not in sys.argv:
         cmd += " --resume" + ("" if "--out" in sys.argv else f" --out {shlex.quote(out)}")
-    raise SystemExit(f"\ninterrupted; {n} complete election(s) are saved in {out}/elections.csv. "
+    raise SystemExit(f"\ninterrupted; {n} complete election(s) are saved in {out}/{where}. "
                      f"Continue with:\n  python {cmd}")
 
 
