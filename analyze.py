@@ -622,17 +622,37 @@ def param_order(k, v):
     return (0, float("inf") if k == "group_size" and x == 0 else x, "")
 
 
+DERIVED = {"salience": "salience_exponent"}   # columns set from another parameter (run.resolve_salience)
+
+
 def sweep_chains(keys, varying):
-    """For each varying parameter: the base condition (the first) and every condition that differs
-    from it only in that parameter, ordered by the parameter's value. Only parameters with at
-    least two such conditions form a chain."""
+    """Chains around the base condition (the first): for each varying parameter, the base and every
+    condition that differs from it only in that parameter, ordered by its value. Parameters that
+    change together (e.g. --exits 1 --clones 2 against the base) form one chain, keyed by the tuple
+    of their names, if every step changes all of them and none of them is also varied on its own
+    (in a grid, the diagonal is not a chain). A derived column (DERIVED) does not count as
+    a difference of its own. Returns {param or tuple of params: [keys in order]}; only chains with
+    at least two conditions."""
     base = dict(zip(PARAMS, keys[0]))
+    skip = {d for d, src in DERIVED.items() if src in varying}
+
+    def diff(key):
+        return tuple(q for q, v in zip(PARAMS, key) if q not in skip and v != base[q])
+
+    groups = {}
+    for key in keys[1:]:
+        groups.setdefault(diff(key), []).append(key)
     out = {}
-    for k in varying:
-        members = [key for key in keys
-                   if all(v == base[q] for q, v in zip(PARAMS, key) if q != k)]
-        if len(members) >= 2:
-            out[k] = sorted(members, key=lambda key: param_order(k, dict(zip(PARAMS, key))[k]))
+    for d, members in groups.items():
+        if not d:
+            continue
+        chain = [keys[0]] + members
+        if len(d) == 1:
+            k = d[0]
+            out[k] = sorted(chain, key=lambda key: param_order(k, dict(zip(PARAMS, key))[k]))
+        elif (not any(g and set(g) < set(d) for g in groups)          # never varied separately (not a grid)
+              and all(len({dict(zip(PARAMS, key))[q] for key in chain}) == len(chain) for q in d)):
+            out[d] = sorted(chain, key=lambda key: tuple(param_order(q, dict(zip(PARAMS, key))[q]) for q in d))
     return out
 
 
@@ -783,13 +803,16 @@ def main():
     if len(results) > 1:
         plots.axes_heatmap(list(results.values()), ["VSE*", "WME*", "sincerity", "VSE", "WME"],
                            os.path.join(a.out, "axes-heatmap.png"))
-    chains = sweep_chains(keys, varying)
-    for k, chain_keys in chains.items():
-        vals = [dict(zip(PARAMS, key))[k] for key in chain_keys]
-        shown_vals = [group_text(v) if k == "group_size" else v for v in vals]
-        plots.chain([results[key] for key in chain_keys], PARAM_NAMES.get(k, k), shown_vals,
-                    os.path.join(a.out, f"chain-{k}.png"), a.hide, k in LEARNING_ONLY, GROUPS,
-                    k in SAME_ELECTORATES)
+    chains = {}
+    for k, chain_keys in sweep_chains(keys, varying).items():
+        ps = k if isinstance(k, tuple) else (k,)
+        shown = lambda q, v: group_text(v) if q == "group_size" else v
+        shown_vals = [" / ".join(str(shown(q, dict(zip(PARAMS, key))[q])) for q in ps) for key in chain_keys]
+        name = "-".join(ps)
+        chains[name] = " + ".join(PARAM_NAMES.get(q, q) for q in ps)
+        plots.chain([results[key] for key in chain_keys], chains[name], shown_vals,
+                    os.path.join(a.out, f"chain-{name}.png"), a.hide, all(q in LEARNING_ONLY for q in ps), GROUPS,
+                    all(q in SAME_ELECTORATES for q in ps))
     tracked = []
     if a.track and len(results) > 1:
         conds_p = [(results[key], dict(zip(PARAMS, key))) for key in keys]
@@ -871,8 +894,9 @@ def main():
         if chains:
             L += ["**Sweeps:** for each parameter varied around the base, the methods' learned values as a chain "
                   "of arrows in the order of the parameter's values (light to dark). Parameters that only affect "
-                  "learning start each chain at the honest point; others show the honest values as a dashed chain.",
-                  ""] + [f"![sweep over {k}](chain-{k}.png)\n" for k in chains]
+                  "learning start each chain at the honest point; others show the honest values as a dashed chain. "
+                  "Parameters changed together (e.g. exits and clones) form one chain.",
+                  ""] + [f"![sweep over {label}](chain-{k}.png)\n" for k, label in chains.items()]
         if tracked:
             L += ["**Tracked methods:** each method across all conditions, in the VSE*/WME* plane (learned ballots; "
                   "honest values open). With two varied parameters, lines follow one and colour shows the other.", ""]
