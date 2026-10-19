@@ -8,7 +8,7 @@ Every method belongs to exactly one group. Groups can be used wherever methods a
 
 | Group | Methods |
 |---|---|
-| `condorcet` | Ranked pairs, Schulze, Schulze-ER, Kemeny-Young, Copeland, Ranked Robin, Ranked Robin-SR, SICT, Condorcet-random-drop (Condorcet methods decided by the pairwise counts alone) |
+| `condorcet` | Ranked pairs, Schulze, Schulze-ER, Kemeny-Young, Copeland, Copeland//Margins, Copeland//Margins-ER, SICT, Condorcet-random-drop (Condorcet methods decided by the pairwise counts alone) |
 | `minimax-family` | Minimax, Minimax-ER, MMWV, MMPO, MMPOWV (the minimax family; MMPO and MMPOWV are not Condorcet methods) |
 | `condorcet-based` | Black, Baldwin, Baldwin-ER, Nanson, BTR-Borda, BTR-IRV, Benham, Smith//Score (Condorcet methods built on a Borda, IRV or score count) |
 | `plurality-based` | Plurality, TTR, Supplementary vote, IRV, ER-IRV, IRV-3, Coombs, DSC, DAC (first choices, eliminations and coalitions of top preferences; Coombs eliminates by last places) |
@@ -21,8 +21,8 @@ Every method belongs to exactly one group. Groups can be used wherever methods a
 
 **Sets** are selection names across groups (not plot panels):
 
-- `standard`, the default selection: the methods most discussed, those of Quinn's vse-sim (Plurality, IRV, Borda, Approval, Score, STAR, MJ, MAV, 321, Ranked pairs, Schulze) the common single-winner proposals and methods in use (TTR, Supplementary vote, ER-IRV, IRV-3, Approval runoff, Approval cond. runoff, Copeland, Kemeny-Young, Ranked Robin, Minimax, MMWV, MMPO, BTR-IRV), with the strongest found here (MARS, ARA, BTR-score, Smith//Score, Soft Minimax-D): 29 methods. Geometric median and Condorcet-random-drop are left out: idealised reference cases rather than practical methods.
-- `er-pairs`, each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Ranked Robin-SR/Ranked Robin. Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.
+- `standard`, the default selection: the methods most discussed, those of Quinn's vse-sim (Plurality, IRV, Borda, Approval, Score, STAR, MJ, MAV, 321, Ranked pairs, Schulze) the common single-winner proposals and methods in use (TTR, Supplementary vote, ER-IRV, IRV-3, Approval runoff, Approval cond. runoff, Copeland, Kemeny-Young, Minimax, MMWV, MMPO, BTR-IRV), with the strongest found here (MARS, ARA, BTR-score, Smith//Score, Soft Minimax-D): 28 methods. Copeland//Margins-ER (the earlier Ranked Robin) left the set on 2026-10-19: once Equal Vote's name came to mean any Condorcet method, this particular variant is no longer a live proposal. Geometric median and Condorcet-random-drop are left out: idealised reference cases rather than practical methods.
+- `er-pairs`, each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Copeland//Margins/Copeland//Margins-ER. Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.
 
 Example: `--methods condorcet STAR`, `--methods er-pairs`, `--methods all --exclude inverse`. Without `--methods`, run.py and sweep.py run the `standard` set; `--exclude` then takes methods out of it. Every other method, group, add-on, or `all` can be named in `--methods`.
 
@@ -41,8 +41,8 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | Schulze-ER | ranking, ties allowed | Schulze on rankings with ties (equal-ranked candidates count as neither above the other) |
 | Kemeny-Young | ranking | the ranking agreeing with the most pairwise preferences; its top candidate wins (exact, by dynamic programming over subsets); candidates heading different optimal rankings split |
 | Copeland | ranking | most pairwise wins (ties count half) |
-| Ranked Robin | ranking, ties allowed | Equal Vote's Condorcet method: most pairwise wins; ties go to the greatest sum of margins against the other tied candidates, then against all candidates; remaining ties (its 3rd and 4th tiebreakers) are split. Sincere ballots are strict; ties are learned |
-| Ranked Robin-SR | ranking | Ranked Robin on strict rankings (Ranked Robin itself allows ties) |
+| Copeland//Margins | ranking | most pairwise wins (Copeland); ties go to the greatest sum of margins against the other tied candidates, then against all candidates; remaining ties are split. Equal Vote's earlier definition of Ranked Robin; the lab's name for it until 2026-10-19, when Equal Vote's "Ranked Robin" had come to mean any method electing the Condorcet winner, with a tiebreaker of the jurisdiction's choice (Copeland, most first places or Smith-Minimax; [equal.vote](https://www.equal.vote/ranked_robin)) |
+| Copeland//Margins-ER | ranking, ties allowed | Copeland//Margins on rankings with ties (equal ranks: no preference). Sincere ballots are strict; ties are learned. In the standard set until 2026-10-19 |
 | SICT | ranking, ties allowed | Symmetrical ICT: p(X,Y) if (X>Y) + (X=Y at bottom) > (Y>X) + (X=Y at top); X beats Y if p(X,Y) and not p(Y,X), or both and (X>Y) > (Y>X). One unbeaten candidate wins; none or all unbeaten: most first places; otherwise most first places among the unbeaten. Sincere ballots are strict; ties are learned |
 | Condorcet-random-drop | ranking | Condorcet winner if there is one; otherwise voters are dropped one at a time in random order until the rest have one. Averaged over 32 fixed random orders (the same on every call), so probabilities come in steps of 1/32 |
 

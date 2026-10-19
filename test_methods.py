@@ -61,7 +61,7 @@ print("Reciprocal score on 4-3-2:", np.round(p, 3)); assert abs(p.sum() - 1) < 1
 # On the 4-3-2 profile: G is the Condorcet winner; R has most first choices and the best Dowdall
 # score (6 against 5.5); in the supplementary vote the G voters' second choice R beats B 6:3. With three
 # grades (good/OK/bad) G has most approvals (MCA) and, in 3-2-1, the fewest 'bad' ratings, then beats R 5:4.
-for m, want in [("Black", [0, 1, 0, 0]), ("Ranked Robin", [0, 1, 0, 0]), ("Nanson", [0, 1, 0, 0]),
+for m, want in [("Black", [0, 1, 0, 0]), ("Copeland//Margins-ER", [0, 1, 0, 0]), ("Nanson", [0, 1, 0, 0]),
                 ("321", [0, 1, 0, 0]), ("ER-IRV", [1, 0, 0, 0]), ("Dowdall", [1, 0, 0, 0]),
                 ("Smith//Score", [0, 1, 0, 0]), ("Supplementary vote", [1, 0, 0, 0]), ("MCA", [0, 1, 0, 0]),
                 ("MMPO", [0, 1, 0, 0]), ("MMWV", [0, 1, 0, 0])]:
@@ -81,10 +81,10 @@ check("MMPOWV with equal rankings", METHODS["MMPOWV"].tally(mw), [1, 0, 0])
 er = np.array([[2, 2, 0]] * 3 + [[0, 1, 2]] * 2, dtype=float)
 check("ER-IRV with equal top ranks", METHODS["ER-IRV"].tally(er), [0, 1, 0])
 
-# Ranked Robin on the cycle R>G>B>K (4), G>B>K>R (3), B>R>K>G (2): R, G, B each win 2 pairs; margins among
+# Copeland//Margins on the cycle R>G>B>K (4), G>B>K>R (3), B>R>K>G (2): R, G, B each win 2 pairs; margins among
 # them R +3 -1 = 2, G -3 +5 = 2, B -5 +1 = -4, so R and G remain; against all candidates K adds R +3, G +5: G.
 cy4 = profile([(4, [0.5, 0.3, 0.15, 0.05]), (3, [0.05, 0.5, 0.3, 0.15]), (2, [0.3, 0.05, 0.5, 0.15])])
-check("Ranked Robin tiebreak on a cycle", METHODS["Ranked Robin"].honest(cy4), [0, 1, 0, 0])
+check("Copeland//Margins tiebreak on a cycle", METHODS["Copeland//Margins-ER"].honest(cy4), [0, 1, 0, 0])
 
 # Exact three-way tie: each method shares probability equally among R, G, B
 t = profile([(3, [0.55, 0.17, 0.15, 0.13]), (3, [0.15, 0.55, 0.17, 0.13]), (3, [0.17, 0.15, 0.55, 0.13])])
@@ -92,7 +92,7 @@ for m in ["Plurality", "IRV", "Copeland", "Score", "STAR", "BTR-score", "MARS", 
           "TTR", "Approval runoff", "BTR-Borda", "Minimax", "Baldwin", "Borda",
           "Anti-plurality", "SICT", "MDDA", "BTR-IRV", "Benham",
           "Ranked pairs", "Schulze", "Approval cond. runoff", "Reciprocal score", "Score+",
-          "Black", "Ranked Robin", "Nanson", "321", "ER-IRV", "Dowdall", "Smith//Score", "Supplementary vote",
+          "Black", "Copeland//Margins-ER", "Nanson", "321", "ER-IRV", "Dowdall", "Smith//Score", "Supplementary vote",
           "MCA", "MMPO", "MMWV", "MMPOWV"]:
     check(f"{m} three-way tie", METHODS[m].honest(t), [1 / 3, 1 / 3, 1 / 3, 0])
 
@@ -353,7 +353,7 @@ print("manipulation ok")
 # Equal-ranking variants equal their strict versions on sincere (strict) ballots
 r = np.random.default_rng(11)
 pairs = [("Borda", "Borda-ER"), ("Baldwin", "Baldwin-ER"), ("Minimax", "Minimax-ER"),
-         ("Schulze", "Schulze-ER"), ("Ranked Robin", "Ranked Robin-SR"), ("Minimax", "MMWV")]
+         ("Schulze", "Schulze-ER"), ("Copeland//Margins-ER", "Copeland//Margins"), ("Minimax", "MMWV")]
 for _ in range(100):
     uu = r.random((int(r.integers(5, 40)), int(r.integers(3, 7))))
     for a_, b_ in pairs:

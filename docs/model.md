@@ -110,7 +110,7 @@ python show_electorates.py --model clusters ks --cands 9 --sav --out look-sav
 
 | Methods | Unranked candidates |
 |---|---|
-| pairwise (Schulze, Ranked pairs, Minimax family, Kemeny-Young, Copeland, Ranked Robin, Baldwin, Nanson, SICT, Condorcet-random-drop, …) | below every ranked candidate, tied with each other (no preference between them) |
+| pairwise (Schulze, Ranked pairs, Minimax family, Kemeny-Young, Copeland, Copeland//Margins, Baldwin, Nanson, SICT, Condorcet-random-drop, …) | below every ranked candidate, tied with each other (no preference between them) |
 | IRV, ER-IRV, Benham, BTR-IRV, Coombs (first choices) | a ballot with no ranked candidate left is exhausted and counts for nobody; majorities are of the continuing ballots |
 | Coombs (last places) | the unranked share the last place equally |
 | Borda, Black, BTR-Borda | 0 points; ranked candidates keep their full points (C−1, C−2, …), so truncating can pay |

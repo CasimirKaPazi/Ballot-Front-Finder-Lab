@@ -1020,9 +1020,11 @@ def d_black(s):
     return cw.astype(float) if cw.any() else uniform_max(s["sum"])
 
 
-def d_ranked_robin(s):
-    """Ranked Robin (Equal Vote): most pairwise wins. Ties: greatest sum of margins against the other
-    tied candidates, then against all candidates; further ties (the 3rd and 4th tiebreakers) are split."""
+def d_copeland_margins(s):
+    """Copeland//Margins: most pairwise wins. Ties: greatest sum of margins against the other tied
+    candidates, then against all candidates; further ties are split. Equal Vote's earlier definition
+    of Ranked Robin (until 2026-10-19 the lab's name for it); Equal Vote now uses "Ranked Robin" for
+    any method electing the Condorcet winner, with a tiebreaker of the jurisdiction's choice."""
     M = margins_of(s)
     C = len(M)
     wins = (M > 0).sum(axis=1).astype(float)
@@ -1411,8 +1413,8 @@ METHODS = {
     "Schulze-ER": M_("weak", d_schulze, ("gt",)),
     "Kemeny-Young": M_("rank", d_kemeny, ("gt",)),
     "Copeland": M_("rank", d_copeland, ("gt",)),
-    "Ranked Robin": M_("weak", d_ranked_robin, ("gt",)),
-    "Ranked Robin-SR": M_("rank", d_ranked_robin, ("gt",)),
+    "Copeland//Margins-ER": M_("weak", d_copeland_margins, ("gt",)),
+    "Copeland//Margins": M_("rank", d_copeland_margins, ("gt",)),
     "SICT": M_("weak", d_sict, ("gt", "top", "eqtop", "eqbot")),
     "Condorcet-random-drop": M_("rank", full=t_condorcet_drop),
     # minimax
@@ -1498,8 +1500,8 @@ METHODS = {
 # chain plots and can be used as names wherever methods are selected (--methods, --exclude, --show,
 # --hide, --track).
 GROUPS = {
-    "condorcet": ["Ranked pairs", "Schulze", "Schulze-ER", "Kemeny-Young", "Copeland", "Ranked Robin",
-                  "Ranked Robin-SR", "SICT", "Condorcet-random-drop"],
+    "condorcet": ["Ranked pairs", "Schulze", "Schulze-ER", "Kemeny-Young", "Copeland", "Copeland//Margins",
+                  "Copeland//Margins-ER", "SICT", "Condorcet-random-drop"],
     "minimax-family": ["Minimax", "Minimax-ER", "MMWV", "MMPO", "MMPOWV"],
     "condorcet-based": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
     "plurality-based": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs", "DSC", "DAC"],
@@ -1522,6 +1524,8 @@ RENAMED = {
     "Approval runoff if needed": "Approval cond. runoff",    # 2026-10-07
     "Minimax-wv": "MMWV",                                    # 2026-10-07
     "MARA": "ARA",
+    "Ranked Robin": "Copeland//Margins-ER",                       # 2026-10-19: Equal Vote's name now means any Condorcet method
+    "Ranked Robin-SR": "Copeland//Margins",                    # 2026-10-19
 }
 RENAMED_GROUPS = {
     "condorcet-hybrid": "condorcet-based",                   # 2026-10-12
@@ -1602,9 +1606,9 @@ COMPARISONS = {
     "standard": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Borda", "Approval",
                  "Approval runoff", "Approval cond. runoff", "Score", "MJ", "MAV", "STAR", "321", "MARS", "ARA",
                  "BTR-score", "Smith//Score", "BTR-IRV", "Soft Minimax-D", "Ranked pairs", "Schulze", "Kemeny-Young",
-                 "Copeland", "Ranked Robin", "Minimax", "MMWV", "MMPO"],
+                 "Copeland", "Minimax", "MMWV", "MMPO"],
     "er-pairs": ["IRV", "ER-IRV", "Borda", "Borda-ER", "Baldwin", "Baldwin-ER", "Minimax",
-                 "Minimax-ER", "MMWV", "Schulze", "Schulze-ER", "Ranked Robin-SR", "Ranked Robin"],
+                 "Minimax-ER", "MMWV", "Schulze", "Schulze-ER", "Copeland//Margins", "Copeland//Margins-ER"],
 }
 
 
