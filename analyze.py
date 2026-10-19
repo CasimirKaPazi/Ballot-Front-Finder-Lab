@@ -88,6 +88,27 @@ def input_paths(p):
     return [p], os.path.dirname(p) or "."
 
 
+def is_run_folder(p):
+    """A run or sweep folder (its own elections.csv or runs/): analyses go inside, never over its files."""
+    return os.path.isfile(os.path.join(p, "elections.csv")) or os.path.isdir(os.path.join(p, "runs"))
+
+
+def analysis_folder(out, folders):
+    """Where the analysis goes. Default: analysis/ in the input's folder; with several inputs, in the
+    last input's folder as analysis-vs-<first input> (the first input is the base, so a test analysed
+    against it keeps its comparison next to its data). An --out that is a run or sweep folder gets the
+    same naming inside it (analysis-vs-<the other inputs>), so its command.txt and data stay untouched."""
+    names = [os.path.basename(os.path.normpath(f)) for f in folders]
+    if out is None:
+        host = folders[-1]
+        return os.path.join(host, "analysis" if len(folders) == 1 else f"analysis-vs-{names[0]}")
+    out = out_path(out)
+    if not is_run_folder(out):
+        return out
+    others = [n for f, n in zip(folders, names) if os.path.normpath(f) != os.path.normpath(out)]
+    return os.path.join(out, "analysis" if not others or others == names else "analysis-vs-" + "-".join(others))
+
+
 def source_name(p):
     """How an input is named in notes and the report: its folder for elections.csv, folder/file for a
     sweep's run file, else the file."""
@@ -678,7 +699,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("csv", nargs="+", help="run or sweep folders, or elections CSV files")
     ap.add_argument("--out", default=None,
-                    help="analysis folder; default: analysis/ next to the input (needed with several inputs)")
+                    help="analysis folder; default: analysis/ in the input's folder, or with several inputs "
+                         "analysis-vs-<first>/ in the last input's folder (the first input is the base). "
+                         "A run or sweep folder given here gets the analysis inside it, never over its files")
     ap.add_argument("--boot", type=int, default=1000, help="bootstrap replicates")
     ap.add_argument("--compare", nargs="*", default=[], help='pairs "A:B" for paired differences')
     ap.add_argument("--hide", nargs="*", default=["references", "inverse"],
@@ -695,12 +718,7 @@ def main():
     a = ap.parse_args()
     found = [input_paths(p) for p in a.csv]
     a.csv = [f for files, _ in found for f in files]
-    if a.out is None:
-        if len(found) > 1:
-            ap.error("with several inputs, name the analysis folder with --out")
-        a.out = os.path.join(found[0][1], "analysis")
-    else:
-        a.out = out_path(a.out)
+    a.out = analysis_folder(a.out, [folder for _, folder in found])
     os.makedirs(a.out, exist_ok=True)
     write_command(a.out)
     rng = np.random.default_rng(a.seed)

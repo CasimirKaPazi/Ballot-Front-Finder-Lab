@@ -346,10 +346,12 @@ def _fmt_time(t):
 class Progress:
     """Elections done, time used and an estimate of the time left, on one line (stderr): in a
     terminal redrawn in place after every election; otherwise (output to a file) a new line at
-    most `updates` times per run (default 10, one per tenth)."""
+    most `updates` times per run (default 10, one per tenth). before: elections finished earlier
+    (--resume), counted in the numbers shown but not in the time estimate."""
 
-    def __init__(self, total, label="", updates=None):
+    def __init__(self, total, label="", updates=None, before=0):
         self.total, self.label, self.done, self.t0 = total, label, 0, time.time()
+        self.before = before
         self.tty = sys.stderr.isatty()
         self.updates = self.total if self.tty else (updates or 10)
         self.next_mark = 1
@@ -362,7 +364,8 @@ class Progress:
             self.next_mark += 1
         el = time.time() - self.t0
         left = el / self.done * (self.total - self.done)
-        text = f"{self.label}{self.done}/{self.total}, {_fmt_time(el)} so far, ~{_fmt_time(left)} left"
+        text = (f"{self.label}{self.done + self.before}/{self.total + self.before}, {_fmt_time(el)} so far, "
+                f"~{_fmt_time(left)} left")
         if self.tty:     # \r and clear to the end of the line: redraw in place
             print("\r\033[K" + text, end="", file=sys.stderr, flush=True)
         else:
@@ -404,7 +407,7 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     rows = []
     if not todo:
         return rows
-    prog = Progress(len(todo), label)
+    prog = Progress(len(todo), label, before=elections - len(todo))
     try:
         with Pool(workers, initializer=_ignore_sigint) as pool:
             dummy = None

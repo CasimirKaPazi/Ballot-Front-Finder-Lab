@@ -21,7 +21,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
     analysis/          written by python analyze.py lazy (all files in runs/)
 ```
 
-`--out` names the folder; a name without a directory goes into `output/` (created when needed), one with a directory (`--out runs/test`) is used as given. Without `--out` the folder is named by the time (`run-20261011-143000`, `sweep-…`), so nothing is overwritten by accident; an existing run is only replaced with `--overwrite`. `analyze.py` takes run or sweep folders (a sweep folder means all its run files) or elections CSV files, and looks up bare names in `output/`. Since a sweep keeps one file per run, single runs can be analysed alone, moved, or mixed with runs of other sweeps (see Combining runs). With several inputs (combining runs) it needs `--out` for the analysis folder.
+`--out` names the folder; a name without a directory goes into `output/` (created when needed), one with a directory (`--out runs/test`) is used as given. Without `--out` the folder is named by the time (`run-20261011-143000`, `sweep-…`), so nothing is overwritten by accident; an existing run is only replaced with `--overwrite`. `analyze.py` takes run or sweep folders (a sweep folder means all its run files) or elections CSV files, and looks up bare names in `output/`. Since a sweep keeps one file per run, single runs can be analysed alone, moved, or mixed with runs of other sweeps (see Combining runs). With several inputs (combining runs) the first is the base and the analysis goes into the last input's folder as `analysis-vs-<first>/`: `analyze.py base maxscore` writes `output/maxscore/analysis-vs-base/`, so each test keeps its comparison with the base next to its data. `--out` names another folder; a run or sweep folder given there gets the analysis inside it, never over its own files.
 
 **What a run writes.** `elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns; the simulator version (column `version`, from `run.VERSION`; the report names it, and warns when CSVs of different versions are combined); the quantities for the axes: U_method, U_best, U_rb (random ballot), U_rand (random candidate, for the usual VSE), WM (the winner's worst margin, share of voters), WM_best, WM_rb; has_cw and p_cw (probability of electing the Condorcet winner); the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see [analysis.md](analysis.md), Robustness); sincerity, fidelity, settled, the strategy types and, with `--adaptive`, adapted. `summary.csv` and the printed table (`table.txt`) have one row per method:
 
@@ -96,7 +96,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | Flag | Default | Meaning |
 |---|---|---|
 | (positional) | | one or more run or sweep folders (or elections CSV files) |
-| `--out` | `analysis/` in the input folder | analysis folder; needed with several inputs |
+| `--out` | `analysis/` in the input folder; with several inputs `analysis-vs-<first>/` in the last one | analysis folder (a run or sweep folder named here gets the analysis inside it) |
 | `--boot` | 1000 | bootstrap replicates |
 | `--compare` | none | pairs `"A:B"` for paired differences |
 | `--hide` | `references` | methods or groups left out of the scatter and chain plots; `--hide` alone shows all |
@@ -111,7 +111,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 
 ```
 python run.py --methods "My method" --out mine          # added to methods.py; same parameters and seed as the reference
-python analyze.py reference mine --out compare            # reference: the folder of the existing run
+python analyze.py reference mine                         # -> output/mine/analysis-vs-reference/
 ```
 
 **Older results files.** New columns (a parameter or a measure) are added to the results files over time. So that older files can still be read and combined with newer ones, each new column goes into `ADDED_COLUMNS` in analyze.py when it is added, with one of two entries:
