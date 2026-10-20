@@ -14,6 +14,8 @@ a ballot matrix B has one row per voter and one column per candidate:
   "app_run"  two-round election, approval first round: as fav_run, plus C for every approved
              candidate (any set). The ranking part is fixed: strategy changes only the round-1 marks,
              since in a separate two-candidate runoff voting for the preferred one is always best
+  "score_run" two-round election, score first round: the runoff ranking as rank points (C-1 ... 0),
+             plus C x the round-1 score (0..MAXS); as app_run, only the scores are the voter's choice
   "veto"     -1 for the one candidate voted against, 0 for all others
   "weak"     ranking with ties allowed: levels 0 ... C-1, higher is better, equal = tied
   "trunc"    truncated ranking: the k ranked candidates get k ... 1, unranked ones 0 (tied last)
@@ -29,6 +31,7 @@ Sincere ballots from utilities u[v, c]:
   score    - 0..MAXS, stretched to the voter's own utility range, rounded
   fav_run  - mark the favourite; ranking by utility
   app_run  - approvals as for approval; ranking by utility
+  score_run - scores as for score; ranking by utility
   veto     - against the least liked candidate
   weak     - strict ranking by utility (ties are only used strategically); laziness as rank, the
              unranked at level 0
@@ -425,6 +428,12 @@ def _top(B):
     return B >= B.max(axis=1, keepdims=True)
 
 
+def _levels(B):
+    """Score ballots read as levels: per voter, for each level j = 0 .. MAXS-1 (score MAXS - j), 1
+    where the candidate has that score (score 0 is no level). Shape (n, MAXS, C)."""
+    return np.stack([np.isclose(B, MAXS - j) for j in range(MAXS)], axis=1).astype(float)
+
+
 FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "n": (lambda B: np.ones((len(B), 1)), lambda C: ()),
     "sum": (lambda B: B, lambda C: (C,)),
@@ -433,8 +442,10 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
              lambda C: (C,)),                                                 # ties at the bottom share
     "gt": (lambda B: (B[:, :, None] > B[:, None, :]).reshape(len(B), -1), lambda C: (C, C)),
     "app": (lambda B: B >= B.shape[1], lambda C: (C,)),                       # fav_run / app_run: round-1 marks
+    "run_sum": (lambda B: np.floor_divide(B, B.shape[1]), lambda C: (C,)),   # score_run: round-1 scores
     "runoff_gt": (lambda B: (lambda R: (R[:, :, None] > R[:, None, :]).reshape(len(B), -1))(np.mod(B, B.shape[1])),
                   lambda C: (C, C)),                                           # fav_run / app_run: runoff rankings
+    "levels": (_levels, lambda C: (MAXS, C)),                                  # DMS: voters per score level
     "upper": (lambda B: B > MAXS / 2, lambda C: (C,)),                         # above the middle (0..5: 3-5)
     "maxs": (lambda B: B >= MAXS, lambda C: (C,)),                            # top score only
     "pos": (lambda B: B > 0, lambda C: (C,)),
@@ -869,6 +880,16 @@ def d_approval_two_round(s):
     return d_approval_runoff({"app": s["app"], "gt": s["runoff_gt"]})
 
 
+def d_score_two_round(s):
+    """Score runoff: the two highest score totals (round 1) meet in a separate runoff, decided by the
+    runoff rankings (score_run ballots); a runoff tie goes to the higher score total."""
+    tot, M = s["run_sum"], margins_of({"gt": s["runoff_gt"]})
+    P = np.zeros(len(tot))
+    for a, b, w in top_two(tot):
+        runoff(P, M, a, b, w, tiebreak=tot)
+    return P
+
+
 def d_approval_two_round_if_needed(s):
     """As d_approval_two_round, but a candidate approved by more than half the voters wins outright."""
     return d_approval_runoff_if_needed({"n": s["n"], "app": s["app"], "gt": s["runoff_gt"]})
@@ -983,6 +1004,40 @@ def d_stlr(s):
     P = np.zeros(len(tot))
     for a, b, w in top_two(tot):
         runoff(P, M, a, b, w, tiebreak=tot)
+    return P
+
+
+def depth_values(cnt, scored=True, power=1.0):
+    """DMS: cnt (MAXS, C) voters per level (levels feature). Values per depth k = 1 .. MAXS (rows: the
+    top k levels) and candidate: scored, the points from those levels divided by the points of the
+    levels counted (each level weighted by its points to the power `power`); not scored, the voters in
+    those levels divided by k."""
+    M = cnt.shape[0]
+    k = np.arange(1, M + 1)[:, None]
+    if not scored:
+        return np.cumsum(cnt, axis=0) / k
+    w = ((M - np.arange(M)) ** power)[:, None]             # level weights: points M, M-1, ..., 1
+    return np.cumsum(w * cnt, axis=0) / np.cumsum(w, axis=0)
+
+
+def leximin_winners(V):
+    """V: (depths, C). Candidates whose values sorted ascending are lexicographically highest."""
+    S = np.sort(V, axis=0)
+    alive = np.arange(V.shape[1])
+    for row in S:
+        alive = alive[row[alive] >= row[alive].max() - EPS]
+        if len(alive) == 1:
+            break
+    return alive
+
+
+def d_dms(s):
+    """DMS (depth maximin, scores): for every depth k (the top k score levels), each candidate's points
+    from those levels divided by the points of the levels counted; the highest lowest value over the
+    depths wins, ties by the next lowest (leximin), still tied: split."""
+    win = leximin_winners(depth_values(s["levels"]))
+    P = np.zeros(s["levels"].shape[1])
+    P[win] = 1 / len(win)
     return P
 
 
@@ -1455,9 +1510,11 @@ METHODS = {
     "MCA": M_("grade3", d_mca, ("n", "ge2", "ge1")),
     "Reciprocal score": M_("score", d_reciprocal_score, ("fset", "fsetB")),
     "INS": M_("score", d_iterated_normalized_score, ("nscore_sub",)),
+    "DMS": M_("score", d_dms, ("levels",)),
     "Geometric median": M_("score", full=t_geometric_median),
     # hybrid
     "STAR": M_("score", d_star, ("sum", "gt")),
+    "Score runoff": M_("score_run", d_score_two_round, ("run_sum", "runoff_gt")),
     "BTR-score": M_("score", d_btr, ("sum", "gt")),
     "MARS": M_("score", d_mars, ("sum", "gt")),
     "IC-MARS": M_("score", d_ic_mars, ("sum", "gt", "eqtop")),
@@ -1506,8 +1563,8 @@ GROUPS = {
     "condorcet-based": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
     "plurality-based": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs", "DSC", "DAC"],
     "approval-based": ["Approval", "Approval runoff", "Approval cond. runoff", "MDDA", "MAMPO"],
-    "rated": ["Score", "MJ", "MAV", "MCA", "Reciprocal score", "INS", "Geometric median"],
-    "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "MARS-T", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore", "STLR", "Soft Minimax",
+    "rated": ["Score", "MJ", "MAV", "MCA", "Reciprocal score", "INS", "DMS", "Geometric median"],
+    "hybrid": ["STAR", "Score runoff", "BTR-score", "MARS", "IC-MARS", "MARS-T", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore", "STLR", "Soft Minimax",
                "Soft Minimax-40", "Soft Minimax-L", "Soft Minimax-D"],
     "positional": ["Borda", "Borda-ER", "Dowdall"],
     "references": ["Random pair runoff", "Anti-plurality", "TRASH"],
@@ -1604,7 +1661,7 @@ COMPARISONS = {
     # the default selection of run.py and sweep.py: the methods most discussed (those of Quinn's vse-sim
     # and the common single-winner proposals) and the strongest found here; overlaps the groups
     "standard": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Borda", "Approval",
-                 "Approval runoff", "Approval cond. runoff", "Score", "MJ", "MAV", "STAR", "321", "MARS", "ARA",
+                 "Approval runoff", "Approval cond. runoff", "Score", "MJ", "MAV", "STAR", "Score runoff", "321", "MARS", "ARA",
                  "BTR-score", "Smith//Score", "BTR-IRV", "Soft Minimax-D", "Ranked pairs", "Schulze", "Kemeny-Young",
                  "Copeland", "Minimax", "MMWV", "MMPO"],
     "er-pairs": ["IRV", "ER-IRV", "Borda", "Borda-ER", "Baldwin", "Baldwin-ER", "Minimax",

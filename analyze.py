@@ -910,13 +910,16 @@ def main():
               "are left out, since their extreme values would inflate the correlation. The first row is a noise "
               "reference: the agreement expected from sampling noise alone between two runs of the base condition "
               "(its even and odd elections correlated, then scaled up to full size with the Spearman-Brown "
-              "formula). A condition near or above that row orders the methods as the base does; only values "
+              "formula; — where the halves do not agree at all, so the base itself gives no stable order on that "
+              "axis). A condition near or above that row orders the methods as the base does; only values "
               "clearly below it show a real change.", "",
               "| Condition | " + " | ".join(cols) + " |", "|---|" + "---|" * len(cols)]
         ib = [base["methods"].index(m) for m in shown]
 
-        def full_size(rh):     # Spearman-Brown: agreement expected between two full-size samples
-            return 2 * rh / (1 + rh) if rh > -1 else rh
+        def full_size(rh):     # Spearman-Brown: agreement expected between two full-size samples. It only
+            # holds for a positive half-sample agreement: at 0 or below (noise alone, e.g. a few methods
+            # with nearly equal values) there is no usable reference, shown as —
+            return 2 * rh / (1 + rh) if rh > 0 else float("nan")
         L.append(f"| noise reference: {base['tag']} vs itself | "
                  + " | ".join(cor(full_size(spearman(base['halves'][x][0][ib], base['halves'][x][1][ib])))
                               for x in cols) + " |")

@@ -50,7 +50,7 @@ All ballots of an election form a table `B` with one row per voter and one colum
 | `"weak"` | levels, equal = tied (rankings with ties) | `[2, 2, 0]`: A = B > C |
 | `"grade3"` | 0, 1, 2 (bad, OK, good) | `[2, 0, 1]` |
 
-The others (`"fav_run"`, `"app_run"`, `"veto"`, `"trunc"`, `"trunc3"`, `"strict"`) are described at the top of `ballots.py`.
+The others (`"fav_run"`, `"app_run"`, `"score_run"`, `"veto"`, `"trunc"`, `"trunc3"`, `"strict"`) are described at the top of `ballots.py`.
 
 ## 2. The pieces of Python you'll meet
 

@@ -463,7 +463,26 @@ for _ in range(50):
     assert np.array_equal(nb % 5, bb % 5) and 0 < (nb >= 5).sum() < 5
     nb = _mut(METHODS["TTR"].sincere(r.random((1, 5)))[0], "fav_run", r)
     assert (nb >= 5).sum() == 1
+bs = METHODS["Score runoff"].sincere(r.random((1, 5)))[0]
+for _ in range(50):
+    nb = _mut(bs, "score_run", r)
+    assert np.array_equal(nb % 5, bs % 5) and 0 <= (nb // 5).min() and (nb // 5).max() <= _methods_mod.MAXS
 print("two-round elections: strategy changes only round-1 marks ok")
+
+# Score runoff: top two by score, then the separate runoff by the sincere rankings. 2 voters A5 B5 C0
+# (A > B), 1 A0 B5 C4, 1 A2 B0 C5: totals A12 B15 C9, B and A go on. The runoff rankings give A 3:1;
+# STAR's runoff reads the scores, where the first two voters rate A and B equally: 1:1, B by score.
+sr = profile([(2, [1.0, 0.97, 0.0]), (1, [0.0, 1.0, 0.9]), (1, [0.4, 0.0, 1.0])])
+Bs = METHODS["Score runoff"].sincere(sr)
+assert np.array_equal(Bs // 3, METHODS["Score"].sincere(sr)) and np.array_equal(Bs % 3, METHODS["Borda"].sincere(sr))
+check("Score runoff (runoff by rankings: A)", METHODS["Score runoff"].tally(Bs), [1, 0, 0])
+check("STAR on the same ballots (equal scores: B)", METHODS["STAR"].honest(sr), [0, 1, 0])
+
+# DMS: 4 x A5 B4 C0, 4 x C5 B4 A0, 1 x A5 C4 B0. Score elects B (32, though nobody's favourite);
+# DMS: B has 0 at depth 1; A is above C at every depth (lowest values A 1.67, C 1.6): A.
+Bd = np.array([[5, 4, 0]] * 4 + [[0, 4, 5]] * 4 + [[5, 0, 4]], dtype=float)
+check("Score on the dark-horse profile", METHODS["Score"].tally(Bd), [0, 1, 0])
+check("DMS on the dark-horse profile", METHODS["DMS"].tally(Bd), [1, 0, 0])
 
 # Participation (participation.py). Feature subtraction equals tallying without the absent ballots;
 # Score and Approval never fail participation with sincere ballots; IRV and Minimax sometimes do.

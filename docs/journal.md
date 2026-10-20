@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-20 | New methods: DMS (rated) and Score runoff (hybrid, a separate runoff; in the standard set, now 29 methods) | 28 methods |
 | 2026-10-19 | Standard set: Copeland//Margins-ER removed (28 methods), not a live proposal | 29 methods, with Ranked Robin |
 | 2026-10-19 | Renamed: Ranked Robin → Copeland//Margins-ER, Ranked Robin-SR → Copeland//Margins (Equal Vote's "Ranked Robin" now means any Condorcet method; the lab's is Copeland with a margins tiebreak). Results unchanged | use the old names |
 | 2026-10-17 | Project renamed Ballot Front Finder Lab (was Voting Pareto Lab); licensed under the GNU GPL, version 3 or later | Voting Pareto Lab |
@@ -32,6 +33,26 @@ How the lab developed: the experiments, what they showed and the decisions they 
 | 2026-10-07 | Renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (ACR), Minimax-wv → MMWV | use the new names |
 | 2026-10-06 | Axes VSE and WME, both 0 = random ballot and 100 = best candidate ([analysis.md](analysis.md), Axes). Within a condition a fixed rescaling of each axis, so order, dominance and rank stability are unaffected | PE (0 = utility-proportional lottery) and WM (worst margin in % of voters) |
 | earlier | Plain dimensions before Zipf; CE as an axis before WM | |
+
+## Depth maximin; how far score ballots can go (2026-10-20)
+
+Settings: the defaults (adaptive voters, 0–5), single runs of 300 to 3000 elections and one sweep over poll rounds 1–5 and max score 5, 9, 19, 99 (600 elections each, the same electorates in all 20 conditions). The methods were tried as test add-ons first.
+
+**Depth maximin.** A score ballot read as levels from the top: at depth k, the top k levels. DMS gives each candidate, per depth, the points from those levels divided by the points of the levels counted, and elects the candidate whose lowest value over the depths is highest. Eleven variants were tried around it: approvals instead of points (DMA), values relative to the field, from depth 2 on, flatter and steeper level weights, a soft minimum, elimination with re-stretched ballots (DMS-I), the worst winning-votes defeat subtracted (DMS-WV), best plus worst depth value (DMS-BW), and a Buck-set runoff (BSR: the candidates with the most voters in the top k levels at some depth, then a stretched score runoff). None was better than DMS: the variants move along the trade-off or fall inside it (DMS-BW: the best value brings back a plurality-like count). BSR lands next to ARA (more WME\*, a little less VSE\*). A Buck-set of one need not hold the Condorcet winner; a random search found 2 such profiles in about 1300.
+
+| 3000 elections, seed 2, 3 poll rounds | VSE\* | WME\* | VSE | WME |
+|---|---|---|---|---|
+| Geometric median | 90.3 | 90.4 | 90.7 | 89.9 |
+| DMS | 90.0 | 91.3 | 90.7 | 89.8 |
+| Score | 89.8 | 92.1 | 90.3 | 92.8 |
+| ARA | 89.2 | 94.6 | 89.6 | 94.5 |
+| BSR | 87.5 | 95.0 | 86.6 | 95.7 |
+| STAR | 87.8 | 95.5 | 88.1 | 95.6 |
+
+- **DMS sits with Score and Geometric median.** In early runs of 300 elections it led on VSE\* by about 2 points; with 3000 the lead is gone (+0.2, not clear), and Score is clearly ahead on WME\*. Over the 20 sweep conditions DMS averages 90.8 / 90.4, Geometric median 90.6 / 90.6, Score 90.0 / 91.7; DMS against Geometric median ranges from −0.8 to +1.2 VSE\* by condition, within the noise of 600 elections. Geometric median is dominated by Score and DMS in the 3000-election run (WME\* and sincerity).
+- **Poll rounds** change none of them systematically. **Max score** moves ARA along the trade-off (about 89 / 95 at 0–5 to 87.5 / 97.5 at 0–99) and leaves the rated methods where they are.
+- **Why the rated methods stop near VSE 90.** A scratch check on 200 default elections, honest ballots: the lab's frontier rule (each candidate's total utility against their worst margin, every weighting) fed with ballots instead of utilities, and judged on the true utilities. Ballots stretched to each voter's range but not rounded reach at most VSE 89.8 (at WME 91.5); rounded to 0–100, 0–10 and 0–5 the best VSE is 89.8, 89.9 and 89.2. The best WME falls with rounding: 100, 99.9, 99.4, 95.3 (equal scores carry no pairwise preference). So the VSE loss of score ballots is the stretching (a ballot cannot show how much one voter cares compared with another), not the rounding; the WME loss at 0–5 is the rounding. Honest Score is the VSE end of the 0–5 curve by construction, Smith//Score sits at its WME end, and the curve passes about one point outside both. The strategic VSE\* of Score, DMS and Geometric median is within a point of their honest VSE, which is already at that limit: on VSE there is little left to gain for any count of score ballots.
+- **Kept:** DMS, as a built-in rated method (not in the standard set). Added with it: Score runoff, the two highest score totals in a separate runoff election decided by sincere preferences, in the standard set as the reference between Score and STAR.
 
 ## Laziness and approval against real ballots (2026-10-17)
 

@@ -1,6 +1,6 @@
 # Ballot Front Finder Lab
 
-A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 63 in all (one of them, IDS, as an add-on; more can be added), plus three reference methods and eight test methods. A standard set of 28, the most discussed and the strongest, is what a run uses unless told otherwise. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
+A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 65 in all (one of them, IDS, as an add-on; more can be added), plus three reference methods and eight test methods. A standard set of 29, the most discussed and the strongest, is what a run uses unless told otherwise. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
 
 **The question.** Every voting method turns ballots into a winner, and every method can be gamed to some degree. Comparisons with honest ballots alone flatter methods that are easy to manipulate; comparisons under fully rational strategy depend on assumptions nobody believes. This lab places voters in between: some of them read polls and adjust their ballots when it pays, the way people vote tactically in real elections, and it measures what the method makes of that.
 
@@ -26,7 +26,7 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 
 **Methods** ([methods](docs/methods.md))
 - 63 single-winner methods in eight families: plurality-based (Plurality, TTR, IRV and variants, coalition methods), Condorcet (Ranked pairs, Schulze, Kemeny-Young, Copeland, Copeland//Margins, …), the minimax family, Condorcet-based hybrids (Black, Baldwin, Nanson, BTR, Smith//Score, …), approval-based (Approval, approval runoffs, MDDA, MAMPO), rated (Score, MJ, MAV, MCA, …), score–pairwise hybrids (STAR, MARS, ARA, 3-2-1, Soft Minimax, …) and positional (Borda, Dowdall). Ties are counted exactly, as shared winning chances.
-- A standard set of 28, the most discussed methods and the strongest found here, is the default; every other method, family or set can be named.
+- A standard set of 29, the most discussed methods and the strongest found here, is the default; every other method, family or set can be named.
 - New methods as add-ons: one Python file in `addons/` with a counting rule; ballots, strategy and measures come with the ballot type. A [tutorial](docs/addons.md) walks through writing one with little Python.
 
 **Electorates** ([model](docs/model.md), Electorates)
@@ -68,7 +68,7 @@ python analyze.py rounds --compare "BTR-score:STAR"      # -> output/rounds/anal
 python show_electorates.py --model noise clusters --out look        # look at the electorates, no methods
 ```
 
-Every run or sweep writes into its own folder in `output/`, and `analyze.py` writes its report (`report.md`, tables and plots) into an `analysis/` folder inside it. A run uses the standard set of 28 methods; `--methods all` runs every one (200 elections with all methods take about 20 minutes), and `--methods` takes methods, groups or sets by name.
+Every run or sweep writes into its own folder in `output/`, and `analyze.py` writes its report (`report.md`, tables and plots) into an `analysis/` folder inside it. A run uses the standard set of 29 methods; `--methods all` runs every one (200 elections with all methods take about 20 minutes), and `--methods` takes methods, groups or sets by name.
 
 ## Documentation
 

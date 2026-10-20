@@ -83,7 +83,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--participation` | off | also check participation (no-show paradox) on sincere and learned ballots (see [model.md](model.md), Participation); slower |
 | `--manipulation` | off | also test coalition manipulation from honest ballots, one- and two-sided (see [model.md](model.md), Manipulation test) |
 | `--workers` | all cores | parallel processes |
-| `--methods` | the `standard` set (28 methods) | run only these methods (start from none); method, group or set names (see [methods.md](methods.md), Groups), case ignored; `all` for every method |
+| `--methods` | the `standard` set (29 methods) | run only these methods (start from none); method, group or set names (see [methods.md](methods.md), Groups), case ignored; `all` for every method |
 | `--exclude` | none | leave these out (from the default, or from `--methods`) |
 | `--out` | time-stamped | folder of the run: `output/<out>/` (see One folder per run) |
 | `--overwrite` | off | replace an existing run in `--out` |

@@ -35,6 +35,8 @@ The encodings (see also methods.py):
   "fav_run"  two-round election, plurality first round: the sincere ranking as rank points
              (C-1 ... 0) for the separate runoff, plus C for the one candidate marked in round 1
   "app_run"  two-round election, approval first round: as fav_run, plus C for every approved candidate
+  "score_run" two-round election, score first round: the sincere ranking as rank points (C-1 ... 0)
+             for the separate runoff, plus C x the round-1 score (0..MAXS)
   "veto"     -1 for the one candidate voted against, 0 for all others
   "weak"     ranking with ties allowed: levels 0 ... C-1, higher is better, equal = tied
   "trunc"    truncated ranking: the k ranked candidates get k ... 1, unranked ones 0 (tied last)
@@ -138,6 +140,11 @@ def fav_run_ballots(u, lazy=0.0):
 def app_run_ballots(u, lazy=0.0, draw=0.5):
     """Round 1: the approval set (approves); ranking by utility. Laziness: the round-1 approvals only."""
     return rank_ballots(u) + u.shape[1] * approval_ballots(u, lazy, draw)
+
+
+def score_run_ballots(u, lazy=0.0):
+    """Round 1: the score ballot (score_ballots); ranking by utility. Laziness: the round-1 scores only."""
+    return rank_ballots(u) + u.shape[1] * score_ballots(u, lazy)
 
 
 def veto_ballots(u, lazy=0.0):
@@ -261,6 +268,13 @@ def _mutate_app_run(b, rng):
                 break
             mark[c] = not mark[c]
     return pts + C * mark
+
+
+def _mutate_score_run(b, rng):
+    """Only the round-1 scores change (as _mutate_score); the runoff ranking stays."""
+    C = len(b)
+    pts, sc = np.mod(b, C), np.floor_divide(b, C)
+    return pts + C * _mutate_score(sc, rng)
 
 
 def _mutate_veto(b, rng):
@@ -450,6 +464,13 @@ def _exag_app_run(Ug, A, Bo):
     return [_rank_points(order) + C * up] if 0 < k < C else []
 
 
+def _exag_score_run(Ug, A, Bo):
+    """The score exaggerations (_exag_score) in round 1; the runoff ranking stays sincere."""
+    C = len(Ug)
+    order = _views(Ug, A, Bo)[0]
+    return [_rank_points(order) + C * x for x in _exag_score(Ug, A, Bo)]
+
+
 def _exag_veto(Ug, A, Bo):
     v = np.zeros(len(Ug)); v[Bo] = -1
     return [v]
@@ -462,6 +483,12 @@ def _marks_run(X):
     ranking is the sincere one), so sincerity and fidelity look at the marks, as a plurality / approval
     ballot."""
     return (X >= X.shape[1]).astype(float)
+
+
+def _marks_score_run(X):
+    """score_run: only the round-1 scores are the voter's choice; sincerity and fidelity look at them
+    as at a score ballot."""
+    return np.floor_divide(X, X.shape[1])
 
 
 def _implied_score(X):
@@ -595,6 +622,8 @@ BALLOTS = {b.name: b for b in [
            marks=_marks_run),
     Ballot("app_run", app_run_ballots, _mutate_app_run, _exag_app_run, _implied_marks, _worst_approval,
            marks=_marks_run, lazy=True, approval=True),
+    Ballot("score_run", score_run_ballots, _mutate_score_run, _exag_score_run, _implied_score, _worst_score,
+           marks=_marks_score_run, lazy=True),
     Ballot("veto", veto_ballots, _mutate_veto, _exag_veto, _implied_veto, _worst_veto),
     Ballot("weak", lazy_rank_ballots, _mutate_weak, _exag_weak, _implied_rank, _worst_ranking,
            lazy=True, ordered=True),                                      # honest: strict; ties only strategic
