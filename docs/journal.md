@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-20 | Plots and report: the frontier of normalized ballots as a dotted line (new column Un_cands); results unchanged | no line |
 | 2026-10-20 | New methods: DMS (rated) and Score runoff (hybrid, a separate runoff; in the standard set, now 29 methods) | 28 methods |
 | 2026-10-19 | Standard set: Copeland//Margins-ER removed (28 methods), not a live proposal | 29 methods, with Ranked Robin |
 | 2026-10-19 | Renamed: Ranked Robin → Copeland//Margins-ER, Ranked Robin-SR → Copeland//Margins (Equal Vote's "Ranked Robin" now means any Condorcet method; the lab's is Copeland with a margins tiebreak). Results unchanged | use the old names |

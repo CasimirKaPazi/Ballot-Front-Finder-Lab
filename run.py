@@ -105,6 +105,10 @@ def one_election(job):
     # every candidate's total utility and worst margin, for the frontier of what any rule could reach
     estats["U_cands"] = ";".join(f"{x:.6g}" for x in u.sum(axis=0))
     estats["WM_cands"] = ";".join(f"{x:.6g}" for x in m_cand)
+    # every candidate's total of the voters' normalized utilities (each voter stretched to 0..1, least to
+    # most liked), for the frontier of normalized ballots (analyze.normalized_frontier)
+    mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
+    estats["Un_cands"] = ";".join(f"{x:.6g}" for x in ((u - mn) / np.where(mx - mn > 1e-12, mx - mn, 1)).sum(axis=0))
     # strategic voters: own random stream, the same voters for every method
     # adaptive voters: the next share of the same draw; their place in it is their personal threshold (0..1)
     draw = np.random.default_rng([seed, e, zlib.crc32(b"strategic")]).random(len(u))
@@ -497,7 +501,8 @@ class CsvSink:
 
     def __init__(self, path, header=None):
         self.f = open(path, "a" if header else "w", newline="")
-        self.w = csv.DictWriter(self.f, fieldnames=header) if header else None
+        # resuming: the file's own columns; a column added to the lab since the run started is left out
+        self.w = csv.DictWriter(self.f, fieldnames=header, extrasaction="ignore") if header else None
 
     def __call__(self, rows):
         if self.w is None:

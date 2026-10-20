@@ -149,14 +149,33 @@ def _guides(ax, bx, by):
     ax.set_ylim(y0, y1)
 
 
-def _frontier(ax, F, R=None, refs=None):
+def _normalized(ax, N, R=None):
+    """The frontier of normalized ballots (analyze.normalized_frontier): a faint dotted line, labelled at
+    its best-VSE end, and from there straight down: with normalized ballots, giving up more WME buys no
+    more VSE, so the line is a wall on the right. Beyond it lies what needs more than each voter's own
+    scale: how much one voter cares compared with another. With R (the reachable region) the line is
+    clipped to it, as the guides are."""
+    if N is None or len(N) == 0:
+        return
+    x, y = N[:, 0] * 100, N[:, 1] * 100
+    x, y = np.append(x, x[-1]), np.append(y, -1000.0)      # down to below the axes (clipped there)
+    ln, = ax.plot(x, y, color=BOUNDARY, lw=0.9, ls=(0, (1, 2)), zorder=1)
+    if R is not None and len(R) >= 3:
+        clip = PathPatch(Path(R * 100, closed=True), transform=ax.transData, facecolor="none", lw=0)
+        ax.add_patch(clip)
+        ln.set_clip_path(clip)
+    ax.text(x[-2], y[-2], " normalized ballots", fontsize=6, color=MUTED, ha="left", va="center", zorder=1.1,
+            clip_on=True)
+
+
+def _frontier(ax, F, R=None, refs=None, N=None):
     """Draw the reachable frontier (points (VSE, WME) as fractions, best WME first) and grey out the
     region beyond it, which no rule can reach in these elections. With R (the whole reachable region,
     see analyze.region) everything outside that polygon is greyed out: also the parts below the ends of
     the trade-off (always electing the best-WME candidate pins VSE as well). Faint guide lines mark
     1, 2, 4, 8 points below the frontier (see _guides); without a frontier they follow the 100 / 100
     corner instead. refs: reference points {name: (VSE, WME)} as fractions, drawn as small crosses
-    where they fall inside the plot."""
+    where they fall inside the plot. N: the frontier of normalized ballots, a dotted line (_normalized)."""
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
     for name, (rx_, ry_) in (refs or {}).items():
@@ -167,6 +186,7 @@ def _frontier(ax, F, R=None, refs=None):
         far = -1000.0          # far outside the axes; the lines are clipped
         _guides(ax, np.array([far, 100, 100]), np.array([100, 100, far]))
         return
+    _normalized(ax, N, R)
     x, y = F[:, 0] * 100, F[:, 1] * 100
     # bring the frontier's far ends into view only if they are near the data (see REACH)
     hx = max(x1, x.max() + 0.05 * (x1 - x0)) if x.max() - x1 <= REACH * (x1 - x0) else x1
@@ -266,7 +286,7 @@ def arrows(r, path, hide, errorbars=False):
     ax.set_ylabel(WME_LABEL)
     _pad(ax)
     _unreachable(ax, "xy", lines=r.get("frontier") is None)
-    _frontier(ax, r.get("frontier"), r.get("region"), r.get("references"))
+    _frontier(ax, r.get("frontier"), r.get("region"), r.get("references"), r.get("nfrontier"))
     ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}"
                  + ("; bars: 95% intervals relative to the average of the methods shown" if errorbars else ""),
                  loc="left")
@@ -533,9 +553,10 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
     F = base.get("frontier") if same_electorates else None   # same electorates: one frontier for all conditions
     R = base.get("region") if same_electorates else None
     refs = base.get("references") if same_electorates else None
+    NF = base.get("nfrontier") if same_electorates else None
     _pad(axs.flat[0])
     _unreachable(axs.flat[0], "xy", lines=F is None)       # shared axes: limits apply to all panels
-    _frontier(axs.flat[0], F, R, refs)
+    _frontier(axs.flat[0], F, R, refs, NF)
     for ax in list(axs.flat)[1:len(panels)]:
         lo, hi = ax.get_xlim()
         ax.axvspan(100, hi, color=UNREACHABLE, zorder=0, lw=0)
@@ -544,7 +565,7 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
         if F is None:
             ax.axvline(100, color=BOUNDARY, lw=1.0, zorder=1)
             ax.axhline(100, color=BOUNDARY, lw=1.0, zorder=1)
-        _frontier(ax, F, R, refs)
+        _frontier(ax, F, R, refs, NF)
     handles = [plt.Line2D([], [], ls="", marker="o", ms=7, color=shades[i], label=str(v)) for i, v in enumerate(values)]
     handles.append(plt.Line2D([], [], ls="--" if not learning_only else "", lw=0.8, color="#c4c3be", marker="o", ms=6,
                               mfc=SURFACE, mec=MUTED,
@@ -632,9 +653,10 @@ def track(conds, method, varying, names, path, same_electorates, errorbars=False
     F = pts[0][0].get("frontier") if same_electorates else None
     R = pts[0][0].get("region") if same_electorates else None
     refs = pts[0][0].get("references") if same_electorates else None
+    NF = pts[0][0].get("nfrontier") if same_electorates else None
     _pad(ax)
     _unreachable(ax, "xy", lines=F is None)
-    _frontier(ax, F, R, refs)
+    _frontier(ax, F, R, refs, NF)
     ax.set_title(title + "\nlearned ballots (filled); honest (open)"
                  + ("; bars: each point's own 95% interval" if errorbars else ""), loc="left")
     fig.tight_layout()
