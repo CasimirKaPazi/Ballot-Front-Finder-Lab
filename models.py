@@ -7,8 +7,11 @@ None = every dimension counts alike). A model's own parameters are fields of the
 (scenario.py); each model reads the ones it uses. Everything after the draw is common to all models:
 
     distance    |(x - p) * w|: Euclidean, each dimension scaled by the weight w of the person at x
-    utility     exp(-distance / width): 1 at zero distance, falling toward 0 far away. Utilities are
-                not normalised; zero means "infinitely far".
+    utility     exp(-distance / width) (--utility exp, the default): 1 at zero distance, falling toward
+                0 far away. Utilities are not normalised; zero means "infinitely far". A voter far
+                from all candidates has small utility differences between them, so counts little in
+                VSE. --utility linear: -distance / width (as vse-sim): every unit of distance counts
+                the same, near or far; width is then only a scale and changes no result.
     candidates  optionally transformed relative to the electorate: cand_dispersion scales their
                 distances from the voters' mean position (Merrill 1984's relative candidate
                 dispersion: < 1 clusters them toward the centre, > 1 spreads them out), and
@@ -369,8 +372,13 @@ def distances(X, P, w=None):
     return np.linalg.norm(D, axis=2)
 
 
-def utility(d, width):
-    """Utility of a candidate at distance d: exp(-d / width)."""
+UTILITIES = ("exp", "linear")
+
+
+def utility(d, width, form="exp"):
+    """Utility of a candidate at distance d: exp(-d / width), or -d / width (form "linear")."""
+    if form == "linear":
+        return -d / width
     return np.exp(-d / width)
 
 
@@ -391,5 +399,5 @@ def draw_electorate(sc, rng):
         centre = voters.mean(axis=0)
         cands = centre + sc.cand_dispersion * (cands - centre)
         cands[:, 0] += sc.cand_shift * voters[:, 0].std()
-    u = utility(distances(voters, cands, vw), sc.width)
+    u = utility(distances(voters, cands, vw), sc.width, getattr(sc, "utility", "exp"))
     return Electorate(u, voters, cands, vw, cw)

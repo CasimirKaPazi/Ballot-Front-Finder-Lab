@@ -55,7 +55,7 @@ import numpy as np
 
 import plots
 from metrics import pareto
-from run import out_path, write_command, group_text, strategy_text, cand_text, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
+from run import out_path, write_command, group_text, strategy_text, cand_text, width_text, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
 from models import model_text, MODELS
 from methods import GROUPS, METHODS, select, group_of, sincerity_defined, current_name
 
@@ -142,6 +142,7 @@ ADDED_COLUMNS = {
     "noise_strength": ("3.0", "2026-10-15, parameter of the noise model (not used by older runs)"),
     "fixed_variance": ("0", "2026-10-15, fixed total variance: older runs did not scale positions"),
     "lazy": ("0.0", "2026-10-13, laziness: older runs had full ballots"),
+    "utility": ("exp", "2026-10-21, utility of distance: older runs used exp(-distance / width)"),
     "fidelity": (None, "2026-10-12, fidelity, with the current sincerity measure"),
     "bcw": (None, "2026-10-12, Condorcet winner in the ballots"),
     "manip1": (None, "2026-10-17, manipulation test (run.py --manipulation)"),
@@ -485,14 +486,14 @@ def region_span(R):
 
 def electorate_summary(dens, has, ele):
     """Electorate properties of a condition (point estimates), or None for CSVs without them."""
-    if np.isnan(ele["fav_ratio"]).all():
+    if np.isnan(ele["U_best"]).all():
         return None
     h = has == 1
     return {"cw": float(h.mean()),
             "cw_util": float(np.nanmean(ele["cw_is_util"][h])) if h.any() else float("nan"),
             # VSE lost by electing the Condorcet winner, as a ratio of sums like VSE itself
             "cw_loss": float((ele["U_best"][h] - ele["U_cw"][h]).sum() / dens[0][h].sum()) if h.any() else float("nan"),
-            "fav": float(np.median(ele["fav_ratio"]))}
+            "fav": float(np.nanmedian(ele["fav_ratio"])) if not np.isnan(ele["fav_ratio"]).all() else float("nan")}
 
 
 def frontier_text(F, R=None, refs=None, N=None):
@@ -523,7 +524,8 @@ def frontier_text(F, R=None, refs=None, N=None):
 def electorate_text(e):
     return (f"Electorates: Condorcet winner in {e['cw']:.1%}; it also has the highest total utility in "
             f"{e['cw_util']:.1%} of those; electing it loses {e['cw_loss']:.1%} of VSE; "
-            f"favourite ÷ least liked {e['fav']:.1f} (median voter).")
+            + (f"favourite ÷ least liked {e['fav']:.1f} (median voter)." if not np.isnan(e['fav']) else
+               "favourite ÷ least liked: — (linear utility)."))
 
 
 def analyse_condition(rows, boot, rng):
@@ -644,7 +646,7 @@ PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "
                "ks_shared": "ks shared factions", "clusters": "cluster count", "spread": "cluster spread", "zipf": "cluster Zipf",
                "salience": "cluster salience", "salience_exponent": "cluster salience exponent", "fixed_variance": "cluster fixed variance",
                "field_kappa": "field saturation", "field_salience": "salience field",
-               "noise_strength": "noise strength", "adaptive": "adaptive share"}
+               "noise_strength": "noise strength", "adaptive": "adaptive share", "utility": "utility"}
 LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "adaptive", "poll_size", "poll_error", "search", "converge",
                  "aggressive", "start"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)
@@ -983,7 +985,7 @@ def main():
             for r in results.values():
                 e = r["electorate"]
                 L.append(f"| {r['tag']}: {r['label']} | {e['cw']:.1%} | {e['cw_util']:.1%} | {e['cw_loss']:.1%} "
-                         f"| {e['fav']:.1f} |")
+                         f"| {'—' if np.isnan(e['fav']) else format(e['fav'], '.1f')} |")
             L.append("")
     for key, r in results.items():
         p = dict(zip(PARAMS, key))
@@ -991,7 +993,7 @@ def main():
               f"{r['elections']} elections (seeds {', '.join(r['seeds'])}"
               + (f"; {r['cover']}" if r["cover"] else "") + f"), {r['with_cw']} with a Condorcet winner. "
               f"{p['voters']} voters, {p['cands']} candidates, {model_text(p)}, "
-              f"width {p['width']}{cand_text(p['cand_dispersion'], p['cand_shift'])}; {strategy_text(p, p['voters'])}, "
+              f"{width_text(p)}{cand_text(p['cand_dispersion'], p['cand_shift'])}; {strategy_text(p, p['voters'])}, "
               f"strategic share {p['strategic']}"
               + (f", adaptive share {p['adaptive']}" if float(p.get('adaptive') or 0) > 0 else "")
               + f", scores 0..{p['max_score']}"

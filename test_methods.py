@@ -964,3 +964,16 @@ _ma.FEATURES.update(_tm.FEATURES)
 _tm.test()
 del _ma.FEATURES["my_feature"]
 print("add-on template ok")
+
+# Utility of distance (--utility): linear gives the same positions and the same order of every voter's
+# candidates as exp, only other utility differences; fav_ratio is left empty for it.
+from scenario import Scenario as _Sc
+from models import draw_electorate as _de
+from metrics import electorate_stats as _es
+for _e in range(5):
+    _ex = _de(_Sc(), np.random.default_rng([3, _e]))
+    _li = _de(_Sc(utility="linear"), np.random.default_rng([3, _e]))
+    assert np.array_equal(np.argsort(-_ex.u, axis=1), np.argsort(-_li.u, axis=1))
+    assert np.allclose(_li.u, np.log(_ex.u))                 # -d / width = log exp(-d / width)
+    assert _es(_li.u)["fav_ratio"] == "" and _es(_ex.u)["fav_ratio"] != ""
+print("linear utility ok")

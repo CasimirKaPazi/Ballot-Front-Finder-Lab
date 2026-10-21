@@ -140,11 +140,11 @@ def nominate(method, u, u_clone, cu, rng, exits=0, clones=0, rounds=ROUNDS):
                "nom_moves": n_moves}
 
 
-def clone_setup(voters, cands, width, rng, voter_weights=None, cand_weights=None):
+def clone_setup(voters, cands, width, rng, voter_weights=None, cand_weights=None, form="exp"):
     """Per election: voters' utilities for each original's clone, and candidates' utilities for
     every original (cu[i, d]). rng: the election's own clone stream (the same for every method).
     Distances and utilities as in models.py (with the model's dimension weights, if any)."""
     cpos = cands + rng.normal(0.0, CLONE_SD, cands.shape)
-    u_clone = utility(distances(voters, cpos, voter_weights), width)
-    cu = utility(distances(cands, cands, cand_weights), width)
+    u_clone = utility(distances(voters, cpos, voter_weights), width, form)
+    cu = utility(distances(cands, cands, cand_weights), width, form)
     return u_clone, cu

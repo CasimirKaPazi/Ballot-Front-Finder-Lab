@@ -38,7 +38,7 @@ IGNORE = {"version"}
 
 # The run parameters every condition starts from (small and fast), then what each condition changes.
 BASE = {"voters": 25, "cands": 4, "model": "clusters", "dims": 3, "zipf": 1, "clusters": 3, "spread": 0.5,
-        "ks_alpha": 1.5, "ks_cut": 0.2, "ks_shared": 0, "salience": "none", "salience_exponent": 1.0, "fixed_variance": 0, "field_kappa": 1.5, "field_salience": 0.0, "noise_strength": 3.0, "width": 1.0,
+        "ks_alpha": 1.5, "ks_cut": 0.2, "ks_shared": 0, "salience": "none", "salience_exponent": 1.0, "fixed_variance": 0, "field_kappa": 1.5, "field_salience": 0.0, "noise_strength": 3.0, "width": 1.0, "utility": "exp",
         "cand_dispersion": 1.0, "cand_shift": 0.0, "rounds": 2, "samples": 3, "group_size": 10,
         "strategic": 0.5, "adaptive": 0.0, "aggressive": 0.5, "lazy": 0.0, "max_score": 5, "exits": 0, "clones": 0,
         "poll_size": 0, "poll_error": 2.0, "search": 4, "converge": 0, "start": "honest", "seed": 7}
@@ -55,6 +55,7 @@ CONDITIONS = [
     ("salience", {"zipf": 0, "fixed_variance": 1, "salience": "cluster", "dims": 5, "exits": 1, "clones": 1}),
     ("noise", {"model": "noise", "dims": 5, "noise_strength": 5.0, "exits": 1, "clones": 1}),
     ("adaptive", {"strategic": 0.2, "adaptive": 0.6, "lazy": 0.4, "rounds": 3}),
+    ("linear", {"utility": "linear", "exits": 1, "clones": 1}),   # linear utility, with nomination
 ]
 ELECTIONS = 2
 

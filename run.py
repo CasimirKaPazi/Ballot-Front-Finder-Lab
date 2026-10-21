@@ -99,7 +99,7 @@ def one_election(job):
     if nominating:   # clones' positions: own random stream, the same for every method
         u_clone, cu = clone_setup(voters, cands, sc.width,
                                   np.random.default_rng([seed, e, zlib.crc32(b"clones")]),
-                                  ele.voter_weights, ele.cand_weights)
+                                  ele.voter_weights, ele.cand_weights, getattr(sc, "utility", "exp"))
     m_cand = worst_margins(u)                       # each candidate's worst head-to-head margin
     estats = electorate_stats(u)                    # properties of the electorate, for the report
     # every candidate's total utility and worst margin, for the frontier of what any rule could reach
@@ -280,6 +280,12 @@ def cand_text(disp, shift):
     return f", candidates: {', '.join(parts)}" if parts else ""
 
 
+def width_text(p):
+    """The utility fall-off of a run: "width 0.7" (exp), or "linear utility" (width only a scale then)."""
+    g = (lambda k: p.get(k, "exp")) if isinstance(p, dict) else (lambda k: getattr(p, k, "exp"))
+    return "linear utility" if g("utility") == "linear" else f"width {g('width')}"
+
+
 def strategy_text(p, n):
     """One-line description of the strategy model of a run (p: namespace or dict of parameters)."""
     g = (lambda k: p[k]) if isinstance(p, dict) else (lambda k: getattr(p, k))
@@ -313,7 +319,7 @@ def group_text(g):
 
 
 # Run parameters written into every row of the elections CSV
-PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
+PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "utility", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
           "strategic", "adaptive", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
           "start", "seed"]
 
@@ -403,7 +409,7 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
                   p.get("ks_cut", 0.2), p.get("ks_shared", 0), salience=p.get("salience", "none"),
                   salience_exponent=p.get("salience_exponent", 1.0), fixed_variance=p.get("fixed_variance", 0),
                   field_kappa=p.get("field_kappa", 1.5), field_salience=p.get("field_salience", 0.0),
-                  noise_strength=p.get("noise_strength", 3.0))
+                  noise_strength=p.get("noise_strength", 3.0), utility=p.get("utility", "exp"))
     todo = [e for e in range(elections) if e not in set(skip)]
     jobs = [{"sc": sc, "p": p, "e": e, "rounds": rounds, "names": names, "participation": participation,
              "manipulation": manipulation} for e in todo]
@@ -556,6 +562,9 @@ def main():
     ap.add_argument("--ks-shared", type=int, default=0, choices=[0, 1],
                     help="model ks: 1 = the same factions in every issue bundle (no cross-cutting cleavages)")
     ap.add_argument("--width", type=float, default=0.7)
+    ap.add_argument("--utility", default="exp", choices=["exp", "linear"],
+                    help="utility of distance: exp = exp(-distance / width), far voters nearly indifferent; "
+                         "linear = -distance / width (as vse-sim), every unit of distance counts the same")
     ap.add_argument("--cand-dispersion", type=float, default=1.0,
                     help="candidates' distance from the electorate's centre x this (< 1: clustered in the centre, "
                          "> 1: spread out; Merrill 1984); voters unchanged")
@@ -664,7 +673,7 @@ def main():
 
     lines = []
     lines.append(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {model_text(a)}, "
-          f"width {a.width}{cand_text(a.cand_dispersion, a.cand_shift)}; {strategy_text(a, a.voters)}, "
+          f"{width_text(a)}{cand_text(a.cand_dispersion, a.cand_shift)}; {strategy_text(a, a.voters)}, "
           f"strategic share {a.strategic}, adaptive share {p['adaptive']}, scores 0..{a.max_score}"
           f"{f', nomination: exits {a.exits}, clones {a.clones}' if a.exits or a.clones else ''}; seed {a.seed}")
     lines.append(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
