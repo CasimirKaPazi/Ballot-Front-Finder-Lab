@@ -25,7 +25,7 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 ## Features
 
 **Methods** ([methods](docs/methods.md))
-- 63 single-winner methods in eight families: plurality-based (Plurality, TTR, IRV and variants, coalition methods), Condorcet (Ranked pairs, Schulze, Kemeny-Young, Copeland, Copeland//Margins, …), the minimax family, Condorcet-based hybrids (Black, Baldwin, Nanson, BTR, Smith//Score, …), approval-based (Approval, approval runoffs, MDDA, MAMPO), rated (Score, MJ, MAV, MCA, …), score–pairwise hybrids (STAR, MARS, ARA, 3-2-1, Soft Minimax, …) and positional (Borda, Dowdall). Ties are counted exactly, as shared winning chances.
+- 65 single-winner methods in ten families: plurality-based (Plurality, IRV and variants, coalition methods), Condorcet (Ranked pairs, Schulze, Kemeny-Young, Copeland, Copeland//Margins, …), the minimax family, Condorcet-based hybrids (Black, Baldwin, Nanson, BTR, Smith//Score, …), approval-based (Approval, MDDA, MAMPO), rated (Score, DMS, Geometric median, …), median-based (MJ, MAV, MCA), score–pairwise hybrids (STAR, MARS, ARA, 3-2-1, Soft Minimax, …), positional (Borda, Dowdall) and two-round methods with a real, separate runoff (TTR, Approval runoff, Score runoff, …). Ties are counted exactly, as shared winning chances.
 - A standard set of 29, the most discussed methods and the strongest found here, is the default; every other method, family or set can be named.
 - New methods as add-ons: one Python file in `addons/` with a counting rule; ballots, strategy and measures come with the ballot type. A [tutorial](docs/addons.md) walks through writing one with little Python.
 

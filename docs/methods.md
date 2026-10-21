@@ -11,11 +11,13 @@ Every method belongs to exactly one group. Groups can be used wherever methods a
 | `condorcet` | Ranked pairs, Schulze, Schulze-ER, Kemeny-Young, Copeland, Copeland//Margins, Copeland//Margins-ER, SICT, Condorcet-random-drop (Condorcet methods decided by the pairwise counts alone) |
 | `minimax-family` | Minimax, Minimax-ER, MMWV, MMPO, MMPOWV (the minimax family; MMPO and MMPOWV are not Condorcet methods) |
 | `condorcet-based` | Black, Baldwin, Baldwin-ER, Nanson, BTR-Borda, BTR-IRV, Benham, Smith//Score (Condorcet methods built on a Borda, IRV or score count) |
-| `plurality-based` | Plurality, TTR, Supplementary vote, IRV, ER-IRV, IRV-3, Coombs, DSC, DAC (first choices, eliminations and coalitions of top preferences; Coombs eliminates by last places) |
-| `approval-based` | Approval, Approval runoff, Approval cond. runoff, MDDA, MAMPO |
-| `rated` | Score, MJ, MAV, MCA, Reciprocal score, INS, DMS, Geometric median (add-ons can join groups, see Add-ons) |
-| `hybrid` | STAR, Score runoff, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D (ratings combined with pairwise comparisons or runoffs) |
+| `plurality-based` | Plurality, Supplementary vote, IRV, ER-IRV, IRV-3, Coombs, DSC, DAC (first choices, eliminations and coalitions of top preferences; Coombs eliminates by last places) |
+| `approval-based` | Approval, MDDA, MAMPO |
+| `rated` | Score, Reciprocal score, INS, DMS, Geometric median (add-ons can join groups, see Add-ons) |
+| `median-based` | MJ, MAV, MCA (the grade a candidate reaches with a majority: median grade or Bucklin-like) |
+| `hybrid` | STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D (ratings combined with pairwise comparisons or runoffs) |
 | `positional` | Borda, Borda-ER, Dowdall |
+| `two-round` | TTR, Approval runoff, Approval cond. runoff, Score runoff (a real, separate runoff; see below) |
 | `references` | Random pair runoff, Anti-plurality, TRASH (benchmarks, not proposals; not run unless named, e.g. `--methods all` or `--methods references STAR`, and hidden in the plots by default) |
 | `inverse` | Inverse-Plurality, Inverse-Approval, Inverse-Minimax, Inverse-IRV, Inverse-ER-IRV, Inverse-TTR, Inverse-Borda, Inverse-Score (tests of the strategy model, below; not run unless named; hidden in the plots by default) |
 
@@ -74,7 +76,6 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | Method | Ballot | Rule |
 |---|---|---|
 | Plurality | one name | most first choices |
-| TTR | two-round, plurality first round | a candidate marked by more than half the voters wins; otherwise the top two go to a separate runoff, decided by sincere preferences |
 | Supplementary vote | ranking (first two used) | top two by first preferences; a ballot whose first preference is out counts for its second preference if that is a finalist, otherwise it is exhausted |
 | IRV | ranking | eliminate fewest first choices among remaining |
 | ER-IRV | ranking, ties allowed | IRV where every candidate tied at the top of a ballot (among the remaining) gets a whole vote, as in approval. Sincere ballots are strict, so it equals IRV with honest ballots; ties are learned |
@@ -88,8 +89,6 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | Method | Ballot | Rule |
 |---|---|---|
 | Approval | approval | most approvals; sincere: above the voter's personal threshold between mean and favourite ([model.md](model.md), Honest approval) |
-| Approval runoff | two-round, approval first round | top two by approvals go to a separate runoff, decided by sincere preferences; a runoff tie goes to more approvals |
-| Approval cond. runoff | two-round, approval first round | as Approval runoff, but a candidate approved by more than half the voters wins outright |
 | MDDA | truncated ranking (ranked = approved) | disqualify every candidate that more than half the voters rank some other candidate above (unless all would be); most approved remaining wins. Sincere: rank the candidates the voter would approve ([model.md](model.md), Honest approval) |
 | MAMPO | truncated ranking | Majority Approval, Minimum Pairwise Opposition (Kevin Venzke): ranked = approved. If nobody is approved by more than half the voters, the most approved wins; otherwise, among those approved by more than half, the one with the smallest largest pairwise opposition (most voters ranking some rival above it) wins. Devised to show that favourite betrayal, strong defensive strategy and strategy-freeness are compatible |
 
@@ -98,20 +97,26 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | Method | Ballot | Rule |
 |---|---|---|
 | Score | 0–5 | highest total; sincere: stretched to the voter's range |
-| MJ | 0–5 | majority judgment: highest median grade; ties broken by repeatedly removing the median |
-| MAV | 0–5 | Majority Approval Voting (graded Bucklin; [electowiki](https://electowiki.miraheze.org/wiki/Majority_Approval_Voting)): grades are counted from the top down; at the first grade where some candidate is graded that high or higher by a majority, the candidate with a majority and the most votes at the grade above wins (at the top grade: the largest majority). Unlike Bucklin, a larger majority at the lower grade does not decide; vse-sim uses five grades and a fractional median score instead |
-| MCA | three grades | majority choice approval, MCA-A variant: the first grade level (good, then good or OK, then all) at which some candidate is rated that high by more than half the voters decides; one such candidate wins, among several the most approved (good or OK) |
 | Reciprocal score | 0–5 | interpretation of [electowiki](https://electowiki.org/wiki/Reciprocal_Score_Voting): a voter's faction is their top-rated candidate(s). R(X→Y) is the mean rating supporters of X give Y, as a share of the top score. A score for c is multiplied by min(1, R(c→F)/R(F→c)), F the voter's faction: support that c's supporters do not return is cut. Scores for the voter's own top and for candidates nobody top-rates stay unchanged; highest total wins |
 | INS | 0–5 | iterated normalized score, a score elimination: each round every ballot is stretched to the full range over the remaining candidates (lowest 0, highest the top score; a ballot rating them all the same counts for none), the lowest total is eliminated (ties for last split the win), until one is left |
 | DMS | 0–5 | depth maximin (proposed in this lab): the ballots are read as levels from the top score down (score 0 is no level). For each depth k, the top k levels, a candidate's value is the points they get from those levels divided by the points of the levels counted (5, 5+4, 5+4+3, …); the candidate whose lowest value over the depths is highest wins, ties by the next lowest (leximin), still tied: split. A candidate must be strong at every depth: a dark horse with no top scores has 0 at depth 1, a polarizing one falls at the deep levels. Mostly agrees with Score; where they differ, a middle depth usually decides. Variants tried (relative values, other weights, a soft minimum, elimination, a Buck-set runoff, and others) were not better |
 | Geometric median | 0–5 | the geometric median of the score ballots, taken as vectors over the candidates (the point with the smallest total Euclidean distance to all ballots; at most 20 Weiszfeld iterations from the mean); the candidate with the highest coordinate wins. The mean would be Score, the coordinate-wise median a median grade. Each ballot pulls with the same force however far away it is, so exaggerating in the same direction adds no pull. No feature sums, so polls use smaller samples, as for Condorcet-random-drop |
+
+**median-based**
+
+The grade a candidate reaches with a majority of the voters: the median grade, or Bucklin-like, the first level from the top at which someone is rated that high by more than half.
+
+| Method | Ballot | Rule |
+|---|---|---|
+| MJ | 0–5 | majority judgment: highest median grade; ties broken by repeatedly removing the median |
+| MAV | 0–5 | Majority Approval Voting (graded Bucklin; [electowiki](https://electowiki.miraheze.org/wiki/Majority_Approval_Voting)): grades are counted from the top down; at the first grade where some candidate is graded that high or higher by a majority, the candidate with a majority and the most votes at the grade above wins (at the top grade: the largest majority). Unlike Bucklin, a larger majority at the lower grade does not decide; vse-sim uses five grades and a fractional median score instead |
+| MCA | three grades | majority choice approval, MCA-A variant: the first grade level (good, then good or OK, then all) at which some candidate is rated that high by more than half the voters decides; one such candidate wins, among several the most approved (good or OK) |
 
 **hybrid**
 
 | Method | Ballot | Rule |
 |---|---|---|
 | STAR | 0–5 | top two by total, majority runoff; a runoff tie goes to the higher total |
-| Score runoff | two-round, score first round (0–5) | top two by score total go to a separate runoff, decided by sincere preferences (see [model.md](model.md), Two-round elections); a runoff tie goes to the higher total. STAR reads the runoff from the score ballot instead, so equal scores count for neither finalist and strategic voters can misrank them there; the difference between the two is what the automatic runoff costs or gains |
 | BTR-score | 0–5 | order by total score, bottom-two pairwise runoffs climbing up |
 | MARS | 0–5 | as BTR-score; each match adds share preferring to score as share of maximum |
 | IC-MARS | 0–5 | MARS where a pairwise margin counts only beyond the votes rating both candidates at the top (tied at the top, as in [Improved Condorcet Approval](https://electowiki.org/wiki/Improved_Condorcet_Approval)): a margin those votes could reverse counts 0, so score weighs more |
@@ -135,6 +140,17 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | Borda | ranking | points by position |
 | Borda-ER | ranking, ties allowed | a point for every candidate ranked strictly below; ties score nothing. Equals Borda on strict rankings |
 | Dowdall | ranking | positional, 1, 1/2, 1/3, … points by rank (Nauru) |
+
+**two-round**
+
+A real, separate runoff: voters come back and vote between the finalists, by their sincere preference (see [model.md](model.md), Two-round elections). Not directly comparable with the one-ballot methods: the runoff is assumed sincere and turnout unchanged, and a second election has costs of its own.
+
+| Method | Ballot | Rule |
+|---|---|---|
+| TTR | two-round, plurality first round | a candidate marked by more than half the voters wins; otherwise the top two go to a separate runoff, decided by sincere preferences |
+| Approval runoff | two-round, approval first round | top two by approvals go to a separate runoff, decided by sincere preferences; a runoff tie goes to more approvals |
+| Approval cond. runoff | two-round, approval first round | as Approval runoff, but a candidate approved by more than half the voters wins outright |
+| Score runoff | two-round, score first round (0–5) | top two by score total go to a separate runoff, decided by sincere preferences (see [model.md](model.md), Two-round elections); a runoff tie goes to the higher total. STAR reads the runoff from the score ballot instead, so equal scores count for neither finalist and strategic voters can misrank them there; the difference between the two is what the automatic runoff costs or gains |
 
 **references**
 

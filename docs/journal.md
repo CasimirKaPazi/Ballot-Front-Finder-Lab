@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-21 | Groups: `median-based` (MJ, MAV, MCA, from rated) and `two-round` (TTR, Approval runoff, Approval cond. runoff, Score runoff, from plurality-based, approval-based, hybrid); add-ons can give a group per method. Results unchanged | the earlier groups |
 | 2026-10-21 | Dominance and Pareto front: sincerity differences below 1 point count as ties | any clear sincerity difference counted |
 | 2026-10-21 | `--utility linear` (−distance / width) and `quadratic` (−(distance / width)²) as alternatives to the exp fall-off; default and results unchanged | exp only |
 | 2026-10-20 | Plots and report: the frontier of normalized ballots as a dotted line (new column Un_cands); results unchanged | no line |

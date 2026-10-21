@@ -39,7 +39,8 @@ def decide(s):
 
 FEATURES = {"my_feature": (my_feature, lambda C: (C,))}   # name: (per-voter function, shape of the sum given C)
 METHODS = {"My method": Method("score", decide, ("my_feature",))}
-GROUP = "addons"                                           # an existing group (e.g. "rated") or a new one
+GROUP = "addons"                                           # an existing group (e.g. "rated") or a new one;
+                                                           # or {method: group} for methods in different groups
 
 
 def test():

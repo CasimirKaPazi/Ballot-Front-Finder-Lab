@@ -1561,12 +1561,17 @@ GROUPS = {
                   "Copeland//Margins-ER", "SICT", "Condorcet-random-drop"],
     "minimax-family": ["Minimax", "Minimax-ER", "MMWV", "MMPO", "MMPOWV"],
     "condorcet-based": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
-    "plurality-based": ["Plurality", "TTR", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs", "DSC", "DAC"],
-    "approval-based": ["Approval", "Approval runoff", "Approval cond. runoff", "MDDA", "MAMPO"],
-    "rated": ["Score", "MJ", "MAV", "MCA", "Reciprocal score", "INS", "DMS", "Geometric median"],
-    "hybrid": ["STAR", "Score runoff", "BTR-score", "MARS", "IC-MARS", "MARS-T", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore", "STLR", "Soft Minimax",
+    "plurality-based": ["Plurality", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs", "DSC", "DAC"],
+    "approval-based": ["Approval", "MDDA", "MAMPO"],
+    "rated": ["Score", "Reciprocal score", "INS", "DMS", "Geometric median"],
+    # median grade or Bucklin-like: the grade level at which a candidate reaches a majority
+    "median-based": ["MJ", "MAV", "MCA"],
+    "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "MARS-T", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore", "STLR", "Soft Minimax",
                "Soft Minimax-40", "Soft Minimax-L", "Soft Minimax-D"],
     "positional": ["Borda", "Borda-ER", "Dowdall"],
+    # a real, separate runoff: voters come back and vote between the finalists (model.md, Two-round
+    # elections); a class of its own, as the runoff is assumed sincere and turnout unchanged
+    "two-round": ["TTR", "Approval runoff", "Approval cond. runoff", "Score runoff"],
     "references": ["Random pair runoff", "Anti-plurality", "TRASH"],
     "inverse": ["Inverse-Plurality", "Inverse-Approval", "Inverse-Minimax", "Inverse-IRV", "Inverse-ER-IRV", "Inverse-TTR",
                 "Inverse-Borda", "Inverse-Score"],
@@ -1609,7 +1614,7 @@ def _load_addons(folder=ADDON_DIR):
     """Load every add-on file in `folder` (addons/*.py, except names starting with _). An add-on file
     defines METHODS = {name: Method(...)}, and may define FEATURES = {name: (per-voter function,
     shape)} for new ballot features, BALLOTS = {name: ballots.Ballot(...)} for new ballot types, GROUP = "a group name" (default "addons"; an existing group or
-    a new one) and test() for its own checks (run by test_methods.py). Its methods are then used like
+    a new one; or a dict {method: group} for methods of one file in different groups, the rest in "addons") and test() for its own checks (run by test_methods.py). Its methods are then used like
     the built-in ones. Deleting the file removes them. See addons/_template.py and docs/methods.md, Add-ons."""
     if not os.path.isdir(folder):
         return
@@ -1644,7 +1649,9 @@ def _load_addons(folder=ADDON_DIR):
                 raise SystemExit(f"add-on {fn}: {k!r} is the old name of {current_name(k)!r}; choose another name")
             METHODS[k] = m
             ADDONS[k] = fn
-        GROUPS.setdefault(getattr(mod, "GROUP", "addons"), []).extend(new)
+        group = getattr(mod, "GROUP", "addons")
+        for k in new:
+            GROUPS.setdefault(group.get(k, "addons") if isinstance(group, dict) else group, []).append(k)
 
 
 _load_addons()

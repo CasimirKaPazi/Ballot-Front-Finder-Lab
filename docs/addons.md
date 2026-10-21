@@ -189,7 +189,7 @@ GROUP = "rated"
 
 - `FEATURES` announces the new feature. It gives the function, and the shape of its sum for C candidates: 2^C sets × C candidates. `lambda C: …` is a short way to write a one-line function.
 - `METHODS` gives the method its name and says: score ballots, this decision, and it needs the feature `dscore_sub`. The comma in `("dscore_sub",)` is needed when the list has a single name.
-- `GROUP` puts IDS into the existing group `rated`. Leave it out to use the group `addons`.
+- `GROUP` puts IDS into the existing group `rated`. Leave it out to use the group `addons`. A file whose methods belong to different groups gives a dict instead, `GROUP = {"My method": "rated", "My runoff": "two-round"}`; methods it leaves out go to `addons`.
 
 ### The test
 
