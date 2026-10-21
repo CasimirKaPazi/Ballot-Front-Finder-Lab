@@ -11,7 +11,10 @@ None = every dimension counts alike). A model's own parameters are fields of the
                 0 far away. Utilities are not normalised; zero means "infinitely far". A voter far
                 from all candidates has small utility differences between them, so counts little in
                 VSE. --utility linear: -distance / width (as vse-sim): every unit of distance counts
-                the same, near or far; width is then only a scale and changes no result.
+                the same, near or far; width is then only a scale and changes no result. --utility
+                quadratic: -(distance / width)^2: each further unit costs more (risk aversion); far
+                voters count most. Total utility is then best for the candidate nearest the voters'
+                mean (exp: a dense group nearby, the mode; linear: the spatial median).
     candidates  optionally transformed relative to the electorate: cand_dispersion scales their
                 distances from the voters' mean position (Merrill 1984's relative candidate
                 dispersion: < 1 clusters them toward the centre, > 1 spreads them out), and
@@ -372,13 +375,16 @@ def distances(X, P, w=None):
     return np.linalg.norm(D, axis=2)
 
 
-UTILITIES = ("exp", "linear")
+UTILITIES = ("exp", "linear", "quadratic")
 
 
 def utility(d, width, form="exp"):
-    """Utility of a candidate at distance d: exp(-d / width), or -d / width (form "linear")."""
+    """Utility of a candidate at distance d: exp(-d / width), -d / width (form "linear") or
+    -(d / width)^2 (form "quadratic")."""
     if form == "linear":
         return -d / width
+    if form == "quadratic":
+        return -(d / width) ** 2
     return np.exp(-d / width)
 
 

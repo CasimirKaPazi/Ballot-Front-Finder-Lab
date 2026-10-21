@@ -125,12 +125,20 @@ def summarize(rows):
     }
 
 
-def pareto(points):
-    """Indices of non-dominated points (all axes: higher is better)."""
+# Smallest difference that counts on each front axis (fractions, as the values): sincerity differences
+# below 1 point are ties. They are measured precisely (the same elections for every method), but at
+# 99.7 against 99.9 no voter is noticeably more honest; VSE* and WME* count any difference.
+FRONT_TOLERANCE = {"VSE*": 0.0, "WME*": 0.0, "sincerity": 0.01}
+
+
+def pareto(points, tol=0.0):
+    """Indices of non-dominated points (all axes: higher is better). tol: per axis (or one number), the
+    smallest difference that counts; smaller ones are ties."""
     pts = np.asarray(points)
+    tol = np.broadcast_to(np.asarray(tol, float), pts.shape[1:])
     keep = []
     for i, p in enumerate(pts):
-        dominated = any(np.all(q >= p) and np.any(q > p) for j, q in enumerate(pts) if j != i)
+        dominated = any(np.all(q >= p - tol) and np.any(q > p + tol) for j, q in enumerate(pts) if j != i)
         if not dominated:
             keep.append(i)
     return keep

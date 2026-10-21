@@ -45,7 +45,7 @@ from models import draw_electorate, model_text, MODELS
 from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
-from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet
+from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, FRONT_TOLERANCE
 import participation as part
 import manipulation as manip
 
@@ -281,9 +281,10 @@ def cand_text(disp, shift):
 
 
 def width_text(p):
-    """The utility fall-off of a run: "width 0.7" (exp), or "linear utility" (width only a scale then)."""
+    """The utility fall-off of a run: "width 0.7" (exp), or "linear utility" / "quadratic utility" (width
+    only a scale then)."""
     g = (lambda k: p.get(k, "exp")) if isinstance(p, dict) else (lambda k: getattr(p, k, "exp"))
-    return "linear utility" if g("utility") == "linear" else f"width {g('width')}"
+    return f"{g('utility')} utility" if g("utility") in ("linear", "quadratic") else f"width {g('width')}"
 
 
 def strategy_text(p, n):
@@ -562,9 +563,10 @@ def main():
     ap.add_argument("--ks-shared", type=int, default=0, choices=[0, 1],
                     help="model ks: 1 = the same factions in every issue bundle (no cross-cutting cleavages)")
     ap.add_argument("--width", type=float, default=0.7)
-    ap.add_argument("--utility", default="exp", choices=["exp", "linear"],
+    ap.add_argument("--utility", default="exp", choices=["exp", "linear", "quadratic"],
                     help="utility of distance: exp = exp(-distance / width), far voters nearly indifferent; "
-                         "linear = -distance / width (as vse-sim), every unit of distance counts the same")
+                         "linear = -distance / width (as vse-sim), every unit of distance counts the same; "
+                         "quadratic = -(distance / width)^2, each further unit costs more")
     ap.add_argument("--cand-dispersion", type=float, default=1.0,
                     help="candidates' distance from the electorate's centre x this (< 1: clustered in the centre, "
                          "> 1: spread out; Merrill 1984); voters unchanged")
@@ -662,7 +664,8 @@ def main():
                    "settled": float(np.mean([r["settled"] for r in lrn]))}
     axes = ["VSE_learned", "WME_learned", "sincerity"]
     # undefined sincerity (TRASH, Inverse-*): no advantage on that axis in this quick check
-    front = set(pareto([[summ[m][x] if not np.isnan(summ[m][x]) else -np.inf for x in axes] for m in names]))
+    front = set(pareto([[summ[m][x] if not np.isnan(summ[m][x]) else -np.inf for x in axes] for m in names],
+                       tol=[FRONT_TOLERANCE["VSE*"], FRONT_TOLERANCE["WME*"], FRONT_TOLERANCE["sincerity"]]))
 
     cols = ["VSE", "WME", "VSE_learned", "WME_learned", "CE", "CE_learned", "sincerity", "settled"]
     with open(os.path.join(out, "summary.csv"), "w", newline="") as f:

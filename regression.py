@@ -56,6 +56,7 @@ CONDITIONS = [
     ("noise", {"model": "noise", "dims": 5, "noise_strength": 5.0, "exits": 1, "clones": 1}),
     ("adaptive", {"strategic": 0.2, "adaptive": 0.6, "lazy": 0.4, "rounds": 3}),
     ("linear", {"utility": "linear", "exits": 1, "clones": 1}),   # linear utility, with nomination
+    ("quadratic", {"utility": "quadratic"}),                     # quadratic utility
 ]
 ELECTIONS = 2
 

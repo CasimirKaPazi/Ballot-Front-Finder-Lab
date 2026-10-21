@@ -62,7 +62,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--ks-cut` | 0.2 | model `ks`: importance below which no further issue bundles or dimensions are drawn (lower: more dimensions) |
 | `--ks-shared` | 0 | model `ks`: 1 = the same factions in every issue bundle (a test variant without cross-cutting cleavages) |
 | `--width` | 0.7 | distance scale of the utility fall-off |
-| `--utility` | `exp` | utility of distance: `exp` = exp(−distance / width), `linear` = −distance / width (see [model.md](model.md)) |
+| `--utility` | `exp` | utility of distance: `exp` = exp(−distance / width), `linear` = −distance / width, `quadratic` = −(distance / width)² (see [model.md](model.md)) |
 | `--cand-dispersion` | 1.0 | candidates' distance from the electorate's centre × this (< 1 clustered, > 1 spread out); see [model.md](model.md), Candidates unlike the electorate |
 | `--cand-shift` | 0.0 | candidates moved along the main dimension by this many voter SDs; see [model.md](model.md), Candidates unlike the electorate |
 | `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |

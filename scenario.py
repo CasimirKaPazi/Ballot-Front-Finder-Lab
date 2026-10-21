@@ -28,7 +28,7 @@ class Scenario:
     field_salience: float = 0.0    # "field": strength of the salience field (0 = every issue weighed alike)
     fixed_variance: int = 1        # "clusters": 1 = total variance of the dimensions fixed (pi^2/6), whatever their number
     noise_strength: float = 5.0    # "noise": how strongly voters gather where the noise is high (0 = a Gaussian blob)
-    utility: str = "exp"           # utility of distance: "exp" exp(-d / width), "linear" -d / width (models.utility)
+    utility: str = "exp"           # utility of distance: "exp" exp(-d / width), "linear" -d / width, "quadratic" -(d / width)^2 (models.utility)
 
 
 def electorate(sc: Scenario, rng: np.random.Generator):

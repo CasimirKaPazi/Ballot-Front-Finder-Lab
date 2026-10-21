@@ -976,4 +976,6 @@ for _e in range(5):
     assert np.array_equal(np.argsort(-_ex.u, axis=1), np.argsort(-_li.u, axis=1))
     assert np.allclose(_li.u, np.log(_ex.u))                 # -d / width = log exp(-d / width)
     assert _es(_li.u)["fav_ratio"] == "" and _es(_ex.u)["fav_ratio"] != ""
-print("linear utility ok")
+    _qu = _de(_Sc(utility="quadratic"), np.random.default_rng([3, _e]))
+    assert np.allclose(_qu.u, -_li.u ** 2)                           # -(d / width)^2
+print("linear and quadratic utility ok")

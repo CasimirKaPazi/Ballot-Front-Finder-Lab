@@ -28,8 +28,8 @@ they can afford to be. Honest VSE and WME depend more on modelling assumptions; 
 alongside, as are CE, CE* (Condorcet efficiency), not used for dominance.
 
 Dominated by: for each method, the methods that are clearly better on at least one front axis and
-clearly worse on none. Clearly: the paired 95% bootstrap interval of the difference excludes 0;
-smaller differences count as ties (otherwise methods equal on one axis, like all Condorcet methods
+clearly worse on none. Clearly: the paired 95% bootstrap interval of the difference excludes 0, and
+on sincerity the difference is at least 1 point (metrics.FRONT_TOLERANCE); smaller differences count as ties (otherwise methods equal on one axis, like all Condorcet methods
 with honest ballots, would be separated by noise-sized differences). Each is followed by the
 axes on which it is clearly better. This is a pointer for interpretation, not a verdict: the
 values themselves are the result.
@@ -54,7 +54,7 @@ from collections import OrderedDict
 import numpy as np
 
 import plots
-from metrics import pareto
+from metrics import pareto, FRONT_TOLERANCE
 from run import out_path, write_command, group_text, strategy_text, cand_text, width_text, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
 from models import model_text, MODELS
 from methods import GROUPS, METHODS, select, group_of, sincerity_defined, current_name
@@ -367,13 +367,17 @@ def axis_values(W, A, dens, has):
     }
 
 
-def dominance(P_b):
+def dominance(P_b, tol=0.0):
     """P_b: (B x M x K) bootstrap points, higher is better. Differences whose paired 95% interval
-    includes 0 count as ties. dom[i, j] is True when j dominates i: clearly better on at least one
-    axis and clearly worse on none. Also returns better[i, j, k]: j clearly better than i on axis k."""
+    includes 0 count as ties, and so do differences smaller than tol on that axis (per axis; see
+    metrics.FRONT_TOLERANCE: sincerity below 1 point). dom[i, j] is True when j dominates i: clearly
+    better on at least one axis and clearly worse on none. Also returns better[i, j, k]: j clearly
+    better than i on axis k."""
     D = P_b[:, None, :, :] - P_b[:, :, None, :]             # D[b, i, j, k] = j minus i
     lo, hi = np.percentile(D, [2.5, 97.5], axis=0)
-    better, worse = lo > 0, hi < 0
+    mid = np.median(D, axis=0)
+    tol = np.asarray(tol, float)
+    better, worse = (lo > 0) & (mid >= tol), (hi < 0) & (mid <= -tol)
     dom = better.any(axis=2) & ~worse.any(axis=2)
     np.fill_diagonal(dom, False)
     return dom, better
@@ -525,7 +529,7 @@ def electorate_text(e):
     return (f"Electorates: Condorcet winner in {e['cw']:.1%}; it also has the highest total utility in "
             f"{e['cw_util']:.1%} of those; electing it loses {e['cw_loss']:.1%} of VSE; "
             + (f"favourite ÷ least liked {e['fav']:.1f} (median voter)." if not np.isnan(e['fav']) else
-               "favourite ÷ least liked: — (linear utility)."))
+               "favourite ÷ least liked: — (utility not positive)."))
 
 
 def analyse_condition(rows, boot, rng):
@@ -536,7 +540,8 @@ def analyse_condition(rows, boot, rng):
     halves = axis_values(np.stack([np.arange(E) % 2 == 0, np.arange(E) % 2 == 1]).astype(float), A, dens, has)
     bs = axis_values(W, A, dens, has)
     P_b = np.stack([bs[a] for a in FRONT], axis=2)           # B x M x 3
-    dom, better = dominance(P_b)
+    tol = [FRONT_TOLERANCE[a] for a in FRONT]
+    dom, better = dominance(P_b, tol)
     # each dominating method with the axes on which it is clearly better, most axes first
     dominated_by = [[(methods[j], [FRONT[k] for k in np.flatnonzero(better[i, j])]) for j in np.flatnonzero(dom[i])]
                     for i in range(len(methods))]
@@ -551,7 +556,7 @@ def analyse_condition(rows, boot, rng):
            "manipulation": manipulation_summary(A, W, dens[0]),
            "ballot_cw": ballot_cw_summary(A, has),
            # Pareto front on point estimates; undefined sincerity (TRASH, Inverse-*) counts as worst
-           "pareto": set(pareto(np.nan_to_num(np.stack([point[a][0] for a in FRONT], axis=1), nan=-np.inf)))}
+           "pareto": set(pareto(np.nan_to_num(np.stack([point[a][0] for a in FRONT], axis=1), nan=-np.inf), tol))}
     for a in AXES + EXTRA + ["sincerity", "fidelity", "fidelity_honest"] + TYPES:
         res[a] = point[a][0]
         with np.errstate(all="ignore"), warnings.catch_warnings():     # all-nan columns (e.g. CE without a
@@ -890,14 +895,15 @@ def main():
           "- The values are the result. The **front** is judged on VSE*, WME* and sincerity: the result with strategic "
           "voters, and how honest they can afford to be. The **Pareto front** uses the point estimates as they are: "
           "a method is on it if no other is at least as good on all three and better on one, however small the "
-          "difference. **Undominated** asks for clear differences instead (see Dominated by). The two need not agree: a "
+          "difference (sincerity: below 1 point counts as a tie). **Undominated** asks for clear differences instead (see Dominated by). The two need not agree: a "
           "noise-sized advantage on one axis keeps a method on the Pareto front, but does not protect it from a method "
           "clearly better on another axis; a method beaten by a hair on every axis leaves the Pareto front but can stay "
           "undominated. Honest VSE and WME depend more on modelling assumptions and are "
           "shown for context. **Dominated by** lists the methods that are clearly better on at least one of the three "
-          "front axes and clearly worse on none, with the axes on which they are better in brackets. Sincerity "
-          "differences are measured very precisely, so at equal VSE* and WME* the more honest method dominates. Clearly means the paired 95% interval of the difference excludes 0; smaller differences count "
-          "as ties. It is a pointer for interpretation, relative to the methods included, not a verdict.",
+          "front axes and clearly worse on none, with the axes on which they are better in brackets. Clearly means "
+          "the paired 95% interval of the difference excludes 0; smaller differences count as ties. Sincerity "
+          "differences are measured very precisely, but below 1 point no voter is noticeably more honest, so they "
+          "count as ties too, here and on the Pareto front. It is a pointer for interpretation, relative to the methods included, not a verdict.",
           "- **Sincerity**: how far the learned ballots go against the voters' own preferences, within each "
           "method's ballot format: the utility-weighted pairs a ballot puts in the wrong order, relative to the most "
           "dishonest ballot the format allows (100 = no reversed preference, 0 = as far against one's preferences as "

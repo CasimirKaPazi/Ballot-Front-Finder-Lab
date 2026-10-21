@@ -6,7 +6,8 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
-| 2026-10-21 | `--utility linear` (−distance / width) as an alternative to the exp fall-off; default and results unchanged | exp only |
+| 2026-10-21 | Dominance and Pareto front: sincerity differences below 1 point count as ties | any clear sincerity difference counted |
+| 2026-10-21 | `--utility linear` (−distance / width) and `quadratic` (−(distance / width)²) as alternatives to the exp fall-off; default and results unchanged | exp only |
 | 2026-10-20 | Plots and report: the frontier of normalized ballots as a dotted line (new column Un_cands); results unchanged | no line |
 | 2026-10-20 | New methods: DMS (rated) and Score runoff (hybrid, a separate runoff; in the standard set, now 29 methods) | 28 methods |
 | 2026-10-19 | Standard set: Copeland//Margins-ER removed (28 methods), not a live proposal | 29 methods, with Ranked Robin |

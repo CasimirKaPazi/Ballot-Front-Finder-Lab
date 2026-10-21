@@ -56,8 +56,9 @@ def main():
     ap.add_argument("--ks-cut", type=float, nargs="+", default=[0.2])
     ap.add_argument("--ks-shared", type=int, nargs="+", default=[0], choices=[0, 1])
     ap.add_argument("--width", type=float, nargs="+", default=[0.7])
-    ap.add_argument("--utility", nargs="+", default=["exp"], choices=["exp", "linear"],
-                    help="utility of distance: exp(-distance / width), or linear -distance / width")
+    ap.add_argument("--utility", nargs="+", default=["exp"], choices=["exp", "linear", "quadratic"],
+                    help="utility of distance: exp(-distance / width), linear -distance / width, or "
+                         "quadratic -(distance / width)^2")
     ap.add_argument("--cand-dispersion", type=float, nargs="+", default=[1.0])
     ap.add_argument("--cand-shift", type=float, nargs="+", default=[0.0])
     ap.add_argument("--rounds", type=int, nargs="+", default=[3])
