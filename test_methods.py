@@ -997,11 +997,11 @@ import os, tempfile, subprocess, csv as _csv, run as _run, sys as _sys
 _tmp = tempfile.mkdtemp(prefix="bffl-compare-")
 _base = {k: v for k, v in _run.default_params().items()}
 _base.update(voters=25, rounds=1, samples=3)
-_fp = _run.fingerprints(["Score", "Minimax", "STAR"], 1)
-assert _fp["Score"] == _run.fingerprints(["Score"], 1)["Score"]          # independent of the other methods
+_fp = _run.fingerprints(["Score", "Minimax", "STAR"], 0)          # 0: no worker processes (see run.simulate)
+assert _fp["Score"] == _run.fingerprints(["Score"], 0)["Score"]          # independent of the other methods
 assert len(set(_fp.values())) == 3
 for _name, _ch in (("a", {}), ("b", {"utility": "linear"})):
-    _rows = _run.simulate({**_base, **_ch}, 6, 1, ["Score", "Minimax", "STAR"], fingerprint=_fp)
+    _rows = _run.simulate({**_base, **_ch}, 6, 0, ["Score", "Minimax", "STAR"], fingerprint=_fp)
     os.makedirs(os.path.join(_tmp, _name), exist_ok=True)
     with open(os.path.join(_tmp, _name, "elections.csv"), "w", newline="") as _f:
         _w = _csv.DictWriter(_f, fieldnames=list(_rows[0]))

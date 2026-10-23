@@ -31,6 +31,7 @@ Every election is saved as soon as it is done; after an interruption the same co
 --resume continues where it stopped (see docs/running.md, Progress, saving and resuming).
 """
 import argparse
+import contextlib
 import csv
 import fnmatch
 import hashlib
@@ -438,6 +439,7 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     caller can save as it goes; skip: election numbers already done (resuming), not run again.
     Every election depends only on its seed and number, so skipped and new ones fit together.
     fingerprint: {method: fingerprint} (see fingerprints), written into each row as a column.
+    workers: processes (None: one per core); 0: no worker processes, everything in this one.
     Shows progress (see Progress) unless progress is False. Returns the new rows with p as columns."""
     names = names or list(METHODS)
     rounds = list(p["rounds"]) if isinstance(p["rounds"], (list, tuple)) else [p["rounds"]]
@@ -455,13 +457,21 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     if not todo:
         return rows
     prog = Progress(len(todo), label, before=elections - len(todo)) if progress else None
+    # workers=0: everything in this process, without a pool of worker processes (for callers that are
+    # not a script with a __main__ guard, such as test_methods.py: with the "spawn" and "forkserver"
+    # start methods, the default on macOS, Windows and from Python 3.14 on Linux, each worker imports
+    # the main script again). The settings one_election puts into methods.py are restored afterwards.
+    import methods as _m
+    saved = (_m.MAXS, _m.LAZY, _m.VOTER_LAZY, _m.VOTER_APPROVAL) if workers == 0 else None
     try:
-        with Pool(workers, initializer=_ignore_sigint) as pool:
+        with (Pool(workers, initializer=_ignore_sigint) if workers != 0 else contextlib.nullcontext()) as pool:
+            pmap = pool.map if pool else (lambda f, xs: list(map(f, xs)))
+            pimap = (lambda f, xs: pool.imap(f, xs, chunksize=1)) if pool else map
             dummy = None
             if p["start"] == "previous":          # one previous election for the whole batch, per method
-                dummy = dict(zip(names, pool.map(previous_election, [(sc, p, max(rounds), n) for n in names])))
+                dummy = dict(zip(names, pmap(previous_election, [(sc, p, max(rounds), n) for n in names])))
             jobs = [{**j, "dummy": dummy} for j in jobs]
-            for batch in pool.imap(one_election, jobs, chunksize=1):   # in order: the file stays reproducible
+            for batch in pimap(one_election, jobs):   # in order: the file stays reproducible
                 batch = [{**meta, **r} for r in batch]
                 batch = [{k: r[k] for k in PARAMS} | r for r in batch]      # parameters first, as columns
                 if fingerprint is not None:
@@ -475,6 +485,11 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     finally:
         if prog:
             prog.close()
+        if saved is not None:
+            set_max_score(saved[0])
+            set_lazy(saved[1])
+            set_voter_lazy(saved[2])
+            set_voter_approval(saved[3])
     rows.sort(key=lambda r: rounds.index(r["rounds"]))          # stable: one condition after another
     return rows
 
