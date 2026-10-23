@@ -1041,6 +1041,27 @@ def d_dms(s):
     return P
 
 
+def d_esr(s):
+    """ESR (expanding support runoff): for every depth k (the top k score levels), the candidates with
+    the most score points from those levels (all tied for most at that depth) join the set; at the
+    full depth that is the score total, so the Score winner is always in it. A set of one wins
+    outright; otherwise every ballot is stretched to the full range over the set (lowest in the set 0,
+    highest the top score, not rounded; a ballot rating the whole set alike counts for nobody) and
+    the highest total wins (ties split)."""
+    cnt, sub = s["levels"], s["nscore_sub"]
+    w = (cnt.shape[0] - np.arange(cnt.shape[0]))[:, None]     # level points: MAXS, MAXS-1, ..., 1
+    A = np.cumsum(w * cnt, axis=0)                            # points from the top k levels, per depth
+    sup = sorted({int(c) for row in A for c in np.flatnonzero(row >= row.max() - EPS)})
+    P = np.zeros(cnt.shape[1])
+    if len(sup) == 1:
+        P[sup[0]] = 1.0
+        return P
+    pts = sub[int(sum(1 << c for c in sup))][sup]
+    win = [sup[i] for i in np.flatnonzero(pts >= pts.max() - EPS)]
+    P[win] = 1 / len(win)
+    return P
+
+
 def d_iterated_normalized_score(s, key="nscore_sub"):
     """Score, but each round every ballot is stretched to the full range over the remaining candidates;
     the lowest total is eliminated (ties for last split the win), until one is left."""
@@ -1511,6 +1532,7 @@ METHODS = {
     "Reciprocal score": M_("score", d_reciprocal_score, ("fset", "fsetB")),
     "INS": M_("score", d_iterated_normalized_score, ("nscore_sub",)),
     "DMS": M_("score", d_dms, ("levels",)),
+    "ESR": M_("score", d_esr, ("levels", "nscore_sub")),
     "Geometric median": M_("score", full=t_geometric_median),
     # hybrid
     "STAR": M_("score", d_star, ("sum", "gt")),
@@ -1563,7 +1585,7 @@ GROUPS = {
     "condorcet-based": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
     "plurality-based": ["Plurality", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs", "DSC", "DAC"],
     "approval-based": ["Approval", "MDDA", "MAMPO"],
-    "rated": ["Score", "Reciprocal score", "INS", "DMS", "Geometric median"],
+    "rated": ["Score", "Reciprocal score", "INS", "DMS", "ESR", "Geometric median"],
     # median grade or Bucklin-like: the grade level at which a candidate reaches a majority
     "median-based": ["MJ", "MAV", "MCA"],
     "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "MARS-T", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore", "STLR", "Soft Minimax",
@@ -1588,6 +1610,7 @@ RENAMED = {
     "MARA": "ARA",
     "Ranked Robin": "Copeland//Margins-ER",                       # 2026-10-19: Equal Vote's name now means any Condorcet method
     "Ranked Robin-SR": "Copeland//Margins",                    # 2026-10-19
+    "BSR-S": "ESR",                                          # 2026-10-22: the test add-on's name
 }
 RENAMED_GROUPS = {
     "condorcet-hybrid": "condorcet-based",                   # 2026-10-12

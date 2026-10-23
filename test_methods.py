@@ -483,6 +483,17 @@ check("STAR on the same ballots (equal scores: B)", METHODS["STAR"].honest(sr), 
 Bd = np.array([[5, 4, 0]] * 4 + [[0, 4, 5]] * 4 + [[5, 0, 4]], dtype=float)
 check("Score on the dark-horse profile", METHODS["Score"].tally(Bd), [0, 1, 0])
 check("DMS on the dark-horse profile", METHODS["DMS"].tally(Bd), [1, 0, 0])
+# ESR: points from the top k levels, per depth (columns A, B, C): A5 B5 C1, A2 B1 C4, A3 B5 C4,
+# A5 B5 C5, A0 B0 C2, A2 B5 C4, A2 B3 C3. B has the most points at every depth (20, 20, 23, 23, 24):
+# B alone in the set, B wins. With voters instead of points (the Buck-set) A, B and C would all
+# enter and the stretched runoff would elect C.
+Be = np.array([[5, 5, 1], [2, 1, 4], [3, 5, 4], [5, 5, 5], [0, 0, 2], [2, 5, 4], [2, 3, 3]], dtype=float)
+check("ESR: one candidate most supported at every depth", METHODS["ESR"].tally(Be), [0, 1, 0])
+# a set of two: 2 x A5 B4 C0, 1 x B5 A0 C3. Points at depth 1: A 10, B 5; depth 2: A 10, B 13; the
+# set is A, B; stretched over it: A5 B0 twice, B5 A0 -> A 10, B 5: A, where Score elects B (13 > 10)
+Be2 = np.array([[5, 4, 0], [5, 4, 0], [0, 5, 3]], dtype=float)
+check("ESR: stretched runoff of the set", METHODS["ESR"].tally(Be2), [1, 0, 0])
+check("Score on the same ballots", METHODS["Score"].tally(Be2), [0, 1, 0])
 
 # Participation (participation.py). Feature subtraction equals tallying without the absent ballots;
 # Score and Approval never fail participation with sincere ballots; IRV and Minimax sometimes do.
@@ -979,3 +990,51 @@ for _e in range(5):
     _qu = _de(_Sc(utility="quadratic"), np.random.default_rng([3, _e]))
     assert np.allclose(_qu.u, -_li.u ** 2)                           # -(d / width)^2
 print("linear and quadratic utility ok")
+
+# compare.py: across runs in a folder. Two tiny runs (defaults, linear utility) and a copy of the
+# first with another version, which must stop the comparison unless --force-versions is given.
+import os, tempfile, subprocess, csv as _csv, run as _run, sys as _sys
+_tmp = tempfile.mkdtemp(prefix="bffl-compare-")
+_base = {k: v for k, v in _run.default_params().items()}
+_base.update(voters=25, rounds=1, samples=3)
+for _name, _ch in (("a", {}), ("b", {"utility": "linear"})):
+    _rows = _run.simulate({**_base, **_ch}, 6, 1, ["Score", "Minimax", "STAR"])
+    os.makedirs(os.path.join(_tmp, _name), exist_ok=True)
+    with open(os.path.join(_tmp, _name, "elections.csv"), "w", newline="") as _f:
+        _w = _csv.DictWriter(_f, fieldnames=list(_rows[0]))
+        _w.writeheader()
+        _w.writerows(_rows)
+_cmp = lambda *args: subprocess.run([_sys.executable, "compare.py", _tmp, "--boot", "50", *args],
+                                    capture_output=True, text=True)
+_res = _cmp()
+assert _res.returncode == 0, _res.stderr
+_rep = open(os.path.join(_tmp, "comparison", "report.md")).read()
+assert "2 distinct condition(s)" in _rep and "utility linear" in _rep and "| Minimax |" in _rep
+with open(os.path.join(_tmp, "comparison", "methods.csv")) as _f:
+    assert {r["method"]: r["conditions"] for r in _csv.DictReader(_f)} == {"Score": "2.000", "Minimax": "2.000", "STAR": "2.000"}
+# another version in a third folder: stops, unless forced (then stated in the report)
+os.makedirs(os.path.join(_tmp, "c"))
+with open(os.path.join(_tmp, "a", "elections.csv")) as _f:
+    _rows = list(_csv.DictReader(_f))
+for _r in _rows:
+    _r["version"] = "0.9.0"
+with open(os.path.join(_tmp, "c", "elections.csv"), "w", newline="") as _f:
+    _w = _csv.DictWriter(_f, fieldnames=list(_rows[0]))
+    _w.writeheader()
+    _w.writerows(_rows)
+_res = _cmp()
+assert _res.returncode != 0 and "different simulator versions" in _res.stderr
+_res = _cmp("--force-versions")
+assert _res.returncode == 0, _res.stderr
+assert "Mixed simulator versions, compared anyway" in open(os.path.join(_tmp, "comparison", "report.md")).read()
+# precautions: a subfolder without run data stops the search; an --out holding other files is refused
+os.makedirs(os.path.join(_tmp, "notes"))
+_res = _cmp("--force-versions")
+assert _res.returncode != 0 and "folders without run data" in _res.stderr and "notes" in _res.stderr
+os.rmdir(os.path.join(_tmp, "notes"))
+_other = tempfile.mkdtemp(prefix="bffl-other-")
+open(os.path.join(_other, "keep.txt"), "w").close()
+_res = _cmp("--force-versions", "--out", _other)
+assert _res.returncode != 0 and "holds other files" in _res.stderr
+assert os.listdir(_other) == ["keep.txt"]
+print("compare.py ok")
