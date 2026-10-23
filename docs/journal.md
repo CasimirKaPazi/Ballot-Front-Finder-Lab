@@ -6,6 +6,8 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-23 | `compare.py`: methods across all runs in a folder (each condition counted once, mixed versions refused unless forced); results unchanged | — |
+| 2026-10-22 | New method ESR (expanding support runoff, rated; tested as the add-on BSR-S, results under that name read as ESR) | — |
 | 2026-10-21 | Groups: `median-based` (MJ, MAV, MCA, from rated) and `two-round` (TTR, Approval runoff, Approval cond. runoff, Score runoff, from plurality-based, approval-based, hybrid); add-ons can give a group per method. Results unchanged | the earlier groups |
 | 2026-10-21 | Dominance and Pareto front: sincerity differences below 1 point count as ties | any clear sincerity difference counted |
 | 2026-10-21 | `--utility linear` (−distance / width) and `quadratic` (−(distance / width)²) as alternatives to the exp fall-off; default and results unchanged | exp only |
@@ -37,6 +39,25 @@ How the lab developed: the experiments, what they showed and the decisions they 
 | 2026-10-07 | Renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (ACR), Minimax-wv → MMWV | use the new names |
 | 2026-10-06 | Axes VSE and WME, both 0 = random ballot and 100 = best candidate ([analysis.md](analysis.md), Axes). Within a condition a fixed rescaling of each axis, so order, dominance and rank stability are unaffected | PE (0 = utility-proportional lottery) and WM (worst margin in % of voters) |
 | earlier | Plain dimensions before Zipf; CE as an axis before WM | |
+
+## ESR, expanding support runoff (2026-10-22)
+
+Tested as the add-on BSR-S, a variant of the Buck-set runoff (BSR) of the previous section: at every depth k (the top k score levels) the candidates with the most score points from those levels form the set, instead of the most voters; then the stretched score runoff among them. At the full depth the points are the score totals, so the Score winner is always in the set. Built in as ESR; the voter-counting BSR stays a test add-on.
+
+Runs (defaults otherwise; VSE\* / WME\*):
+
+| Run | ESR (BSR-S) | BSR | Score | Soft Minimax-40 | Geometric median |
+|---|---|---|---|---|---|
+| adaptive voters, 300 elections | 90.0 / 93.3 | 88.0 / 95.1 | 89.6 / 93.8 | — | — |
+| full strategy (`--strategic 1 --adaptive 0`), 7000 elections, seed 4 | 86.1 / 95.3 | 85.3 / 95.9 | 84.8 / 93.6 | 85.8 / 96.3 | 88.1 / 92.2 |
+| exp utility, all methods, 200 elections | 88.0 / 93.1 | 86.5 / 95.3 | 89.1 / 93.2 | 87.5 / 93.3 | 89.7 / 89.2 |
+| linear utility, all methods, 200 elections | 97.7 / 98.2 | 96.9 / 97.5 | 96.5 / 93.4 | 97.7 / 97.0 | 96.3 / 94.2 |
+| quadratic utility, all methods, 200 elections | 97.0 / 91.8 | 96.9 / 93.2 | 96.4 / 83.6 | 97.1 / 87.9 | 94.4 / 90.7 |
+
+- **With adaptive voters** ESR sits next to Score: with points, the Score winner tops most depths, the set is often that one candidate.
+- **Under full strategy** it is undominated, between Geometric median and Soft Minimax-40, and ahead of Score on both axes (+1.3 VSE\*, +1.7 WME\*): strategy costs it 3.4 VSE against Score's 5.0. Inflated ballots are stretched afresh over the set, which undoes much of the exaggeration. Here it also beats the voter-counting BSR, which twelve methods clearly dominate.
+- **Across utility shapes** it stays near the top under linear and quadratic utility as well, where the pure sums (Score, DMS, Geometric median) lose WME\*: one of the robust methods, with the Soft Minimax family, MARS, BTR-score and Score runoff.
+- The name: "expanding" for the depths (Bucklin's expanding approval), "support" for the points counted at each.
 
 ## Depth maximin; how far score ballots can go (2026-10-20)
 

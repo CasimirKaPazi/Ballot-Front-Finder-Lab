@@ -1,6 +1,6 @@
 # Ballot Front Finder Lab
 
-A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 65 in all (one of them, IDS, as an add-on; more can be added), plus three reference methods and eight test methods. A standard set of 29, the most discussed and the strongest, is what a run uses unless told otherwise. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
+A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 66 in all (one of them, IDS, as an add-on; more can be added), plus three reference methods and eight test methods. A standard set of 29, the most discussed and the strongest, is what a run uses unless told otherwise. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
 
 **The question.** Every voting method turns ballots into a winner, and every method can be gamed to some degree. Comparisons with honest ballots alone flatter methods that are easy to manipulate; comparisons under fully rational strategy depend on assumptions nobody believes. This lab places voters in between: some of them read polls and adjust their ballots when it pays, the way people vote tactically in real elections, and it measures what the method makes of that.
 
@@ -25,12 +25,13 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 ## Features
 
 **Methods** ([methods](docs/methods.md))
-- 65 single-winner methods in ten families: plurality-based (Plurality, IRV and variants, coalition methods), Condorcet (Ranked pairs, Schulze, Kemeny-Young, Copeland, Copeland//Margins, …), the minimax family, Condorcet-based hybrids (Black, Baldwin, Nanson, BTR, Smith//Score, …), approval-based (Approval, MDDA, MAMPO), rated (Score, DMS, Geometric median, …), median-based (MJ, MAV, MCA), score–pairwise hybrids (STAR, MARS, ARA, 3-2-1, Soft Minimax, …), positional (Borda, Dowdall) and two-round methods with a real, separate runoff (TTR, Approval runoff, Score runoff, …). Ties are counted exactly, as shared winning chances.
+- 66 single-winner methods in ten families: plurality-based (Plurality, IRV and variants, coalition methods), Condorcet (Ranked pairs, Schulze, Kemeny-Young, Copeland, Copeland//Margins, …), the minimax family, Condorcet-based hybrids (Black, Baldwin, Nanson, BTR, Smith//Score, …), approval-based (Approval, MDDA, MAMPO), rated (Score, DMS, ESR, Geometric median, …), median-based (MJ, MAV, MCA), score–pairwise hybrids (STAR, MARS, ARA, 3-2-1, Soft Minimax, …), positional (Borda, Dowdall) and two-round methods with a real, separate runoff (TTR, Approval runoff, Score runoff, …). Ties are counted exactly, as shared winning chances.
 - A standard set of 29, the most discussed methods and the strongest found here, is the default; every other method, family or set can be named.
 - New methods as add-ons: one Python file in `addons/` with a counting rule; ballots, strategy and measures come with the ballot type. A [tutorial](docs/addons.md) walks through writing one with little Python.
 
 **Electorates** ([model](docs/model.md), Electorates)
 - Five electorate models: fractal-noise clumps (the default, tuned against real data: Condorcet winners as often as in real ranked elections, an approval map close to that of real ballots with a few candidates), voter clusters with Zipf dimensions and per-group salience, scale-free opinion fields, and Quinn's hierarchical model (as the lab's version and as in vse-sim's code).
+- `compare.py` summarizes a whole folder of runs: how each method does over all the conditions in it, how often one beats another, and the exceptions (each condition counted once).
 - `show_electorates.py` draws and measures the electorates without any method: example plots, dimensionality, how costly the Condorcet winner is, and the candidates' map from approval ballots compared with real data.
 - Candidates can be made unlike the electorate (clustered in the centre, spread out or shifted).
 

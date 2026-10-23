@@ -154,6 +154,37 @@ How the files are combined (the report lists what was done, and `analyze.py` pri
 - More elections for the same methods come from another seed (`--seed 2`); the seeds are pooled.
 - A method taken from a run without `--participation` shows no values in the participation table.
 
+## Comparing across many runs
+
+`analyze.py` compares methods within each condition of its inputs. `compare.py` looks across all of them: how a method does over every condition in a folder, and how often one method beats another, with the exceptions.
+
+```
+python compare.py ../bffl-runs                      # -> ../bffl-runs/comparison/
+python compare.py output/falloff --pairs "ESR:Score" "Score runoff:Minimax"
+```
+
+- **Input:** one folder, searched for run and sweep folders (with `elections.csv` or `runs/`) at most `--depth` levels down (default 2: `FOLDER/test/` and `FOLDER/group/test/`); everything found is read, nothing outside it. Collect the runs that belong together in one folder (the runs repository, or a subfolder of `output/`), and leave exploratory or outdated runs out.
+- **Precautions** against a wrong folder (a home or system folder): any subfolder without run data stops the search, with a list of them, before anything is read; hidden folders (`.git`), symbolic links and the lab's report folders (`analysis*/`, `overview-*/`, `comparison/`) are skipped. The output folder must be new, empty or an earlier comparison; a folder with other files is refused, so nothing else is overwritten.
+- **Versions:** all inputs must come from the same simulator version; mixed versions stop the comparison and list which input has which. `--force-versions` compares them anyway and says so at the top of the report.
+- **Conditions:** one condition is one set of run parameters. Results files covering exactly the same elections are pooled (runs of different methods on the same elections); files with other elections under the same parameters (another seed, more or fewer elections) are analysed as replicates. **Every condition counts once**, for every method run in it, its replicates sharing that weight; a parameter swept in many runs therefore does not outweigh one tested once. Counts can then be fractional (2.5 of 4 conditions).
+- **Within a condition** the comparisons are those of `analyze.py`: paired bootstrap intervals, clearly better when the interval excludes 0 (sincerity: and at least 1 point), dominance on VSE\*, WME\* and sincerity. **Near the front (1 / 2):** no method in the condition is better by 1 (2) points on VSE\* and WME\* at once (point estimates), the guide lines of the arrow plots.
+- **The report** (`comparison/report.md`): the conditions, named by what differs from the defaults of `run.py`; per method the share of its conditions in which it is undominated, on the Pareto front and near the front, its means and its worst condition; a matrix of who dominates whom among the leading methods (`--top`, default 12; only methods run in at least half the conditions, `--min-conditions`, the others are listed separately); and the **exceptions**: for pairs where each method is ahead somewhere, how often each is, and in which conditions the less usual outcome happens, with the settings those conditions share. `--pairs "A:B"` adds pairs.
+- **Progress and memory:** the terminal shows the three steps (reading, analysing each condition, the report), each file and condition as it is done, and every million rows of a large file. Each file is read once and only the columns the comparison needs are kept, as compact numbers (about 70 bytes per row instead of every column), so several gigabytes of results fit in a few hundred megabytes of memory; in a test, 600,000 rows (0.34 GB) took 12 seconds and 350 MB.
+- **Tables:** `methods.csv`, `pairs.csv` (every ordered pair: shared conditions, clearly better per axis, dominates, and in which conditions), `conditions.csv`.
+- The averages describe the collection of runs in the folder, not all possible electorates: which conditions are in it decides what "on average" means, so the report lists them all.
+
+| Flag | Default | |
+|---|---|---|
+| `--out` | `FOLDER/comparison` | output folder |
+| `--methods`, `--exclude` | all found except references and inverse | methods, groups or sets |
+| `--pairs` | none | pairs `"A:B"` reported in detail |
+| `--top` | 12 | leading methods in the pair matrix and the exceptions |
+| `--min-conditions` | half of the conditions | fewer: listed separately |
+| `--boot` | 400 | bootstrap replicates per condition |
+| `--depth` | 2 | folder levels searched for runs |
+| `--force-versions` | off | compare mixed simulator versions (stated in the report) |
+| `--seed` | 0 | bootstrap random seed |
+
 ## Files
 
 | File | Contents |
@@ -173,6 +204,7 @@ How the files are combined (the report lists what was done, and `analyze.py` pri
 | `run.py` | Tallies every electorate with sincere and learned ballots, runs in parallel, writes CSV with the run's parameters as columns |
 | `sweep.py` | Runs a grid of conditions (or one parameter at a time) and seeds, one CSV per run |
 | `analyze.py` | Paired bootstrap, intervals, dominance pointers, paired comparisons, rank stability, Markdown report |
+| `compare.py` | Across all runs in a folder: each method over every condition, who beats whom how often, and the exceptions |
 | `plots.py` | The analysis plots |
 | `test_methods.py` | Hand-built checks |
 | `regression.py`, `regression.csv` | Regression check: a few tiny fixed runs compared with the stored reference (see Checking changes) |

@@ -530,7 +530,8 @@ def interrupted(out, n, where="elections.csv"):
                      f"Continue with:\n  python {cmd}")
 
 
-def main():
+def parser():
+    """run.py's command-line options (also read by compare.py for the defaults)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--elections", type=int, default=200)
     ap.add_argument("--voters", type=int, default=99)
@@ -628,6 +629,18 @@ def main():
     ap.add_argument("--overwrite", action="store_true", help="replace an existing run in --out")
     ap.add_argument("--resume", action="store_true",
                     help="continue an interrupted run in --out (same command): finished elections are kept")
+    return ap
+
+
+def default_params():
+    """The run parameters of a plain `python run.py` (the defaults), as written to the results."""
+    a = parser().parse_args([])
+    a.salience = resolve_salience(vars(a))["salience"]
+    return resolve_salience(resolve_adaptive({k: getattr(a, k) for k in PARAMS}))
+
+
+def main():
+    ap = parser()
     a = ap.parse_args()
 
     check_params(a, ap.error)
