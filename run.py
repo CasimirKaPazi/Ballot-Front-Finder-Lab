@@ -32,6 +32,7 @@ Every election is saved as soon as it is done; after an interruption the same co
 """
 import argparse
 import csv
+import fnmatch
 import os
 import shlex
 import sys
@@ -185,6 +186,34 @@ def out_path(name):
     return path
 
 
+# What the lab writes into its folders. An existing folder given as an output must hold only these
+# (and hidden files, e.g. .DS_Store), so that a mistyped --out (a home or project folder) is refused
+# instead of having files written into it, or overwritten.
+RUN_FILES = ["elections.csv", "elections.csv.tmp", "summary.csv", "table.txt", "command.txt"]
+SWEEP_FILES = ["command.txt", "elections.csv"]          # elections.csv: sweeps before runs/
+ANALYSIS_FILES = ["report.md", "summary.csv", "command.txt", "*.png"]
+OWN_DIRS = ["analysis", "analysis-vs-*", "runs"]
+
+
+def check_folder(path, files, dirs=(), hint="choose another --out"):
+    """Refuse an existing folder that holds anything the lab does not write there (files: names or
+    patterns; dirs: names or patterns of subfolders)."""
+    if not os.path.exists(path):
+        return
+    if not os.path.isdir(path):
+        raise SystemExit(f"{path} exists and is not a folder; {hint}")
+    foreign = []
+    for n in sorted(os.listdir(path)):
+        if n.startswith("."):
+            continue
+        pats = dirs if os.path.isdir(os.path.join(path, n)) else files
+        if not any(fnmatch.fnmatch(n, p) for p in pats):
+            foreign.append(n)
+    if foreign:
+        raise SystemExit(f"{path} holds things the lab did not write there ({', '.join(foreign[:6])}"
+                         f"{' …' if len(foreign) > 6 else ''}); {hint}")
+
+
 def run_dir(name, kind, overwrite=False, resume=False):
     """Folder for one run or sweep, which also takes its analysis: output/<name>/ (a name with a
     directory is used as given). Without a name: <kind>-<date>-<time>, so nothing is overwritten.
@@ -202,6 +231,11 @@ def run_dir(name, kind, overwrite=False, resume=False):
     if has and not overwrite and not resume:
         raise SystemExit(f"{path} already holds a run; choose another --out, add --overwrite, "
                          "or --resume to continue it")
+    check_folder(path, RUN_FILES if kind == "run" else SWEEP_FILES, OWN_DIRS)
+    if has and overwrite:
+        old = [d for d in sorted(os.listdir(path)) if d.startswith("analysis") and os.path.isdir(os.path.join(path, d))]
+        if old:
+            print(f"note: {', '.join(old)} in {path} belong to the run being replaced; analyse again")
     os.makedirs(path, exist_ok=True)
     return path
 

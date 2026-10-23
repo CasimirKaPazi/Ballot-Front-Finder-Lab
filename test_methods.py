@@ -1037,4 +1037,18 @@ open(os.path.join(_other, "keep.txt"), "w").close()
 _res = _cmp("--force-versions", "--out", _other)
 assert _res.returncode != 0 and "holds other files" in _res.stderr
 assert os.listdir(_other) == ["keep.txt"]
-print("compare.py ok")
+# output folders of run.py / analyze.py: an existing folder with other files is refused (run.check_folder)
+_ok = tempfile.mkdtemp(prefix="bffl-out-")
+for _n in ("elections.csv", "command.txt", ".DS_Store"):
+    open(os.path.join(_ok, _n), "w").close()
+os.makedirs(os.path.join(_ok, "analysis"))
+_run.check_folder(_ok, _run.RUN_FILES, _run.OWN_DIRS)          # only lab files (and hidden ones): accepted
+try:
+    _run.check_folder(_other, _run.RUN_FILES, _run.OWN_DIRS)    # keep.txt: refused
+    raise AssertionError("check_folder accepted a folder with other files")
+except SystemExit as _e:
+    assert "keep.txt" in str(_e)
+import shutil as _sh
+for _d in (_tmp, _other, _ok):                                   # only the folders this test made
+    _sh.rmtree(_d)
+print("compare.py and output folders ok")

@@ -6,6 +6,8 @@ You will need some Python. The guide explains every piece the examples use, but 
 
 The commands below use `python`; on some systems it is called `python3`.
 
+**A word on safety.** An add-on is a Python program, and the lab runs every file in `addons/` each time it starts. That is what makes add-ons simple to write, and it also means a file from someone else can do anything a program can on your computer. Use add-ons you wrote yourself or whose source you have read and trust.
+
 ## 0. Before you start: what is already known
 
 Voting method design has a long history, and many ideas have been tried, named and analysed. A few minutes of reading often shows that an idea exists already, under which conditions it fails, or which small change fixes a known problem. Good places to start:

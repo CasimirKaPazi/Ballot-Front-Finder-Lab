@@ -55,7 +55,7 @@ import numpy as np
 
 import plots
 from metrics import pareto, FRONT_TOLERANCE
-from run import out_path, write_command, group_text, strategy_text, cand_text, width_text, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
+from run import out_path, write_command, group_text, strategy_text, cand_text, width_text, check_folder, ANALYSIS_FILES, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
 from models import model_text, MODELS
 from methods import GROUPS, METHODS, select, group_of, sincerity_defined, current_name
 
@@ -787,6 +787,7 @@ def main():
     found = [input_paths(p) for p in a.csv]
     a.csv = [f for files, _ in found for f in files]
     a.out = analysis_folder(a.out, [folder for _, folder in found])
+    check_folder(a.out, ANALYSIS_FILES, hint="give another --out (an analysis folder is new, empty or an earlier analysis)")
     os.makedirs(a.out, exist_ok=True)
     write_command(a.out)
     rng = np.random.default_rng(a.seed)

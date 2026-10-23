@@ -178,6 +178,8 @@ A real, separate runoff: voters come back and vote between the finalists, by the
 
 A new method does not have to go into methods.py: put a Python file into the folder `addons/`, and its methods are loaded at start and used like the built-in ones, by name or group, in run.py, sweep.py and analyze.py. Delete the file to remove them; to share a method, share the file. Files starting with `_` are not loaded. `addons/_template.py` is a commented starting point; `addons/ids.py` (IDS, iterated dropped score) is a working example. [addons.md](addons.md) is a tutorial for writing one with little Python: a line-by-line walkthrough of IDS, and a new method (Bucklin) built step by step. A file defines:
 
+**An add-on is a Python program.** Every file in `addons/` is run with your user's rights whenever the lab starts (run.py, sweep.py, analyze.py, the tests), and it can do anything a program can: read and write your files, use the network. Add only files whose source you trust, and read a shared add-on before putting it into `addons/`. The lab cannot check this for you.
+
 | Name | Required | Meaning |
 |---|---|---|
 | `METHODS` | yes | `{name: Method(ballot, decide, feats)}` (or `Method(ballot, full=tally)` for a rule that needs the whole ballot matrix); names must not clash with existing ones. Optional `settings={"max_score": X}` fixes the score range for this method, named `Name-X` (see [model.md](model.md), Score range) |

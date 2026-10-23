@@ -154,6 +154,14 @@ How the files are combined (the report lists what was done, and `analyze.py` pri
 - More elections for the same methods come from another seed (`--seed 2`); the seeds are pooled.
 - A method taken from a run without `--participation` shows no values in the participation table.
 
+## Safety
+
+- **Output folders.** An existing folder given as `--out` must hold only what the lab writes there: for `run.py` its results files (`elections.csv`, `summary.csv`, `table.txt`, `command.txt`) and `analysis*/` folders, for `sweep.py` `runs/` and `command.txt`, for `analyze.py` a report with its tables and plots, for `show_electorates.py` its plots and `summary.txt`, for `compare.py` its report and tables. Anything else (hidden files aside) and the script stops before writing, so a mistyped `--out` (a home or project folder) is refused instead of filled or overwritten. An existing run is replaced only with `--overwrite`; its old `analysis*/` folders are then out of date, which the script says.
+- **Sweeps over earlier sweeps.** If `runs/` of the folder holds run files the new sweep does not write, it stops: `analyze.py` would read them as part of the sweep. Use another `--out`, or move them out.
+- **Nothing is deleted** beyond what is asked for: no script removes files or folders. `--overwrite` replaces the results files of that one run. `--resume` drops the unfinished last elections and rewrites `elections.csv` through a temporary file, so an interruption leaves either the old or the new file. The tests make their own temporary folders and remove only those.
+- **Add-ons are programs** that run whenever the lab starts: add only files you trust (see [methods.md](methods.md), Add-ons).
+- **`compare.py`** reads only the folder given, refuses folders with other data in them, and refuses mixed simulator versions unless forced (see below).
+
 ## Comparing across many runs
 
 `analyze.py` compares methods within each condition of its inputs. `compare.py` looks across all of them: how a method does over every condition in a folder, and how often one method beats another, with the exceptions.

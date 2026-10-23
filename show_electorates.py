@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt
 
 from ballots import approves
 from models import MODELS, draw_electorate
-from run import out_path
+from run import out_path, check_folder
 from scenario import Scenario
 
 CATS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
@@ -350,6 +350,7 @@ def main():
     a = ap.parse_args()
 
     out = out_path(a.out)
+    check_folder(out, ["examples.png", "summary.png", "sav.png", "summary.txt"])
     os.makedirs(out, exist_ok=True)
     scs = [Scenario(a.voters, a.cands, a.dims, a.clusters, a.spread, a.width, a.zipf, a.cand_dispersion,
                     a.cand_shift, m, a.ks_alpha, a.ks_cut, a.ks_shared, salience="cluster" if a.salience_exponent > 0 else "none",

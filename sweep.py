@@ -136,9 +136,17 @@ def main():
     print(f"{len(grid)} runs x {a.elections} elections, {len(names)} methods"
           + (f" (poll rounds {', '.join(map(str, values['rounds']))} from one run each)" if len(values["rounds"]) > 1 else ""))
     runs_dir = os.path.join(out, "runs")
-    os.makedirs(runs_dir, exist_ok=True)
     keys = [run_key(p, PARAMS) for p in grid]
     files = [os.path.join(runs_dir, run_file(i, p, values)) for i, p in enumerate(grid, 1)]
+    # runs of an earlier sweep in the same folder that this one does not write would be read as part of
+    # it by analyze.py: refuse instead of mixing them in (or deleting them)
+    if os.path.isdir(runs_dir):
+        stale = sorted(set(os.listdir(runs_dir)) - {os.path.basename(f) for f in files})
+        if stale:
+            raise SystemExit(f"{runs_dir} holds runs this sweep does not write ({', '.join(stale[:5])}"
+                             f"{' …' if len(stale) > 5 else ''}): they would be analysed with it. Use another "
+                             "--out, or move them out first")
+    os.makedirs(runs_dir, exist_ok=True)
     try:
         for i, (p, key, path) in enumerate(zip(grid, keys, files), 1):
             done, header = (resume_state(path, names, {key: p["rounds"]}) if a.resume and os.path.exists(path)
