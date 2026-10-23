@@ -997,8 +997,11 @@ import os, tempfile, subprocess, csv as _csv, run as _run, sys as _sys
 _tmp = tempfile.mkdtemp(prefix="bffl-compare-")
 _base = {k: v for k, v in _run.default_params().items()}
 _base.update(voters=25, rounds=1, samples=3)
+_fp = _run.fingerprints(["Score", "Minimax", "STAR"], 1)
+assert _fp["Score"] == _run.fingerprints(["Score"], 1)["Score"]          # independent of the other methods
+assert len(set(_fp.values())) == 3
 for _name, _ch in (("a", {}), ("b", {"utility": "linear"})):
-    _rows = _run.simulate({**_base, **_ch}, 6, 1, ["Score", "Minimax", "STAR"])
+    _rows = _run.simulate({**_base, **_ch}, 6, 1, ["Score", "Minimax", "STAR"], fingerprint=_fp)
     os.makedirs(os.path.join(_tmp, _name), exist_ok=True)
     with open(os.path.join(_tmp, _name, "elections.csv"), "w", newline="") as _f:
         _w = _csv.DictWriter(_f, fieldnames=list(_rows[0]))
@@ -1027,6 +1030,20 @@ assert _res.returncode != 0 and "different simulator versions" in _res.stderr
 _res = _cmp("--force-versions")
 assert _res.returncode == 0, _res.stderr
 assert "Mixed simulator versions, compared anyway" in open(os.path.join(_tmp, "comparison", "report.md")).read()
+# the same version but another fingerprint for Score (the code changed): refused unless forced
+for _r in _rows:
+    _r["version"] = _run.VERSION
+    if _r["method"] == "Score":
+        _r["fingerprint"] = "0000000000"
+with open(os.path.join(_tmp, "c", "elections.csv"), "w", newline="") as _f:
+    _w = _csv.DictWriter(_f, fieldnames=list(_rows[0]))
+    _w.writeheader()
+    _w.writerows(_rows)
+_res = _cmp()
+assert _res.returncode != 0 and "fingerprints differ" in _res.stderr and "Score" in _res.stderr
+_res = _cmp("--force-versions")
+assert _res.returncode == 0 and "Runs of different code, compared anyway" in open(
+    os.path.join(_tmp, "comparison", "report.md")).read()
 # precautions: a subfolder without run data stops the search; an --out holding other files is refused
 os.makedirs(os.path.join(_tmp, "notes"))
 _res = _cmp("--force-versions")

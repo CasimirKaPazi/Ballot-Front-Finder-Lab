@@ -31,7 +31,7 @@ import os
 import time
 
 from models import MODELS
-from run import (simulate, PARAMS, run_dir, write_command, group_size_arg, check_params, run_key, valid_combination,
+from run import (simulate, fingerprints, check_resume_fingerprints, PARAMS, run_dir, write_command, group_size_arg, check_params, run_key, valid_combination,
                  resolve_adaptive, resolve_salience,
                  resume_state, CsvSink, interrupted)
 from methods import run_selection
@@ -147,6 +147,12 @@ def main():
                              f"{' …' if len(stale) > 5 else ''}): they would be analysed with it. Use another "
                              "--out, or move them out first")
     os.makedirs(runs_dir, exist_ok=True)
+    t = time.time()
+    fp = fingerprints(names, a.workers)
+    print(f"fingerprints of {len(fp)} method(s): {time.time() - t:.0f} s")
+    if a.resume:
+        for path in files:
+            check_resume_fingerprints(path, fp)
     try:
         for i, (p, key, path) in enumerate(zip(grid, keys, files), 1):
             done, header = (resume_state(path, names, {key: p["rounds"]}) if a.resume and os.path.exists(path)
@@ -159,7 +165,7 @@ def main():
             varying = ", ".join(f"{k}={p[k]}" for k in PARAMS if len(values[k]) > 1)
             sink = CsvSink(path, header)
             try:
-                simulate(p, a.elections, a.workers, names, a.participation, sink=sink, skip=skip,
+                simulate(p, a.elections, a.workers, names, a.participation, sink=sink, skip=skip, fingerprint=fp,
                          label=f"[{i}/{len(grid)}] ", manipulation=a.manipulation)
             finally:
                 sink.close()

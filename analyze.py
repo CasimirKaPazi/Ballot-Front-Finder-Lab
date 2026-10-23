@@ -143,6 +143,7 @@ ADDED_COLUMNS = {
     "fixed_variance": ("0", "2026-10-15, fixed total variance: older runs did not scale positions"),
     "lazy": ("0.0", "2026-10-13, laziness: older runs had full ballots"),
     "utility": ("exp", "2026-10-21, utility of distance: older runs used exp(-distance / width)"),
+    "fingerprint": (None, "2026-10-23, fingerprint of each method's results (run.fingerprints)"),
     "fidelity": (None, "2026-10-12, fidelity, with the current sincerity measure"),
     "bcw": (None, "2026-10-12, Condorcet winner in the ballots"),
     "manip1": (None, "2026-10-17, manipulation test (run.py --manipulation)"),
@@ -813,6 +814,15 @@ def main():
     if all_hidden:          # e.g. a run of the inverse group only, with the default --hide
         print("note: --hide/--show would leave the plots empty; they show all methods instead")
         a.show, a.hide = None, []
+    fps = {}
+    for r in rows_all:
+        if r.get("fingerprint"):
+            fps.setdefault(r["method"], {}).setdefault(r["fingerprint"], set()).add(r["_file"])
+    for m, by in sorted(fps.items()):
+        if len(by) > 1:
+            print(f"note: {m} gives different results in different inputs (fingerprints "
+                  + "; ".join(f"{f}: {', '.join(sorted(fs)[:3])}" for f, fs in by.items())
+                  + "): the code changed between these runs, so they should not be pooled")
     versions = sorted({r.get("version") or "unknown" for r in rows_all})
     if len(versions) > 1:
         print(f"note: the input mixes simulator versions {', '.join(versions)}")

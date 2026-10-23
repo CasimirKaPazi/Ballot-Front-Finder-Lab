@@ -33,6 +33,7 @@ Every election is saved as soon as it is done; after an interruption the same co
 import argparse
 import csv
 import fnmatch
+import hashlib
 import os
 import shlex
 import sys
@@ -427,7 +428,7 @@ def _ignore_sigint():     # workers: Ctrl-C goes to the main process only, which
 
 
 def simulate(p, elections, workers=None, names=None, participation=False, sink=None, skip=(), label="",
-             manipulation=False):
+             manipulation=False, fingerprint=None, progress=True):
     """Run one condition. p: dict with the keys in PARAMS; names: methods (default all);
     participation: also run the no-show check (participation.py) on sincere and learned ballots;
     manipulation: also run the coalition manipulation test (manipulation.py) on the sincere ballots.
@@ -436,7 +437,8 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     sink: called with each election's rows as soon as it is done (in election order), so a
     caller can save as it goes; skip: election numbers already done (resuming), not run again.
     Every election depends only on its seed and number, so skipped and new ones fit together.
-    Shows progress (see Progress). Returns the new rows with p as columns."""
+    fingerprint: {method: fingerprint} (see fingerprints), written into each row as a column.
+    Shows progress (see Progress) unless progress is False. Returns the new rows with p as columns."""
     names = names or list(METHODS)
     rounds = list(p["rounds"]) if isinstance(p["rounds"], (list, tuple)) else [p["rounds"]]
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"],
@@ -452,7 +454,7 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     rows = []
     if not todo:
         return rows
-    prog = Progress(len(todo), label, before=elections - len(todo))
+    prog = Progress(len(todo), label, before=elections - len(todo)) if progress else None
     try:
         with Pool(workers, initializer=_ignore_sigint) as pool:
             dummy = None
@@ -462,12 +464,17 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
             for batch in pool.imap(one_election, jobs, chunksize=1):   # in order: the file stays reproducible
                 batch = [{**meta, **r} for r in batch]
                 batch = [{k: r[k] for k in PARAMS} | r for r in batch]      # parameters first, as columns
+                if fingerprint is not None:
+                    for r in batch:
+                        r["fingerprint"] = fingerprint.get(r["method"], "")
                 if sink:
                     sink(batch)
                 rows += batch
-                prog.step()
+                if prog:
+                    prog.step()
     finally:
-        prog.close()
+        if prog:
+            prog.close()
     rows.sort(key=lambda r: rounds.index(r["rounds"]))          # stable: one condition after another
     return rows
 
@@ -489,6 +496,62 @@ def numeric(row):
 def run_key(row, params):
     """Identifies a run (everything but rounds and the election) in rows as written to CSV."""
     return tuple(str(row[k]) for k in params if k != "rounds")
+
+
+# Fingerprints. The version number does not change while the model and the methods are developed, so
+# each run also records, per method, a fingerprint of what the code computes: the method's results in
+# a small fixed test condition (6 elections, 31 voters, 6 candidates, some voters strategic and some
+# adaptive), hashed. Same fingerprint: the method (and the model behind it) gives the same results as when the
+# other run was made; a different one: the code changed in between, and results should not be pooled.
+# It costs a few seconds per run (about 4 s for the standard set). Methods that behave alike in these
+# six elections share a fingerprint, so a change that only shows in other elections can be missed. Changes that only show under other settings (another electorate
+# model, nomination, the linear utility) are not seen by it.
+FINGERPRINT_ELECTIONS = 6
+FINGERPRINT_PARAMS = {"voters": 31, "cands": 6, "model": "clusters", "dims": 3, "zipf": 1, "clusters": 3,
+                      "spread": 0.5, "salience": "none", "salience_exponent": 1.0, "fixed_variance": 0,
+                      "field_kappa": 1.5, "field_salience": 0.0, "noise_strength": 3.0, "ks_alpha": 1.5,
+                      "ks_cut": 0.2, "ks_shared": 0, "width": 1.0, "utility": "exp", "cand_dispersion": 1.0,
+                      "cand_shift": 0.0, "rounds": 2, "samples": 3, "group_size": 10, "strategic": 0.3,
+                      "adaptive": 0.5, "aggressive": 0.5, "lazy": 0.0, "max_score": 5, "exits": 0, "clones": 0,
+                      "poll_size": 0, "poll_error": 2.0, "search": 4, "converge": 0, "start": "honest", "seed": 7}
+FINGERPRINT_COLS = ["U_method", "WM", "sincerity", "fidelity", "compromise", "burial", "pushover",
+                    "U_best", "U_rb", "WM_best", "WM_rb"]
+
+
+def fingerprints(names, workers=None):
+    """{method: 10 hex digits} from each method's results in FINGERPRINT_PARAMS (8 significant digits,
+    so that rounding in the last digits between machines does not change it)."""
+    rows = simulate(FINGERPRINT_PARAMS, FINGERPRINT_ELECTIONS, workers, names, progress=False)
+    by = {}
+    for r in rows:
+        by.setdefault(r["method"], []).append(r)
+    out = {}
+    for m, rs in by.items():
+        rs.sort(key=lambda r: (int(r["election"]), r["ballots"]))
+        text = "|".join(",".join(f"{float(r[c]):.8g}" if r.get(c) not in ("", None) else "" for c in FINGERPRINT_COLS)
+                        for r in rs)
+        out[m] = hashlib.sha256(text.encode()).hexdigest()[:10]
+    return out
+
+
+def file_fingerprints(path):
+    """{method: set of fingerprints} recorded in a results file (empty sets for files from before)."""
+    out = {}
+    if not os.path.exists(path):
+        return out
+    with open(path, newline="") as f:
+        for r in csv.DictReader(f):
+            out.setdefault(r["method"], set()).update([r["fingerprint"]] if r.get("fingerprint") else [])
+    return out
+
+
+def check_resume_fingerprints(path, fp):
+    """--resume: refuse if a method's code changed since the run started (its fingerprint differs)."""
+    changed = sorted(m for m, fs in file_fingerprints(path).items() if fs and m in fp and fs != {fp[m]})
+    if changed:
+        raise SystemExit(f"{path}: {', '.join(changed[:6])}{' …' if len(changed) > 6 else ''} give(s) other results "
+                         "now than when this run started (fingerprint changed): the code changed in between. "
+                         "Start a new run instead of resuming")
 
 
 def resume_state(path, names, rounds_per_run):
@@ -685,13 +748,18 @@ def main():
     names = run_selection(a.methods, a.exclude)
     path = os.path.join(out, "elections.csv")
     key = run_key(p, PARAMS)
+    t = time.time()
+    fp = fingerprints(names, a.workers)
+    print(f"fingerprints of {len(fp)} method(s): {time.time() - t:.0f} s")
+    if a.resume:
+        check_resume_fingerprints(path, fp)
     done, header = resume_state(path, names, {key: [a.rounds]}) if a.resume else ({}, None)
     if a.resume:
         print(f"resuming: {len(done.get(key, ()))} of {a.elections} elections already done")
     sink = CsvSink(path, header)
     try:
         simulate(p, a.elections, a.workers, names, a.participation, sink=sink, skip=done.get(key, set()),
-                 manipulation=a.manipulation)
+                 manipulation=a.manipulation, fingerprint=fp)
     except KeyboardInterrupt:
         sink.close()
         with open(path, newline="") as f:

@@ -25,8 +25,11 @@ is at least 1 point, metrics.FRONT_TOLERANCE); dominance on VSE*, WME* and since
 Memory. Each file is read once, and only the columns the comparison needs are kept (as compact
 numbers, see VALUES), so several gigabytes of results fit in memory. Progress goes to the terminal.
 
-Versions. All inputs must come from the same simulator version; mixed versions stop the comparison
-unless --force-versions is given, which the report then states at the top.
+Versions. All inputs must come from the same simulator version, and every method must have the same
+fingerprint in all of them (run.fingerprints: its results in a small fixed test, recorded by run.py
+and sweep.py since 2026-10-23, so a change of the code between runs is seen even when the version
+number stayed). Otherwise the comparison stops, unless --force-versions is given, which the report
+then states at the top. Files from before fingerprints cannot be checked; the report lists them.
 
 Outputs (default: RUNS_FOLDER/comparison/):
     report.md        the conditions; per method: averages, worst case, how often undominated, on the
@@ -195,7 +198,7 @@ def num(x):
     return float(x) if x not in ("", None) else np.nan
 
 
-def scan(path, keep, versions, notes):
+def scan(path, keep, versions, notes, prints):
     """Read one results file: {condition key: Part}, methods in keep only (None: all). Fills the
     run parameters an older file lacks (ADDED_COLUMNS) and reads renamed methods by their current name."""
     name = an.source_name(path)
@@ -215,6 +218,10 @@ def scan(path, keep, versions, notes):
         pidx = [(k, col.get(k)) for k in PARAMS]
         vidx = [col[k] for k in VALUES]
         iv, im, ib, isd, iel = col.get("version"), col["method"], col["ballots"], col["seed"], col["election"]
+        ifp = col.get("fingerprint")
+        if ifp is None:
+            notes.setdefault("have no fingerprints (made before 2026-10-23): changes of the code since cannot be "
+                             "detected for them", []).append(name)
         renamed = {}
         n = 0
         for row in rd:
@@ -228,6 +235,8 @@ def scan(path, keep, versions, notes):
             if keep is not None and m not in keep:
                 continue
             versions.add(row[iv] if iv is not None and row[iv] else "unknown")
+            if ifp is not None and row[ifp]:
+                prints.setdefault(m, {}).setdefault(row[ifp], set()).add(name)
             key = tuple(row[i] if i is not None else fill[k] for k, i in pidx)
             part = parts.get(key)
             if part is None:
@@ -342,7 +351,8 @@ def main():
                     help="conditions (or replicates) with fewer elections are left out and listed (default 100)")
     ap.add_argument("--boot", type=int, default=400, help="bootstrap replicates per condition")
     ap.add_argument("--force-versions", action="store_true",
-                    help="compare even if the inputs come from different simulator versions (stated in the report)")
+                    help="compare even if the inputs come from different simulator versions or code (fingerprints) "
+                         "(stated in the report)")
     ap.add_argument("--depth", type=int, default=2,
                     help="how many folder levels to search for runs (default 2: FOLDER/test/ and FOLDER/group/test/)")
     ap.add_argument("--seed", type=int, default=0)
@@ -363,11 +373,11 @@ def main():
     # 1. read every file once, keeping only what the comparison needs
     size = sum(os.path.getsize(p) for p in paths)
     say(f"[1/3] reading {len(paths)} results file(s), {size / 1e9:.2f} GB")
-    vers, notes, all_parts = OrderedDict(), OrderedDict(), []
+    vers, notes, all_parts, prints = OrderedDict(), OrderedDict(), [], {}
     for k, p in enumerate(paths, 1):
         t = time.time()
         vs = set()
-        parts, n = scan(p, keep_sel, vs, notes)
+        parts, n = scan(p, keep_sel, vs, notes, prints)
         name = an.source_name(p)
         vers[name] = sorted(vs)
         all_parts += [(key, part) for key, part in parts.items()]
@@ -381,6 +391,18 @@ def main():
                              + "\n".join(lines) + "\ncompare runs of one version, or give --force-versions "
                              "(the report will say so)")
         forced = all_v
+    mixed = {m: by for m, by in prints.items() if len(by) > 1}
+    if mixed:
+        lines = [f"  {m}: " + "; ".join(f"{f} in {', '.join(sorted(fs)[:3])}{' …' if len(fs) > 3 else ''}"
+                                       for f, fs in by.items()) for m, by in sorted(mixed.items())]
+        if not a.force_versions:
+            raise SystemExit(f"{len(mixed)} method(s) give different results in different runs (fingerprints differ: "
+                             "the code changed between the runs):\n" + "\n".join(lines[:20])
+                             + ("\n  …" if len(lines) > 20 else "") + "\ncompare runs of the same code, or give "
+                             "--force-versions (the report will say so)")
+        forced_fp = sorted(mixed)
+    else:
+        forced_fp = None
     found = sorted({m for _, part in all_parts for m in part.names})
     keep = set(found) if keep_sel is not None else set(found) - set(GROUPS.get("references", [])) - set(GROUPS.get("inverse", []))
     keep -= drop
@@ -532,6 +554,9 @@ def main():
     if small:
         L += [f"Left out, fewer than {a.min_elections} elections (--min-elections): "
               + "; ".join(f"{label_of(d)} ({e} elections, {', '.join(fs)})" for d, e, fs in small) + ".", ""]
+    if forced_fp:
+        L += [f"**Runs of different code, compared anyway (--force-versions):** {len(forced_fp)} method(s) give "
+              f"different results in different runs ({', '.join(forced_fp[:8])}{' …' if len(forced_fp) > 8 else ''}).", ""]
     if forced:
         L += [f"**Mixed simulator versions, compared anyway (--force-versions): {', '.join(forced)}.** "
               "Results of different versions may not be comparable; see the list of inputs below.", ""]
