@@ -1004,7 +1004,7 @@ for _name, _ch in (("a", {}), ("b", {"utility": "linear"})):
         _w = _csv.DictWriter(_f, fieldnames=list(_rows[0]))
         _w.writeheader()
         _w.writerows(_rows)
-_cmp = lambda *args: subprocess.run([_sys.executable, "compare.py", _tmp, "--boot", "50", *args],
+_cmp = lambda *args: subprocess.run([_sys.executable, "compare.py", _tmp, "--boot", "50", "--min-elections", "1", *args],
                                     capture_output=True, text=True)
 _res = _cmp()
 assert _res.returncode == 0, _res.stderr

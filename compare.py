@@ -210,7 +210,8 @@ def scan(path, keep, versions, notes):
             raise SystemExit(f"{path} lacks {', '.join(missing)}; regenerate it with the current run.py or sweep.py")
         fill = {k: ADDED_COLUMNS[k][0] for k in PARAMS if k not in col}
         if fill:
-            notes.append(f"{name} lacks columns added later: " + ", ".join(f"{k} read as {v}" for k, v in fill.items()))
+            notes.setdefault("lack columns added later: " + ", ".join(f"{k} read as {v}" for k, v in fill.items()),
+                             []).append(name)
         pidx = [(k, col.get(k)) for k in PARAMS]
         vidx = [col[k] for k in VALUES]
         iv, im, ib, isd, iel = col.get("version"), col["method"], col["ballots"], col["seed"], col["election"]
@@ -236,8 +237,8 @@ def scan(path, keep, versions, notes):
         part.finish()
     old = {o: c for o, c in renamed.items() if o != c}
     if old:
-        notes.append(f"{name}: old method names read as the current ones: "
-                     + ", ".join(f"{o} -> {c}" for o, c in sorted(old.items())))
+        notes.setdefault("old method names read as the current ones: "
+                         + ", ".join(f"{o} -> {c}" for o, c in sorted(old.items())), []).append(name)
     return parts, n
 
 
@@ -337,6 +338,8 @@ def main():
     ap.add_argument("--min-conditions", type=int, default=None,
                     help="methods run in fewer conditions are listed separately and left out of the pair "
                          "matrix (default: half of the conditions)")
+    ap.add_argument("--min-elections", type=int, default=100,
+                    help="conditions (or replicates) with fewer elections are left out and listed (default 100)")
     ap.add_argument("--boot", type=int, default=400, help="bootstrap replicates per condition")
     ap.add_argument("--force-versions", action="store_true",
                     help="compare even if the inputs come from different simulator versions (stated in the report)")
@@ -360,7 +363,7 @@ def main():
     # 1. read every file once, keeping only what the comparison needs
     size = sum(os.path.getsize(p) for p in paths)
     say(f"[1/3] reading {len(paths)} results file(s), {size / 1e9:.2f} GB")
-    vers, notes, all_parts = OrderedDict(), [], []
+    vers, notes, all_parts = OrderedDict(), OrderedDict(), []
     for k, p in enumerate(paths, 1):
         t = time.time()
         vs = set()
@@ -404,9 +407,14 @@ def main():
     todo = units(all_parts)
     say(f"[2/3] analysing {len(todo)} condition(s) and replicate(s), {len(keep)} methods, "
         f"{a.boot} bootstrap replicates each")
-    us = []
+    us, small = [], []
     for k, (key, parts) in enumerate(todo, 1):
         t = time.time()
+        n_e = len(parts[0].elections)
+        if n_e < a.min_elections:
+            small.append((describe(dict(zip(PARAMS, key)), defaults), n_e, sorted({p.file.split("/")[0] for p in parts})))
+            say(f"  {k}/{len(todo)} {label_of(small[-1][0])}: only {n_e} elections; left out")
+            continue
         res = analyse_unit(parts, a.boot, rng)
         if res is None:
             say(f"  {k}/{len(todo)}: no elections all methods share; left out")
@@ -519,7 +527,11 @@ def main():
 
     L = ["# Ballot Front Finder Lab — comparison across runs", ""]
     if notes:
-        L += ["Older inputs:", ""] + [f"- {x}" for x in notes] + [""]
+        L += ["Older inputs:", ""] + [f"- {len(fs)} file(s) {msg}: {', '.join(fs[:4])}{' …' if len(fs) > 4 else ''}"
+                                      for msg, fs in notes.items()] + [""]
+    if small:
+        L += [f"Left out, fewer than {a.min_elections} elections (--min-elections): "
+              + "; ".join(f"{label_of(d)} ({e} elections, {', '.join(fs)})" for d, e, fs in small) + ".", ""]
     if forced:
         L += [f"**Mixed simulator versions, compared anyway (--force-versions): {', '.join(forced)}.** "
               "Results of different versions may not be comparable; see the list of inputs below.", ""]
@@ -612,7 +624,10 @@ def main():
                 other = f"{lo} better"
             if kl > 0:
                 common = common_setting([u["diff"] for u in tags_l])
-                s += (f"; {other} in {frac(kl)}: " + ", ".join(f"{u['tag']} ({u['label']})" for u in tags_l)
+                def tag(u):
+                    w = weight(u, A, B)
+                    return f"{u['tag']} ({u['label']}" + (f"; counts {w:.2g}" if w < 1 - 1e-9 else "") + ")"
+                s += (f"; {other} in {frac(kl)}: " + ", ".join(tag(u) for u in tags_l)
                       + (f", all with {common}" if common and len(tags_l) > 1 else ""))
             out_l.append(s + ".")
         return out_l

@@ -188,6 +188,7 @@ python compare.py output/falloff --pairs "ESR:Score" "Score runoff:Minimax"
 | `--pairs` | none | pairs `"A:B"` reported in detail |
 | `--top` | 12 | leading methods in the pair matrix and the exceptions |
 | `--min-conditions` | half of the conditions | fewer: listed separately |
+| `--min-elections` | 100 | conditions (or replicates) with fewer elections are left out, and listed in the report |
 | `--boot` | 400 | bootstrap replicates per condition |
 | `--depth` | 2 | folder levels searched for runs |
 | `--force-versions` | off | compare mixed simulator versions (stated in the report) |
