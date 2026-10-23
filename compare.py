@@ -322,6 +322,31 @@ def analyse_unit(parts, boot, rng):
             "files": sorted({p.file.split("/")[0] for p in parts})}
 
 
+def parse_pairs(pairs):
+    """--pairs "A:B": method names (as in the lab, case ignored) checked before any data is read; a name
+    not found gets the closest names as suggestions."""
+    import difflib
+    from methods import METHODS, RENAMED
+    known = {m.lower(): m for m in METHODS} | {o.lower(): current_name(o) for o in RENAMED}
+    out, bad = [], []
+    for pr in pairs:
+        if pr.count(":") != 1:
+            bad.append(f'"{pr}": write a pair as "A:B"')
+            continue
+        names = []
+        for x in (y.strip() for y in pr.split(":")):
+            m = known.get(x.lower())
+            if m is None:
+                close = difflib.get_close_matches(x.lower(), list(known), n=3, cutoff=0.6)
+                bad.append(f'"{x}" is not a method' + (f" (did you mean {', '.join(known[c] for c in close)}?)" if close else ""))
+            names.append(m)
+        if None not in names:
+            out.append(tuple(names))
+    if bad:
+        raise SystemExit("--pairs: " + "; ".join(bad))
+    return out
+
+
 def frac(x):
     return f"{x:.0f}" if abs(x - round(x)) < 1e-9 else f"{x:.1f}"
 
@@ -358,6 +383,7 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
 
+    requested = parse_pairs(a.pairs)          # checked before the (possibly long) reading
     folders = find_runs(a.folder, a.depth)
     if not folders:
         raise SystemExit(f"no run or sweep folders under {a.folder}")
@@ -604,13 +630,7 @@ def main():
             + head + [method_row(m) for m in few] + [""]
 
     top = order[:a.top]
-    extra = []
-    for pr in a.pairs:
-        A, B = [select([x])[0] for x in pr.split(":", 1)]
-        for x in (A, B):
-            if x not in meth:
-                raise SystemExit(f"--pairs: {x} is not among the compared methods")
-        extra.append((A, B))
+    extra = [(A, B) for A, B in requested if A in meth and B in meth]
     if len(top) > 1:
         L += [f"## Who dominates whom (the {len(top)} leading methods)", "",
               "Row dominates column in this many of the conditions both were run in (shared conditions after the slash).", "",
@@ -657,22 +677,41 @@ def main():
             out_l.append(s + ".")
         return out_l
 
-    seen = set()
+    if requested:
+        L += ["## Requested pairs", "", "The pairs asked for with --pairs, in that order: how often each method is "
+              "ahead, and where the other one is.", ""]
+        for A, B in requested:
+            L.append(f"**{A} — {B}**")
+            L.append("")
+            missing = [x for x in (A, B) if x not in meth]
+            if missing:
+                L.append(f"- Not compared: {' and '.join(missing)} {'is' if len(missing) == 1 else 'are'} not among the "
+                         "compared methods (not in these runs, left out by --methods / --exclude, or a reference or "
+                         "inverse method, which need --methods).")
+            elif P[(A, B)]["shared"] == 0:
+                L.append("- Never run in the same condition.")
+            else:
+                sn = sentences(A, B)
+                L += [f"- {x}" for x in sn] if sn else [
+                    f"- No clear difference on any of the front axes in any of the {frac(P[(A, B)]['shared'])} "
+                    "conditions both were run in."]
+            L.append("")
+    seen = {frozenset(p) for p in requested}
     blocks = []
-    for A, B in extra + [(A, B) for i, A in enumerate(top) for B in top[i + 1:]]:
-        if (A, B) in seen or (B, A) in seen:
+    for A, B in [(A, B) for i, A in enumerate(top) for B in top[i + 1:]]:
+        if frozenset((A, B)) in seen:
             continue
-        seen.add((A, B))
+        seen.add(frozenset((A, B)))
         r_ab, r_ba = P[(A, B)], P[(B, A)]
-        flips = any(min(r_ab[x], r_ba[x]) > 0 for x in ("dom", "VSE*", "WME*"))
-        if (A, B) in extra or flips:
+        if any(min(r_ab[x], r_ba[x]) > 0 for x in ("dom", "VSE*", "WME*")):
             sn = sentences(A, B)
             if sn:
                 blocks.append((A, B, sn))
     if blocks:
         L += ["## Exceptions", "",
-              "Pairs where each method is ahead somewhere (and the pairs asked for with --pairs): how often each is "
-              "ahead, and the conditions where the less usual outcome happens, with the settings they share.", ""]
+              "Pairs of leading methods where each is ahead somewhere: how often each is ahead, and the conditions "
+              "where the less usual outcome happens, with the settings they share. Pairs asked for with --pairs "
+              "are above, not repeated here.", ""]
         for A, B, sn in blocks:
             L.append(f"**{A} — {B}**")
             L.append("")
