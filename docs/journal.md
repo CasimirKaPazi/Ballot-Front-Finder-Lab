@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-23 | Method set `extended` (standard + ESR, DMS, Geometric median, Soft Minimax, Soft Minimax-40, MARS-T) and the reference runs ([reference-runs.md](reference-runs.md)); results unchanged | — |
 | 2026-10-23 | Fingerprints: each run records per method a hash of its results in a small fixed test (column `fingerprint`); `--resume` and `compare.py` refuse runs of other code, `analyze.py` notes them; results unchanged | no fingerprints |
 | 2026-10-23 | `compare.py`: methods across all runs in a folder (each condition counted once, mixed versions refused unless forced); results unchanged | — |
 | 2026-10-22 | New method ESR (expanding support runoff, rated; tested as the add-on BSR-S, results under that name read as ESR) | — |

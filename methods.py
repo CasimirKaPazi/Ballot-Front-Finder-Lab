@@ -1694,9 +1694,15 @@ COMPARISONS = {
                  "Approval runoff", "Approval cond. runoff", "Score", "MJ", "MAV", "STAR", "Score runoff", "321", "MARS", "ARA",
                  "BTR-score", "Smith//Score", "BTR-IRV", "Soft Minimax-D", "Ranked pairs", "Schulze", "Kemeny-Young",
                  "Copeland", "Minimax", "MMWV", "MMPO"],
+    # the standard set and the strongest newer methods not in it: the selection of the reference runs
+    # (docs/reference-runs.md), so every test shows them across all conditions
+    "extended": None,
     "er-pairs": ["IRV", "ER-IRV", "Borda", "Borda-ER", "Baldwin", "Baldwin-ER", "Minimax",
                  "Minimax-ER", "MMWV", "Schulze", "Schulze-ER", "Copeland//Margins", "Copeland//Margins-ER"],
 }
+
+COMPARISONS["extended"] = COMPARISONS["standard"] + ["ESR", "DMS", "Geometric median", "Soft Minimax",
+                                                     "Soft Minimax-40", "MARS-T"]
 
 
 def sincerity_defined(method):
