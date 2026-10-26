@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-26 | Default `--samples` 5 instead of 10 (run.py, sweep.py): in the reference runs of 1.0.0 the result hardly changed between 5 and 10 polls per round, and runs take about 60% of the time; changes the results of default runs (a run at the old default is the condition `--samples 10`); fingerprints and the regression check use their own fixed settings and are unchanged | 10 polls per round |
 | 2026-10-26 | Speed: the grade counts of MJ and MAV (`_common_total`) and MJ's comparison vectorized, MJ and MAV about a third faster; results unchanged (regression check, and a test against the loops) | loops |
 | 2026-10-26 | Fingerprints include a second test condition made for ties (`run.FINGERPRINT_TIES`); every fingerprint changes, so runs from before cannot be resumed or compared with newer ones (compare.py refuses, unless `--force-versions`); results unchanged | the first condition only, which missed BTR-Borda's tie rule |
 | 2026-10-26 | `compare.py` pools results files of a condition that share some elections (a run with fewer elections of the same seed: a subset), on the elections all their methods have | such files were replicates, so their shared elections counted twice |

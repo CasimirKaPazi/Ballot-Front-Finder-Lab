@@ -697,9 +697,9 @@ def parser():
                     help="candidates moved along the first (main) dimension by this many voter SDs; voters unchanged")
     ap.add_argument("--rounds", type=int, default=3,
                     help="poll rounds before the vote (0 = everyone votes sincerely); see strategy.py")
-    ap.add_argument("--samples", type=int, default=10,
-                    help="poll rounds: polls per round (they stand for the uncertainty); --converge: bootstrap "
-                         "resamples per round")
+    ap.add_argument("--samples", type=int, default=5,
+                    help="poll rounds: polls per round (they stand for the uncertainty; 10 until 2026-10-26); "
+                         "--converge: bootstrap resamples per round")
     ap.add_argument("--poll-size", type=int, default=0,
                     help="poll rounds only: voters per poll (0 = half the electorate, rounded to an odd number)")
     ap.add_argument("--search", type=int, default=10,
