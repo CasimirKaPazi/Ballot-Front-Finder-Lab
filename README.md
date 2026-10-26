@@ -54,7 +54,7 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 
 **Working with runs** ([running](docs/running.md))
 - One folder per run with its analysis; runs can be resumed after an interruption and give the same result row for row; results of separate runs combine, so a new method is compared without rerunning the others; older results files stay readable.
-- `compare.py` summarizes a whole folder of runs, each condition counted once: averages, how often a method is undominated or near the front, who dominates whom, the exceptions, and pairs asked for.
+- `compare.py` summarizes a whole folder of runs, each condition counted once: averages, how often a method is undominated or near the front, who dominates whom (with a beatpath plot of clear dominance), the exceptions, and pairs asked for; its bootstrap draws match those of `analyze.py`, so both agree on each condition.
 - Every run records a fingerprint of each method's results, so runs of changed code are not pooled by mistake; output folders with other files in them are refused.
 - Hand-built tests and a regression check that compares every number with a stored reference after a code change.
 - [Reference runs](docs/reference-runs.md): the commands for a fresh set of the main experiments, and how to analyse and publish them.

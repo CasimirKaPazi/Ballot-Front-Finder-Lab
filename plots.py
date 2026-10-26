@@ -704,3 +704,61 @@ def axes_heatmap(results, axes, path):
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
+
+
+def beatpath(nodes, edges, path, groups, share):
+    """Who clearly dominates whom across conditions (compare.py): methods as boxes in layers, an arrow from
+    A down to B when A dominates B in at least `share` of the conditions both were run in (and more often
+    than B dominates A), labelled with that share. edges: (A, B, share) after the arrows implied by a chain
+    were dropped. The top layer holds the methods nobody dominates at this level; every other method sits
+    one layer below the lowest method that dominates it. groups: method -> group, for the box colours."""
+    pred = {n: [] for n in nodes}
+    for a, b, _ in edges:
+        pred[b].append(a)
+    layer = {}
+    left = list(nodes)
+    while left:                                   # layers by longest path from the top (Kahn's order)
+        ready = [n for n in left if all(p in layer for p in pred[n])] or left[:1]   # a cycle: break it
+        for n in ready:
+            layer[n] = 1 + max((layer[p] for p in pred[n] if p in layer), default=-1)
+            left.remove(n)
+    depth = max(layer.values()) + 1
+    rows = [[n for n in nodes if layer[n] == k] for k in range(depth)]
+    WIDE = 8                                      # a layer with more methods is drawn as two staggered rows
+    x, y = {}, {}
+    for k, row in enumerate(rows):                # order within a layer: by the mean position of the
+        if k:                                     # methods above that dominate it, to limit crossings
+            row.sort(key=lambda n: (np.mean([x[p] for p in pred[n]]) if pred[n] else 0, nodes.index(n)))
+        step = 0.55 if len(row) > WIDE else 1.0
+        for i, n in enumerate(row):
+            x[n] = (i - (len(row) - 1) / 2) * step
+            y[n] = -1.4 * k - (0.5 if len(row) > WIDE and i % 2 else 0)
+    width = max(len(r) * (0.55 if len(r) > WIDE else 1.0) for r in rows)
+    fig, ax = plt.subplots(figsize=(max(7.0, 1.6 * width + 1), 1.4 * depth + 1.6))
+    ax.set_axis_off()
+    labels = len(edges) <= 40                     # with more arrows the shares would hide the graph
+    for a, b, f in edges:
+        ax.annotate("", xy=(x[b], y[b]), xytext=(x[a], y[a]),
+                    arrowprops=dict(arrowstyle="-|>", color="#a3a29b", lw=0.7, shrinkA=10, shrinkB=10,
+                                    mutation_scale=7, alpha=0.9), zorder=1)
+        if labels:
+            mx, my = x[a] + 0.35 * (x[b] - x[a]), y[a] + 0.35 * (y[b] - y[a])
+            ax.text(mx, my, f"{f:.0%}", fontsize=5.5, color=MUTED, ha="center", va="center", zorder=2,
+                    bbox=dict(boxstyle="round,pad=0.12", facecolor=SURFACE, edgecolor="none"))
+    names = list(dict.fromkeys(groups.get(n, "") for n in nodes))
+    tint = {g: TINTS[i % len(TINTS)] for i, g in enumerate(names)}
+    for n in nodes:
+        ax.text(x[n], y[n], n, fontsize=7, ha="center", va="center", zorder=3, color=INK,
+                bbox=dict(boxstyle="round,pad=0.3", facecolor=tint[groups.get(n, "")], edgecolor=GRID, lw=0.8))
+    ax.set_xlim(-width / 2 - 0.4, width / 2 + 0.4)
+    ax.set_ylim(min(y.values()) - 0.5, 0.9)
+    ax.set_title("Clear dominance across conditions", loc="left")
+    fig.text(0.01, 0.005, f"Arrow A → B: A dominates B (clearly better on a front axis, clearly worse on none) in at least "
+             f"{share:.0%} of the conditions both were run in, and more often than B dominates A"
+             + ("; the label gives that share" if labels else " (the shares are in beatpath.csv)")
+             + ". Arrows implied by a chain of others are left out.", fontsize=6.5, color=MUTED, wrap=True)
+    handles = [plt.Rectangle((0, 0), 1, 1, facecolor=tint[g], edgecolor=GRID) for g in names]
+    ax.legend(handles, names, loc="upper right", fontsize=6, frameon=False, ncol=min(3, len(names)))
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    fig.savefig(path, dpi=150)
+    plt.close(fig)

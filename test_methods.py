@@ -1015,6 +1015,33 @@ _rep = open(os.path.join(_tmp, "comparison", "report.md")).read()
 assert "2 distinct condition(s)" in _rep and "utility linear" in _rep and "| Minimax |" in _rep
 with open(os.path.join(_tmp, "comparison", "methods.csv")) as _f:
     assert {r["method"]: r["conditions"] for r in _csv.DictReader(_f)} == {"Score": "2.000", "Minimax": "2.000", "STAR": "2.000"}
+assert os.path.exists(os.path.join(_tmp, "comparison", "beatpath.csv")) and "## Clear dominance (beatpath)" in _rep
+# bootstrap draws depend only on the elections (and --seed): the same condition gets the same draws in
+# analyze.py and compare.py, whatever else is analysed, and the order of the rows does not matter
+import analyze as _an
+_ids = [(1, 0), (1, 1), (1, 2), (1, 5)]
+assert np.array_equal(_an.bootstrap_weights(_ids, 20, 0), _an.bootstrap_weights(list(_ids), 20, 0))
+assert not np.array_equal(_an.bootstrap_weights(_ids, 20, 0), _an.bootstrap_weights(_ids[:3] + [(1, 6)], 20, 0))
+assert not np.array_equal(_an.bootstrap_weights(_ids, 20, 0), _an.bootstrap_weights(_ids, 20, 1))
+with open(os.path.join(_tmp, "a", "elections.csv")) as _f:
+    _rows_a = list(_csv.DictReader(_f))
+for _r in _rows_a:
+    _r["_file"] = "a"
+_d1 = _an.analyse_condition(_rows_a, 50, 0)["dominated_by"]
+_d2 = _an.analyse_condition(_rows_a[::-1], 50, 0)["dominated_by"]
+assert sorted(map(str, _d1)) == sorted(map(str, _d2))
+# beatpath: arrows where A dominates B in at least the share, more often than the reverse; arrows implied
+# by a chain are kept in the list but left out of the plot
+import compare as _cp
+_P = {}
+for (_x, _y), _d in {("A", "B"): 8, ("B", "C"): 6, ("A", "C"): 9, ("C", "B"): 1, ("D", "A"): 5, ("A", "D"): 5}.items():
+    _P[(_x, _y)] = {"shared": 10, "dom": _d}
+for _x in "ABCD":
+    for _y in "ABCD":
+        _P.setdefault((_x, _y), {"shared": 10, "dom": 0})
+_all, _kept = _cp.beat_edges(list("ABCD"), _P, 0.5)
+assert {(e[0], e[1]) for e in _all} == {("A", "B"), ("B", "C"), ("A", "C")}       # D-A: a tie, no arrow
+assert {(e[0], e[1]) for e in _kept} == {("A", "B"), ("B", "C")}
 # another version in a third folder: stops, unless forced (then stated in the report)
 os.makedirs(os.path.join(_tmp, "c"))
 with open(os.path.join(_tmp, "a", "elections.csv")) as _f:

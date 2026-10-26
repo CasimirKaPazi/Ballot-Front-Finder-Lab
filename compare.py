@@ -18,8 +18,9 @@ counts once in total, its replicates sharing that weight. So a parameter swept i
 outweigh one tested once, and "in 7 of 9 conditions" means 9 distinct settings. The report lists
 every condition, named by what differs from the defaults of run.py.
 
-Per condition, the comparisons are those of analyze.py: paired bootstrap intervals over the elections
-of the condition; "clearly better" when the interval excludes 0 (and, for sincerity, the difference
+Per condition, the comparisons are those of analyze.py, with the same bootstrap draws (they depend only
+on the condition's elections and --seed, analyze.bootstrap_weights): paired bootstrap intervals over the
+elections of the condition; "clearly better" when the interval excludes 0 (and, for sincerity, the difference
 is at least 1 point, metrics.FRONT_TOLERANCE); dominance on VSE*, WME* and sincerity.
 
 Memory. Each file is read once, and only the columns the comparison needs are kept (as compact
@@ -39,6 +40,10 @@ Outputs (default: RUNS_FOLDER/comparison/):
     pairs.csv        one row per ordered pair of methods: conditions shared, clearly better per axis,
                      dominates, and the conditions where it does
     conditions.csv   one row per analysed condition (or replicate): its parameters and label
+    beatpath.png     who clearly dominates whom: an arrow A -> B when A dominates B in at least
+                     --beat-share of the conditions both were run in (and more often than B dominates
+                     A); arrows implied by a chain are left out (matplotlib needed)
+    beatpath.csv     every such pair, with its shares and whether the plot shows its arrow
     command.txt      the command
 """
 import argparse
@@ -61,7 +66,8 @@ AXES_SHOWN = ["VSE*", "WME*", "sincerity"]
 NEAR = (1.0, 2.0)          # points: "near the front" if no method is better by this much on both VSE* and WME*
 
 
-OUTPUT_FILES = {"report.md", "methods.csv", "pairs.csv", "conditions.csv", "command.txt"}   # what compare.py writes
+OUTPUT_FILES = {"report.md", "methods.csv", "pairs.csv", "conditions.csv", "beatpath.csv", "beatpath.png",
+                "command.txt"}   # what compare.py writes
 
 
 def listdir(d):
@@ -262,7 +268,7 @@ def units(parts):
     return [(key, ps) for key, groups in by_cond.items() for ps in groups.values()]
 
 
-def analyse_unit(parts, boot, rng):
+def analyse_unit(parts, boot, seed=0):
     """Point values, dominance and clearly-better per axis for one unit. A method in several parts
     keeps the values of the last (later files win, as in analyze.py); only the elections every method
     has are used."""
@@ -305,7 +311,8 @@ def analyse_unit(parts, boot, rng):
                 "VSE*": (W @ A["num_l"]) / d[:, None], "WME*": (W @ A["wm_l"]) / dw[:, None],
                 "sincerity": (W @ np.nan_to_num(A["sin"])) / sw + np.where(np.isnan(A["sin"]).all(axis=0), np.nan, 0)}
     point = axes(np.ones((1, E)))
-    W = rng.multinomial(E, np.full(E, 1 / E), size=boot).astype(float)
+    ids = [(int(c // 10_000_000), int(c % 10_000_000)) for c in codes[ok]]
+    W = an.bootstrap_weights(ids, boot, seed)          # the same draws as analyze.py for these elections
     bs = axes(W)
     P_b = np.stack([bs[a] for a in FRONT], axis=2)
     tol = [FRONT_TOLERANCE[a] for a in FRONT]
@@ -320,6 +327,37 @@ def analyse_unit(parts, boot, rng):
     return {"methods": methods, "elections": E, "vals": vals, "dom": dom, "better": better,
             "pareto": par, "near": near, "cover": cover, "seeds": [str(x) for x in seeds],
             "files": sorted({p.file.split("/")[0] for p in parts})}
+
+
+def beat_edges(names, P, share):
+    """Pairs (A, B, share A dominates B, share B dominates A, shared) where A dominates B in at least `share`
+    of the conditions both were run in and more often than B dominates A; and the subset left after
+    dropping every arrow A -> C that a chain A -> ... -> C of other arrows implies."""
+    edges = []
+    for A in names:
+        for B in names:
+            r = P.get((A, B))
+            if A == B or not r or r["shared"] <= 0:
+                continue
+            f, g = r["dom"] / r["shared"], P[(B, A)]["dom"] / r["shared"]
+            if f >= share - 1e-9 and r["dom"] > P[(B, A)]["dom"]:
+                edges.append((A, B, f, g, r["shared"]))
+    succ = {}
+    for A, B, *_ in edges:
+        succ.setdefault(A, set()).add(B)
+
+    def reaches(a, c):                    # a path a -> ... -> c of at least two arrows
+        stack, seen = [b for b in succ.get(a, ()) if b != c], set()
+        while stack:
+            n = stack.pop()
+            if n == c:
+                return True
+            if n not in seen:
+                seen.add(n)
+                stack += list(succ.get(n, ()))
+        return False
+    kept = [e for e in edges if not reaches(e[0], e[1])]
+    return edges, kept
 
 
 def parse_pairs(pairs):
@@ -374,7 +412,11 @@ def main():
                          "matrix (default: half of the conditions)")
     ap.add_argument("--min-elections", type=int, default=100,
                     help="conditions (or replicates) with fewer elections are left out and listed (default 100)")
-    ap.add_argument("--boot", type=int, default=400, help="bootstrap replicates per condition")
+    ap.add_argument("--boot", type=int, default=1000,
+                    help="bootstrap replicates per condition (as analyze.py, so both agree on each condition)")
+    ap.add_argument("--beat-share", type=float, default=0.5,
+                    help="beatpath: an arrow A -> B when A dominates B in at least this share of the shared "
+                         "conditions (default 0.5)")
     ap.add_argument("--force-versions", action="store_true",
                     help="compare even if the inputs come from different simulator versions or code (fingerprints) "
                          "(stated in the report)")
@@ -448,7 +490,6 @@ def main():
         all_parts = [(key, part) for key, part in all_parts if part.names]
     os.makedirs(out, exist_ok=True)
     write_command(out)
-    rng = np.random.default_rng(a.seed)
     defaults = {k: v for k, v in default_params().items() if k != "seed"}
 
     # 2. analyse every unit
@@ -463,7 +504,7 @@ def main():
             small.append((describe(dict(zip(PARAMS, key)), defaults), n_e, sorted({p.file.split("/")[0] for p in parts})))
             say(f"  {k}/{len(todo)} {label_of(small[-1][0])}: only {n_e} elections; left out")
             continue
-        res = analyse_unit(parts, a.boot, rng)
+        res = analyse_unit(parts, a.boot, a.seed)
         if res is None:
             say(f"  {k}/{len(todo)}: no elections all methods share; left out")
             continue
@@ -573,6 +614,24 @@ def main():
             wr.writerow([A, B, f"{r['shared']:.3f}", f"{r['dom']:.3f}", " ".join(u["tag"] for u in r["dom_tags"])]
                         + [f"{r[x]:.3f}" for x in FRONT] + [" ".join(u["tag"] for u in r[x + "_tags"]) for x in FRONT])
 
+    edges, kept = beat_edges(order, P, a.beat_share)
+    kept_set = {(e[0], e[1]) for e in kept}
+    with open(os.path.join(out, "beatpath.csv"), "w", newline="") as f:
+        wr = csv.writer(f)
+        wr.writerow(["A", "B", "A_dominates_B_share", "B_dominates_A_share", "shared_conditions", "arrow_shown"])
+        for A, B, fa, fb, n in edges:
+            wr.writerow([A, B, f"{fa:.4f}", f"{fb:.4f}", f"{n:.3f}", int((A, B) in kept_set)])
+    beat_png = False
+    if len(order) > 1:
+        try:
+            import plots
+            plots.beatpath(order, [(A, B, fa) for A, B, fa, _, _ in kept], os.path.join(out, "beatpath.png"),
+                           {m: group_of(m) for m in order}, a.beat_share)
+            beat_png = True
+        except ImportError:
+            print("note: matplotlib is not installed: beatpath.png not drawn (beatpath.csv has the arrows)",
+                  file=sys.stderr)
+
     L = ["# Ballot Front Finder Lab — comparison across runs", ""]
     if notes:
         L += ["Older inputs:", ""] + [f"- {len(fs)} file(s) {msg}: {', '.join(fs[:4])}{' …' if len(fs) > 4 else ''}"
@@ -645,6 +704,23 @@ def main():
                 cells.append(f"{frac(r['dom'])}/{frac(r['shared'])}" if r["shared"] else "")
             L.append(f"| **{A}** | " + " | ".join(cells) + " |")
         L.append("")
+
+    if len(order) > 1:
+        top_layer = [m for m in order if not any(e[1] == m for e in edges)]
+        L += ["## Clear dominance (beatpath)", "",
+              f"An arrow A → B: A dominates B in at least {a.beat_share:.0%} of the conditions both were run in "
+              "(--beat-share), and more often than B dominates A. Arrows implied by a chain of others are left out, "
+              "so a method is dominated at this level by everything above it along the arrows. Methods of the main "
+              "table only.", ""]
+        if beat_png:
+            L += ["![clear dominance](beatpath.png)", ""]
+        L += ["Dominated by none at this level: " + (", ".join(top_layer) or "—") + ".", ""]
+        lines = []
+        for m in order:
+            down = [(B, fa) for A, B, fa, _, _ in kept if A == m]
+            if down:
+                lines.append(f"- **{m}** → " + ", ".join(f"{B} ({fa:.0%})" for B, fa in down))
+        L += (lines or ["- No pair reaches this share."]) + [""]
 
     # exceptions: where the usual outcome flips
     def sentences(A, B):
@@ -723,7 +799,8 @@ def main():
 
     with open(os.path.join(out, "report.md"), "w") as f:
         f.write(an.md_stars("\n".join(L)) + "\n")
-    print(f"wrote {out}/: report.md, methods.csv, pairs.csv, conditions.csv, command.txt "
+    print(f"wrote {out}/: report.md, methods.csv, pairs.csv, conditions.csv, beatpath.csv"
+          + (", beatpath.png" if beat_png else "") + ", command.txt "
           f"({n_cond} conditions, {len(meth)} methods)")
 
 

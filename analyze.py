@@ -47,6 +47,7 @@ Outputs in the analysis folder (--out: a bare name goes into output/):
 """
 import argparse
 import csv
+import hashlib
 import os
 import re
 import warnings
@@ -281,10 +282,29 @@ def conditions(rows):
     return out
 
 
+def election_ids(rows, raw=False):
+    """The elections of one condition as (seed, election), sorted by number. raw: as the strings in the
+    rows (keys for arrays), otherwise as integers (for bootstrap_weights)."""
+    ids = sorted({(r["seed"], r["election"]) for r in rows}, key=lambda e: (int(e[0]), int(e[1])))
+    return ids if raw else [(int(s), int(e)) for s, e in ids]
+
+
+def bootstrap_weights(ids, boot, seed=0):
+    """Paired bootstrap weights (boot x E) over the elections ids, a sorted list of (seed, election)
+    integers. The draws depend only on these elections and on --seed, not on what else is analysed:
+    the same condition gets the same draws here and in compare.py, and adding runs to an analysis or a
+    comparison leaves the other conditions' results as they were (until 2026-10-25 one random stream ran
+    through all conditions, so a borderline dominance could change with the set of inputs)."""
+    h = hashlib.sha256(",".join(f"{s}:{e}" for s, e in ids).encode()).digest()
+    rng = np.random.default_rng([int(seed), int.from_bytes(h[:8], "little")])
+    E = len(ids)
+    return rng.multinomial(E, np.full(E, 1 / E), size=boot).astype(float)
+
+
 def arrays(rows):
     """Per (election, method) arrays for one condition. Elections are keyed by (seed, election)."""
     methods = list(OrderedDict.fromkeys(r["method"] for r in rows))
-    eids = list(OrderedDict.fromkeys((r["seed"], r["election"]) for r in rows))
+    eids = election_ids(rows, raw=True)
     ei = {e: i for i, e in enumerate(eids)}
     mi = {m: j for j, m in enumerate(methods)}
     E, M = len(eids), len(methods)
@@ -533,10 +553,10 @@ def electorate_text(e):
                "favourite ÷ least liked: — (utility not positive)."))
 
 
-def analyse_condition(rows, boot, rng):
+def analyse_condition(rows, boot, seed=0):
     methods, A, dens, has, ele, cands = arrays(rows)
     E = len(dens[0])
-    W = rng.multinomial(E, np.full(E, 1 / E), size=boot).astype(float)
+    W = bootstrap_weights(election_ids(rows), boot, seed)
     point = axis_values(np.ones((1, E)), A, dens, has)
     halves = axis_values(np.stack([np.arange(E) % 2 == 0, np.arange(E) % 2 == 1]).astype(float), A, dens, has)
     bs = axis_values(W, A, dens, has)
@@ -791,8 +811,6 @@ def main():
     check_folder(a.out, ANALYSIS_FILES, hint="give another --out (an analysis folder is new, empty or an earlier analysis)")
     os.makedirs(a.out, exist_ok=True)
     write_command(a.out)
-    rng = np.random.default_rng(a.seed)
-
     if a.show:
         keep = set(select(a.show))
         a.hide = [m for m in METHODS if m not in keep]
@@ -831,7 +849,7 @@ def main():
     varying = [k for i, k in enumerate(PARAMS) if len({key[i] for key in keys}) > 1]
     results = OrderedDict()
     for c, key in enumerate(keys, 1):
-        r = analyse_condition(conds[key], a.boot, rng)
+        r = analyse_condition(conds[key], a.boot, a.seed)
         r["label"] = label(key, varying, keys[0])
         r["seeds"] = sorted({row["seed"] for row in conds[key]}, key=int)
         r["tag"] = f"c{c}"
