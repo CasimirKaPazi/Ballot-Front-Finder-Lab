@@ -520,8 +520,14 @@ def run_key(row, params):
 # a small fixed test condition (6 elections, 31 voters, 6 candidates, some voters strategic and some
 # adaptive), hashed. Same fingerprint: the method (and the model behind it) gives the same results as when the
 # other run was made; a different one: the code changed in between, and results should not be pooled.
-# It costs a few seconds per run (about 4 s for the standard set). Methods that behave alike in these
-# six elections share a fingerprint, so a change that only shows in other elections can be missed. Changes that only show under other settings (another electorate
+# Since 2026-10-26 a second small condition is added, made for ties (FINGERPRINT_TIES: 20 voters, an
+# even number, 5 candidates, laziness 0.5): every method on ordered ballots meets pairwise ties there,
+# and several results are split, so a change in how a method handles ties is more likely seen (the
+# seed is chosen so that the BTR tie rule of 2026-10-26 changes the fingerprints of both BTR-score and
+# BTR-Borda; with the first condition alone BTR-Borda's did not change). Seen only if a tie decides
+# one of these few elections, so not guaranteed for every tie rule.
+# It costs a few seconds per run (about 6 s for the standard set). Methods that behave alike in these
+# elections share a fingerprint, so a change that only shows in other elections can be missed. Changes that only show under other settings (another electorate
 # model, nomination, the linear utility) are not seen by it.
 FINGERPRINT_ELECTIONS = 6
 FINGERPRINT_PARAMS = {"voters": 31, "cands": 6, "model": "clusters", "dims": 3, "zipf": 1, "clusters": 3,
@@ -531,20 +537,22 @@ FINGERPRINT_PARAMS = {"voters": 31, "cands": 6, "model": "clusters", "dims": 3, 
                       "cand_shift": 0.0, "rounds": 2, "samples": 3, "group_size": 10, "strategic": 0.3,
                       "adaptive": 0.5, "aggressive": 0.5, "lazy": 0.0, "max_score": 5, "exits": 0, "clones": 0,
                       "poll_size": 0, "poll_error": 2.0, "search": 4, "converge": 0, "start": "honest", "seed": 7}
+FINGERPRINT_TIES = {**FINGERPRINT_PARAMS, "voters": 20, "cands": 5, "lazy": 0.5, "seed": 9}
 FINGERPRINT_COLS = ["U_method", "WM", "sincerity", "fidelity", "compromise", "burial", "pushover",
                     "U_best", "U_rb", "WM_best", "WM_rb"]
 
 
 def fingerprints(names, workers=None):
-    """{method: 10 hex digits} from each method's results in FINGERPRINT_PARAMS (8 significant digits,
-    so that rounding in the last digits between machines does not change it)."""
-    rows = simulate(FINGERPRINT_PARAMS, FINGERPRINT_ELECTIONS, workers, names, progress=False)
+    """{method: 10 hex digits} from each method's results in FINGERPRINT_PARAMS and FINGERPRINT_TIES
+    (8 significant digits, so that rounding in the last digits between machines does not change it)."""
     by = {}
-    for r in rows:
-        by.setdefault(r["method"], []).append(r)
+    for c, params in enumerate((FINGERPRINT_PARAMS, FINGERPRINT_TIES)):
+        for r in simulate(params, FINGERPRINT_ELECTIONS, workers, names, progress=False):
+            by.setdefault(r["method"], []).append((c, r))
     out = {}
-    for m, rs in by.items():
-        rs.sort(key=lambda r: (int(r["election"]), r["ballots"]))
+    for m, crs in by.items():
+        crs.sort(key=lambda cr: (cr[0], int(cr[1]["election"]), cr[1]["ballots"]))
+        rs = [r for _, r in crs]
         text = "|".join(",".join(f"{float(r[c]):.8g}" if r.get(c) not in ("", None) else "" for c in FINGERPRINT_COLS)
                         for r in rs)
         out[m] = hashlib.sha256(text.encode()).hexdigest()[:10]

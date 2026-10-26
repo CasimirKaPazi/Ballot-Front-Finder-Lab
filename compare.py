@@ -12,8 +12,10 @@ the lab's report folders are skipped), and the output folder must be new, empty 
 comparison: nothing else is overwritten.
 
 Conditions. A condition is one set of run parameters (the seed aside). Runs with the same parameters
-are pooled, as in analyze.py. Within a condition, runs whose method sets differ and that share no
-elections (other seeds) are analysed separately, as replicates of the condition; each condition then
+are pooled, as in analyze.py. Within a condition, runs that share elections are pooled too, also when
+one has only some of the other's (fewer elections, the same seed): they are then compared on the
+elections all their methods have. Runs that share no elections (other seeds) are analysed
+separately, as replicates of the condition; each condition then
 counts once in total, its replicates sharing that weight. So a parameter swept in many runs does not
 outweigh one tested once, and "in 7 of 9 conditions" means 9 distinct settings. The report lists
 every condition, named by what differs from the defaults of run.py.
@@ -258,14 +260,26 @@ def scan(path, keep, versions, notes, prints):
 
 
 def units(parts):
-    """Analysable units: per condition, the parts (results files) covering exactly the same elections
-    are pooled, so runs of different methods on the same elections are compared directly; parts with
-    other elections (another seed, or more or fewer elections) become replicates of the condition.
-    parts: [(key, Part)] in file order. Returns [(key, [Part])]."""
+    """Analysable units: per condition, the parts (results files) that share elections are pooled, so
+    runs of different methods on the same elections are compared directly. Parts sharing only some
+    elections (one run with fewer elections than another of the same seed: a subset) are pooled too and
+    compared on the elections all their methods have (analyse_unit; the report notes how many), since
+    as separate replicates the shared elections would count twice. Parts with no election in common
+    (another seed) become replicates of the condition. parts: [(key, Part)] in file order.
+    Returns [(key, [Part])]."""
     by_cond = OrderedDict()
     for key, part in parts:
-        by_cond.setdefault(key, OrderedDict()).setdefault(part.elections, []).append(part)
-    return [(key, ps) for key, groups in by_cond.items() for ps in groups.values()]
+        by_cond.setdefault(key, []).append(part)
+    out = []
+    for key, ps in by_cond.items():
+        groups = []                                  # [elections, [Part]], merged while they overlap
+        for part in ps:
+            hit = [g for g in groups if g[0] & part.elections]
+            merged = [part.elections.union(*(g[0] for g in hit)), [p for g in hit for p in g[1]] + [part]]
+            groups = [g for g in groups if not any(g is h for h in hit)] + [merged]
+        groups.sort(key=lambda g: min(ps.index(p) for p in g[1]))       # file order
+        out += [(key, sorted(g[1], key=ps.index)) for g in groups]
+    return out
 
 
 def analyse_unit(parts, boot, seed=0):
@@ -274,7 +288,7 @@ def analyse_unit(parts, boot, seed=0):
     has are used."""
     methods = list(OrderedDict.fromkeys(m for p in parts for m in p.names))
     mi = {m: j for j, m in enumerate(methods)}
-    codes = np.array(sorted(parts[0].elections), dtype=np.int64)
+    codes = np.array(sorted(frozenset().union(*(p.elections for p in parts))), dtype=np.int64)
     E, M = len(codes), len(methods)
     A = {k: np.full((E, M), np.nan) for k in ("num_s", "wm_s", "num_l", "wm_l", "sin")}
     den, dwm = np.full(E, np.nan), np.full(E, np.nan)
@@ -647,8 +661,8 @@ def main():
               "Results of different versions may not be comparable; see the list of inputs below.", ""]
     L += [f"Folder: {a.folder}. {len(folders)} run or sweep folder(s), {len(paths)} results file(s); simulator "
           f"version {', '.join(all_v)}; analysis version {VERSION}. {n_cond} distinct condition(s)"
-          + (f" in {len(us)} analysed parts (results files with other elections are replicates of their "
-             "condition and share its weight)" if len(us) > n_cond else "") + f"; {len(meth)} methods. Bootstrap: {a.boot} paired replicates per "
+          + (f" in {len(us)} analysed parts (results files without shared elections are replicates of "
+             "their condition and share its weight)" if len(us) > n_cond else "") + f"; {len(meth)} methods. Bootstrap: {a.boot} paired replicates per "
           "condition.", "",
           "How to read this:", "",
           "- **Every condition counts once**, whatever the number of runs or elections behind it. Averages and "

@@ -39,6 +39,33 @@ check("BTR-Borda", METHODS["BTR-Borda"].honest(u), [0, 1, 0, 0])
 check("Minimax", METHODS["Minimax"].honest(u), [0, 1, 0, 0])
 check("Baldwin (K out, B out, G beats R)", METHODS["Baldwin"].honest(u), [0, 1, 0, 0])
 check("MJ (R and G median 3, R wins on removal)", METHODS["MJ"].honest(u), [1, 0, 0, 0])
+# grade counts with a common total, and MJ's comparison, vectorized on 2026-10-26: the same as the loops before
+def _ct_loop(g):
+    g = np.clip(np.asarray(g, float), 0, None)
+    if np.allclose(g, np.rint(g)) and len(set(np.rint(g).sum(axis=1))) == 1:
+        return np.rint(g).astype(int)
+    N = max(1, int(round(g.sum(axis=1).mean())))
+    out = np.zeros(g.shape, int)
+    for c, row in enumerate(g):
+        x = row * N / row.sum() if row.sum() > 0 else np.full(len(row), N / len(row))
+        f = np.floor(x).astype(int)
+        f[np.argsort(-(x - f), kind="stable")[:N - f.sum()]] += 1
+        out[c] = f
+    return out
+def _mj_loop(h):
+    order = _methods_mod.mj_order(int(h[0].sum()))
+    seqs = [tuple(np.repeat(np.arange(h.shape[1]), h[c])[order]) for c in range(len(h))]
+    top = np.array([q == max(seqs) for q in seqs], dtype=float)
+    return top / top.sum()
+_rg = np.random.default_rng(3)
+for _t in range(300):
+    _g = _rg.integers(0, 6, (4, 6)).astype(float)
+    if _t % 3:                                               # poll estimates: fractional, some negative or zero rows
+        _g = _g * _rg.random() * 3 + _rg.normal(0, 0.4, _g.shape)
+        _g[_rg.integers(4)] *= _t % 2
+    assert np.array_equal(_methods_mod._common_total(_g), _ct_loop(_g)), _g
+    _h = _ct_loop(_g)
+    assert np.array_equal(_methods_mod.d_mj({"grades": _h}), _mj_loop(_h)), _h
 # MAV: grades R 5,5,5,5,1,1,1,3,3; G 3x4, 3x3, 5x2. First majority at grade 3 (R 6, G 9 of 9);
 # of those, the most votes at grade 4 or more: R 4, G 2 (Bucklin would elect G, the larger majority)
 check("MAV (majorities at grade 3: R has more votes above)", METHODS["MAV"].honest(u), [1, 0, 0, 0])
@@ -889,6 +916,12 @@ _d2 = ((_v[:, None, :] - _cand[None]) ** 2).sum(axis=2)
 _sh, _, _ = _se.sav_space((_r.random(_d2.shape) < np.exp(-0.7 * _d2)).astype(float))
 assert abs(_sh[0] - _sh[1]) < 0.1 and _sh[:2].sum() > 0.6, _sh
 print("space from approval ballots ok")
+# show_electorates.stats with negative utilities (--utility linear): no favourite ÷ least liked ratio,
+# the utilities stretched per voter instead (0..1, one 0 and one 1 per voter)
+_st = _se.stats(_se.draw_electorate(Scenario(n_voters=21, n_cands=4, utility="linear"), np.random.default_rng([1, 0])))
+assert _st["fav_ratio"] is None and _st["stretched"].min() == 0 and abs(_st["stretched"].max() - 1) < 1e-12
+assert _se.stats(_se.draw_electorate(Scenario(n_voters=21, n_cands=4), np.random.default_rng([1, 0])))["fav_ratio"] is not None
+print("electorate summary, linear utility ok")
 
 # clusters model options: salience per cluster leaves positions unchanged and adds weights (mean square 1,
 # shared within a cluster); fixed total variance scales positions by one factor
@@ -1027,6 +1060,29 @@ _base.update(voters=25, rounds=1, samples=3)
 _fp = _run.fingerprints(["Score", "Minimax", "STAR"], 0)          # 0: no worker processes (see run.simulate)
 assert _fp["Score"] == _run.fingerprints(["Score"], 0)["Score"]          # independent of the other methods
 assert len(set(_fp.values())) == 3
+# the tie condition of the fingerprints: every method on ordered ballots meets a tied pair, and some
+# results are split; so a change of a tie rule changes the fingerprint (BTR-Borda's of 2026-10-26)
+_rt = _run.simulate(_run.FINGERPRINT_TIES, _run.FINGERPRINT_ELECTIONS, 0, _CMP["standard"], progress=False)
+_zt = {}
+for _r in _rt:
+    if _r["zero_margins"] != "":
+        _zt[_r["method"]] = _zt.get(_r["method"], False) or float(_r["zero_margins"]) > 0
+assert _zt and all(_zt.values()), [k for k, v in _zt.items() if not v]
+assert sum(int(_r["split"]) for _r in _rt) > 0
+import dataclasses as _dc
+_btr = ["BTR-score", "BTR-Borda"]
+_saved = {_n: METHODS[_n] for _n in _btr}
+_fp_btr = _run.fingerprints(_btr, 0)
+def _even_split(s):                                  # the rule before 2026-10-26: a pairwise tie split evenly
+    _M = _methods_mod.margins_of(s)
+    return _methods_mod.bottom_two_runoff(s["sum"], lambda a, b: _M[a, b])
+for _n in _btr:
+    METHODS[_n] = _dc.replace(_saved[_n], decide=_even_split)
+try:
+    _fp_old = _run.fingerprints(_btr, 0)
+    assert all(_fp_old[_n] != _fp_btr[_n] for _n in _btr), (_fp_old, _fp_btr)
+finally:
+    METHODS.update(_saved)
 for _name, _ch in (("a", {}), ("b", {"utility": "linear"})):
     _rows = _run.simulate({**_base, **_ch}, 6, 0, ["Score", "Minimax", "STAR"], fingerprint=_fp)
     os.makedirs(os.path.join(_tmp, _name), exist_ok=True)
@@ -1069,6 +1125,24 @@ for _x in "ABCD":
 _all, _kept = _cp.beat_edges(list("ABCD"), _P, 0.5)
 assert {(e[0], e[1]) for e in _all} == {("A", "B"), ("B", "C"), ("A", "C")}       # D-A: a tie, no arrow
 assert {(e[0], e[1]) for e in _kept} == {("A", "B"), ("B", "C")}
+# units: parts of a condition that share elections are pooled, also when one has only some of the
+# other's elections (a subset); parts without a shared election (another seed) stay replicates
+class _FP:                                          # stand-in for compare.Part: units() reads only the elections
+    def __init__(self, el):
+        self.elections = frozenset(el)
+_p1, _p2, _p3, _p4 = _FP(range(10)), _FP(range(5)), _FP(range(10)), _FP(range(100, 110))
+assert [_ps for _, _ps in _cp.units([("k", _p1), ("k", _p2), ("k", _p4), ("k", _p3)])] == [[_p1, _p2, _p3], [_p4]]
+# a pooled subset is compared on the elections every method has
+_rg = np.random.default_rng(0)
+_pa, _pb = _cp.Part("a"), _cp.Part("b")
+for _part, _ms, _n in ((_pa, ["X", "Y"], 6), (_pb, ["Z"], 3)):
+    for _e in range(_n):
+        for _m in _ms:
+            for _l in (0, 1):
+                _part.add(1, _e, _m, _l, [_rg.random(), 0.0, 1.0, _rg.random(), 0.0, 1.0, 1.0])
+    _part.finish()
+_ua = _cp.analyse_unit(_cp.units([("k", _pa), ("k", _pb)])[0][1], 20)
+assert _ua["elections"] == 3 and _ua["methods"] == ["X", "Y", "Z"] and "3 of 6" in _ua["cover"]
 # another version in a third folder: stops, unless forced (then stated in the report)
 os.makedirs(os.path.join(_tmp, "c"))
 with open(os.path.join(_tmp, "a", "elections.csv")) as _f:

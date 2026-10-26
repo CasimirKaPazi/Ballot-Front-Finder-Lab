@@ -2,9 +2,11 @@
 
     python show_electorates.py --model clusters ks ks-quinn --out look
     python show_electorates.py --model ks --width 0.5 --ks-alpha 5 --out look-ks
+    python show_electorates.py --utility exp linear quadratic --out look-utility
 
-Takes the electorate parameters of run.py (one value each, except --model, which may list several
-models to compare side by side) and writes into output/<out>/ (or the folder given):
+Takes the electorate parameters of run.py (one value each, except --model and --utility, which may
+list several values to compare side by side: every model with every utility form, each a row of
+examples.png and a colour in summary.png) and writes into output/<out>/ (or the folder given):
 
     examples.png   a few elections per model (rows): voters as dots coloured by their favourite,
                    candidates as lettered circles, on the voters' first two principal components
@@ -14,7 +16,10 @@ models to compare side by side) and writes into output/<out>/ (or the folder giv
                    - variance explained by the first k principal components (median over elections),
                      with the 70% line (a fit often taken as good, e.g. in Alós-Ferrer & Granić 2015)
                    - how many components reach 70% of the variance, per election
-                   - favourite / least liked utility, per voter (how steep preferences are)
+                   - favourite / least liked utility, per voter (how steep preferences are; only
+                     when every utility shown is positive, --utility exp); otherwise the
+                     utilities stretched per voter (least liked 0, favourite 1), as score ballots
+                     see them
                    - all utilities u(voter, candidate)
                    - VSE lost by electing the Condorcet winner, per election
                    - distances from voters to candidates
@@ -74,7 +79,9 @@ def stats(e):
     rb = np.bincount(u.argmax(axis=1), minlength=C) / n
     d = np.linalg.norm(V[:, None, :] - K[None, :, :], axis=2)
     return {"dims": V.shape[1], "share": share, "k70": int(np.searchsorted(np.cumsum(share), 0.7 - 1e-12) + 1),
-            "fav_ratio": u.max(axis=1) / u.min(axis=1), "u": u.ravel(), "dist": d.ravel(),
+            "fav_ratio": u.max(axis=1) / u.min(axis=1) if u.min() > 0 else None, "u": u.ravel(), "dist": d.ravel(),
+            "stretched": ((u - u.min(axis=1, keepdims=True))
+                          / np.maximum(np.ptp(u, axis=1, keepdims=True), 1e-12)).ravel(),
             "has_cw": len(cw) == 1, "cw_is_util": len(cw) == 1 and cw[0] == U.argmax(),
             "cw_loss": (U.max() - U[cw[0]], U.max() - rb @ U) if len(cw) == 1 else None}
 
@@ -157,8 +164,13 @@ def draw_summary(models, S, path):
                color=MODEL_COLOURS[i], label=n)
     ax.set(title="Components needed for 70% of the variance", xlabel="components", ylabel="elections (%)",
            xticks=range(1, top + 1))
-    hist(axs[0, 2], "fav_ratio", "Favourite ÷ least liked, per voter", "ratio (log scale)", log=True)
-    hist(axs[1, 0], "u", "Utilities u(voter, candidate)", "utility", rng=(0, 1))
+    positive = all(s["fav_ratio"] is not None for n in models for s in S[n])
+    if positive:
+        hist(axs[0, 2], "fav_ratio", "Favourite ÷ least liked, per voter", "ratio (log scale)", log=True)
+    else:                                   # linear or quadratic utility: negative, no ratio
+        hist(axs[0, 2], "stretched", "Utilities stretched per voter\n(least liked 0, favourite 1)", "stretched utility",
+             rng=(0, 1))
+    hist(axs[1, 0], "u", "Utilities u(voter, candidate)", "utility", rng=(0, 1) if positive else None)
     # VSE lost by electing the Condorcet winner, in the elections where it is not the utility winner
     ax = axs[1, 1]
     edges = np.linspace(0, 100, 26)
@@ -190,14 +202,15 @@ def summary_text(models, scs, S, elections, seed):
         cwu = np.mean([x["cw_is_util"] for x in with_cw]) if with_cw else float("nan")
         num = sum(x["cw_loss"][0] for x in with_cw)
         den = sum(x["cw_loss"][1] for x in with_cw)
-        fr = np.median(np.concatenate([x["fav_ratio"] for x in s]))
+        fr = np.median(np.concatenate([x["fav_ratio"] for x in s])) if all(x["fav_ratio"] is not None for x in s) else None
         lines += [f"{name}:",
                   f"  dimensions drawn          median {np.median(dims):.0f} (range {dims.min()}–{dims.max()})",
                   f"  components for 70%        median {np.median(k70):.0f} (range {k70.min()}–{k70.max()}); "
                   f"first two explain {cum2:.0%} (median)",
                   f"  Condorcet winner          {cw:.1%} of elections; also the utility winner in {cwu:.1%} of those",
                   f"  VSE lost electing it      {num / den:.1%} (ratio of sums, as VSE)" if den > 0 else "",
-                  f"  favourite ÷ least liked   {fr:.2f} (median voter)", ""]
+                  f"  favourite ÷ least liked   {fr:.2f} (median voter)" if fr is not None
+                  else "  favourite ÷ least liked   — (utilities not all positive)", ""]
     return "\n".join(lines)
 
 
@@ -336,6 +349,8 @@ def main():
     ap.add_argument("--ks-cut", type=float, default=0.2)
     ap.add_argument("--ks-shared", type=int, default=0, choices=[0, 1])
     ap.add_argument("--width", type=float, default=0.7)
+    ap.add_argument("--utility", nargs="+", default=["exp"], choices=["exp", "linear", "quadratic"],
+                    help="utility of distance, as in run.py; several values are compared side by side")
     ap.add_argument("--cand-dispersion", type=float, default=1.0)
     ap.add_argument("--cand-shift", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=1)
@@ -352,22 +367,28 @@ def main():
     out = out_path(a.out)
     check_folder(out, ["examples.png", "summary.png", "sav.png", "summary.txt"])
     os.makedirs(out, exist_ok=True)
+    combos = [(m, ut) for m in a.model for ut in a.utility]
+    if len(combos) > len(MODEL_COLOURS):
+        raise SystemExit(f"at most {len(MODEL_COLOURS)} models x utility forms at once ({len(combos)} given)")
+    # one label per combination: the model, with the utility form when several are compared (or not exp)
+    labels = [m if len(a.utility) == 1 and ut == "exp" else f"{m}, {ut}" for m, ut in combos]
     scs = [Scenario(a.voters, a.cands, a.dims, a.clusters, a.spread, a.width, a.zipf, a.cand_dispersion,
                     a.cand_shift, m, a.ks_alpha, a.ks_cut, a.ks_shared, salience="cluster" if a.salience_exponent > 0 else "none",
                     salience_exponent=a.salience_exponent, fixed_variance=a.fixed_variance,
                     field_kappa=a.field_kappa, field_salience=a.field_salience,
-                    noise_strength=a.noise_strength)
-           for m in a.model]
-    # the same random streams as run.py: election e of seed s is the electorate run.py uses
-    S = {m: [stats(draw_electorate(sc, np.random.default_rng([a.seed, e]))) for e in range(a.elections)]
-         for m, sc in zip(a.model, scs)}
-    draw_examples(a.model, scs, a.examples, a.seed, os.path.join(out, "examples.png"))
-    draw_summary(a.model, S, os.path.join(out, "summary.png"))
-    text = summary_text(a.model, scs, S, a.elections, a.seed)
+                    noise_strength=a.noise_strength, utility=ut)
+           for m, ut in combos]
+    # the same random streams as run.py: election e of seed s is the electorate run.py uses (the utility
+    # form changes only the utilities, not the positions)
+    S = {n: [stats(draw_electorate(sc, np.random.default_rng([a.seed, e]))) for e in range(a.elections)]
+         for n, sc in zip(labels, scs)}
+    draw_examples(labels, scs, a.examples, a.seed, os.path.join(out, "examples.png"))
+    draw_summary(labels, S, os.path.join(out, "summary.png"))
+    text = summary_text(labels, scs, S, a.elections, a.seed)
     if a.sav:
-        T = {m: sav_stats(sc, a.sav_elections, a.sav_voters, a.sav_noise, a.seed) for m, sc in zip(a.model, scs)}
-        draw_sav(a.model, T, a.cands, os.path.join(out, "sav.png"))
-        text += "\n" + sav_text(a.model, T, a) + "\n"
+        T = {n: sav_stats(sc, a.sav_elections, a.sav_voters, a.sav_noise, a.seed) for n, sc in zip(labels, scs)}
+        draw_sav(labels, T, a.cands, os.path.join(out, "sav.png"))
+        text += "\n" + sav_text(labels, T, a) + "\n"
     with open(os.path.join(out, "summary.txt"), "w") as f:
         f.write(text)
     print(text)

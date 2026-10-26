@@ -559,25 +559,36 @@ def _common_total(g):
     estimated poll counts (strategy.respond) can be fractional, slightly negative, and differ in
     total, so they are clipped at 0 and scaled to the mean total (largest remainders)."""
     g = np.clip(np.asarray(g, float), 0, None)
-    if np.allclose(g, np.rint(g)) and len(set(np.rint(g).sum(axis=1))) == 1:
-        return np.rint(g).astype(int)
-    N = max(1, int(round(g.sum(axis=1).mean())))
-    out = np.zeros(g.shape, int)
-    for c, row in enumerate(g):
-        x = row * N / row.sum() if row.sum() > 0 else np.full(len(row), N / len(row))
-        f = np.floor(x).astype(int)
-        f[np.argsort(-(x - f), kind="stable")[:N - f.sum()]] += 1
-        out[c] = f
-    return out
+    r = np.rint(g)
+    tot = r.sum(axis=1)
+    if np.all(np.abs(g - r) <= 1e-8 + 1e-5 * np.abs(r)) and np.all(tot == tot[0]):   # as np.allclose(g, r)
+        return r.astype(int)
+    rs = g.sum(axis=1)
+    N = max(1, int(round(rs.mean())))
+    pos = rs > 0
+    x = np.where(pos[:, None], g * N / np.where(pos, rs, 1)[:, None], N / g.shape[1])
+    f = np.floor(x).astype(int)
+    rank = np.argsort(-(x - f), axis=1, kind="stable")              # largest remainders first, per row
+    k = N - f.sum(axis=1)                                             # how many get one more
+    f[np.arange(len(f))[:, None], rank] += np.arange(g.shape[1])[None, :] < k[:, None]
+    return f
 
 
 def d_mj(s):
     """Majority judgment on 0..MAXS grades: compare median grades, removing medians to break ties."""
     h = _common_total(s["grades"])                        # h[c, g]: voters giving c grade g
     order = mj_order(int(h[0].sum()))
-    seqs = [tuple(np.repeat(np.arange(MAXS + 1), h[c])[order]) for c in range(len(h))]
-    best = max(seqs)
-    top = np.array([q == best for q in seqs], dtype=float)
+    # seq[c, j]: c's grade at sorted position order[j] (the number of grades whose cumulative count is
+    # at most that position); the best sequence in lexicographic order wins
+    seq = (np.cumsum(h, axis=1)[:, None, :] <= order[None, :, None]).sum(axis=2)
+    alive = np.arange(len(h))
+    for j in range(seq.shape[1]):
+        col = seq[alive, j]
+        alive = alive[col == col.max()]
+        if len(alive) == 1:
+            break
+    top = np.zeros(len(h))
+    top[alive] = 1.0
     return top / top.sum()
 
 
