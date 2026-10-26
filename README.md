@@ -2,6 +2,8 @@
 
 A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 66 in all (one of them, IDS, as an add-on; more can be added), plus three reference methods and eight test methods. A standard set of 29, the most discussed and the strongest, is what a run uses unless told otherwise. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
 
+[Results](https://github.com/CasimirKaPazi/Ballot-Front-Finder-Lab-Results) in a separate repository.
+
 **The question.** Every voting method turns ballots into a winner, and every method can be gamed to some degree. Comparisons with honest ballots alone flatter methods that are easy to manipulate; comparisons under fully rational strategy depend on assumptions nobody believes. This lab places voters in between: some of them read polls and adjust their ballots when it pays, the way people vote tactically in real elections, and it measures what the method makes of that.
 
 **How a simulation runs.**
