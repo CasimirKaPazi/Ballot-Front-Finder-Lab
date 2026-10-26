@@ -624,9 +624,15 @@ def d_baldwin(s):
 
 
 def d_btr(s):
-    """Order by total (Borda points or score), bottom-two pairwise runoffs climbing up."""
+    """BTR (BTR-score, BTR-Borda): order by total (score or Borda points), bottom-two pairwise runoffs
+    climbing up; a pairwise tie goes to the candidate higher in that order (since 2026-10-26; before, a
+    tie was split evenly). With strict pairwise results BTR-score is the same as Smith//Score unless the
+    Smith set has 4 or more members: a candidate outside the Smith set loses every match against one
+    inside, and in a 3-cycle the top-scored member beats whichever of the other two survives their
+    match. The tie rule extends this to pairwise ties, where Smith//Score likewise decides by score."""
     M = margins_of(s)
-    return bottom_two_runoff(s["sum"], lambda a, b: M[a, b])
+    # climb(cur, ch): cur comes from below, ch is the next higher in the order
+    return bottom_two_runoff(s["sum"], lambda a, b: M[a, b] if M[a, b] != 0 else -1)
 
 
 def d_mars(s):

@@ -91,7 +91,7 @@ Every run or sweep writes into its own folder in `output/`, and `analyze.py` wri
 
 ## Versions
 
-Version numbers have three parts, major.minor.patch (currently 1.0.0, `run.VERSION`; every results row records it together with a fingerprint of each method's results, and the reports warn when files of different versions or code are combined):
+Version numbers have three parts, major.minor.patch (currently 1.1.0, `run.VERSION`; every results row records it together with a fingerprint of each method's results, and the reports warn when files of different versions or code are combined):
 
 - **patch** (1.0.x): changes that leave every existing result as it is: plots, documentation, new methods;
 - **minor** (1.x.0): changes that alter some results (a fixed bug, a changed rule for some methods); the journal names which;

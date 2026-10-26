@@ -67,10 +67,10 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | Baldwin | ranking | eliminate lowest Borda score, recounted among remaining |
 | Baldwin-ER | ranking, ties allowed | Baldwin on rankings with ties (equal-ranked candidates count as neither above the other) |
 | Nanson | ranking | repeatedly eliminate every candidate whose Borda score among the remaining is at or below the average (Baldwin eliminates only the lowest) |
-| BTR-Borda | ranking | order by Borda score, bottom-two pairwise runoffs climbing up |
+| BTR-Borda | ranking | order by Borda score, bottom-two pairwise runoffs climbing up; a pairwise tie goes to the candidate higher in the Borda order (since 1.1.0; before, split evenly) |
 | BTR-IRV | ranking | each round the two with the fewest first choices meet pairwise; the loser is eliminated |
 | Benham | ranking | IRV, but a Condorcet winner among the remaining candidates wins at once |
-| Smith//Score | 0–5 | highest score total among the Smith set (pairwise from the ratings, equal ratings no preference). With a Condorcet winner by the ballots the same as BTR-score; they differ only in cycles |
+| Smith//Score | 0–5 | highest score total among the Smith set (pairwise from the ratings, equal ratings no preference). The same as BTR-score unless the Smith set has 4 or more members ([journal](journal.md), BTR-score and Smith//Score) |
 
 **plurality-based**
 
@@ -119,7 +119,7 @@ The grade a candidate reaches with a majority of the voters: the median grade, o
 | Method | Ballot | Rule |
 |---|---|---|
 | STAR | 0–5 | top two by total, majority runoff; a runoff tie goes to the higher total |
-| BTR-score | 0–5 | order by total score, bottom-two pairwise runoffs climbing up |
+| BTR-score | 0–5 | order by total score, bottom-two pairwise runoffs climbing up; a pairwise tie goes to the candidate higher in the score order (since 1.1.0; before, split evenly) |
 | MARS | 0–5 | as BTR-score; each match adds share preferring to score as share of maximum |
 | IC-MARS | 0–5 | MARS where a pairwise margin counts only beyond the votes rating both candidates at the top (tied at the top, as in [Improved Condorcet Approval](https://electowiki.org/wiki/Improved_Condorcet_Approval)): a margin those votes could reverse counts 0, so score weighs more |
 | MARS-T | 0–5 | MARS with each pairwise margin scaled by the share of ballots that score the two candidates differently (1 − share of equal scores): pairs that many voters do not tell apart are decided more by the score difference |

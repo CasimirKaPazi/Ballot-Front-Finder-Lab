@@ -24,6 +24,12 @@ check("Copeland", METHODS["Copeland"].honest(u), [0, 1, 0, 0])
 check("BTR-score", METHODS["BTR-score"].honest(u), [0, 1, 0, 0])
 check("MARS", METHODS["MARS"].honest(u), [0, 1, 0, 0])
 check("ARA (3-5)", METHODS["ARA"].honest(u), [0, 1, 0, 0])
+# BTR-score and BTR-Borda: a pairwise tie goes to the candidate higher in the order of totals (as Smith//Score decides by
+# score among tied Smith members). A and B tie pairwise, both beat C; totals A 10 > B 8 > C 3: C-B, then
+# B-A tied, A climbs out on top (before 2026-10-26 the tie was split evenly: [0.5, 0.5, 0])
+_s = {"sum": np.array([10.0, 8.0, 3.0]), "gt": np.array([[0, 4, 6], [4, 0, 6], [1, 1, 0]])}
+check("BTR (score and Borda), pairwise tie to the higher total", _methods_mod.d_btr(_s), [1, 0, 0])
+check("Smith//Score, same profile", _methods_mod.d_smith_score(_s), [1, 0, 0])
 
 # New methods on the same 4-3-2 profile
 check("Random pair runoff", METHODS["Random pair runoff"].honest(u), [36 / 72, 30 / 72, 6 / 72, 0])

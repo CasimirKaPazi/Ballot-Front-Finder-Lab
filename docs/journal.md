@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-26 | Version 1.1.0. BTR-score and BTR-Borda: a pairwise tie goes to the candidate higher in the order of totals (see BTR-score and Smith//Score); changes the results of these two methods, no others | a pairwise tie in BTR-score and BTR-Borda split evenly |
 | 2026-10-25 | Bootstrap draws per condition, from its elections and `--seed` (`analyze.bootstrap_weights`), in `analyze.py` and `compare.py`: both give a condition the same draws, and adding runs leaves the other conditions unchanged; `compare.py` defaults to 1000 replicates and draws a beatpath of clear dominance (`beatpath.png`, `--beat-share`); simulation results unchanged, borderline dominance calls in reports may differ | one random stream across all conditions |
 | 2026-10-23 | `run.simulate(..., workers=0)` runs without worker processes; the tests use it, so they also run where new processes start a fresh interpreter (macOS, Windows, Linux from Python 3.14); results unchanged | — |
 | 2026-10-23 | Method set `extended` (standard + ESR, DMS, Geometric median, Soft Minimax, Soft Minimax-40, MARS-T) and the reference runs ([reference-runs.md](reference-runs.md)); results unchanged | — |
@@ -43,6 +44,31 @@ How the lab developed: the experiments, what they showed and the decisions they 
 | 2026-10-07 | Renamed: Top-two runoff → TTR, Approval runoff if needed → Approval cond. runoff (ACR), Minimax-wv → MMWV | use the new names |
 | 2026-10-06 | Axes VSE and WME, both 0 = random ballot and 100 = best candidate ([analysis.md](analysis.md), Axes). Within a condition a fixed rescaling of each axis, so order, dominance and rank stability are unaffected | PE (0 = utility-proportional lottery) and WM (worst margin in % of voters) |
 | earlier | Plain dimensions before Zipf; CE as an axis before WM | |
+
+## BTR-score and Smith//Score (2026-10-26)
+
+BTR-score was introduced as a variant of Smith//Score that "gives exactly the same results unless there is a cycle of 4 or more candidates" ([Four levels of voting methods](https://hiveism.substack.com/p/four-levels-of-voting-methods)). In the reference runs of 1.0.0 the two were close with honest ballots (base: VSE 87.0 against 87.1) but drifted apart under strategy (VSE\* 86.7 against 87.3).
+
+**The argument holds for strict pairwise results.**
+- With a Condorcet winner, both elect it.
+- A candidate outside the Smith set loses every match against a member of it, so it never changes BTR-score's outcome.
+- In a cycle of three, the two lower-scored members meet first, and the top-scored member beats whichever of them survives. So BTR-score elects the highest-scored member of the cycle, as Smith//Score does.
+- Only Smith sets of four or more can differ.
+
+**The difference came from pairwise ties.** Smith//Score includes tied candidates in the Smith set and elects the highest score total among them, so a tie is decided by score in effect. BTR-score split a pairwise tie evenly between the two candidates. On a 0–5 ballot many voters give two candidates the same score, so exact ties are not rare.
+
+Checked on 2000 base electorates, honest ballots:
+
+| | 0–5 | 0–99 |
+|---|---|---|
+| electorates with at least one pairwise tie | 11.7% | 7.1% |
+| electorates with a Smith set of 4 or more | 0.9% | 0.8% |
+| winners differ, tie split evenly | 1.6% (28 with a pairwise tie, 3 with a Smith set of 4+) | 1.4% (24 and 3) |
+| winners differ, tie to the higher score | 0.2% (1 and 3) | — |
+
+Strategic score ballots exaggerate, which makes equal ratings and so pairwise ties more common; that is a likely reason why the methods drifted apart more under strategy than with honest ballots (not measured).
+
+**Decision:** BTR-score now gives a pairwise tie to the candidate higher in the score order, the order it already uses. This completes its definition, which left ties open, and makes the claim above hold in practice. BTR-Borda, the same procedure on Borda points, follows the same rule; with complete rankings and an odd number of voters its pairwise ties are rare, but laziness (truncated rankings) makes them possible. The change alters the results of both methods, so the version is now 1.1.0 (README, Versions); results of 1.0.0 for these two methods are not comparable with later ones. BTR-score's fingerprint changes with the rule; BTR-Borda's does not, since the fingerprint's six test elections contain no pairwise tie for it, so for BTR-Borda only the version number tells old and new runs apart. The regression check showed one changed value for BTR-score and none for BTR-Borda.
 
 ## ESR, expanding support runoff (2026-10-22)
 

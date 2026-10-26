@@ -178,7 +178,7 @@ def one_election(job):
 
 
 OUTPUT_DIR = "output"
-VERSION = "1.0.0"      # written into every row (column "version") and shown in the analysis report
+VERSION = "1.1.0"      # written into every row (column "version") and shown in the analysis report
 
 
 def out_path(name):
