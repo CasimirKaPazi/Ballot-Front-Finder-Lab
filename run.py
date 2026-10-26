@@ -48,7 +48,7 @@ from models import draw_electorate, model_text, MODELS
 from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
-from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, FRONT_TOLERANCE
+from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, FRONT_TOLERANCE
 import participation as part
 import manipulation as manip
 
@@ -162,12 +162,14 @@ def one_election(job):
                               poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0,
                               adaptive=adaptive, activated=act)
             sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
+            sincere_row.update(ties(m, m.sincere(uf), P_h))
             sincere_row.update(manip.manipulation(m, m.sincere(uf), uf, u, back) if manipulating else manip.NAN)
             for r, (B, settled, sin) in zip(rounds, res):
                 P_l = back(m.tally(B))
                 out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row})
                 out.append({"rounds": r, "election": e, "method": name, "ballots": "learned",
                             **election_row(u, P_l, m_cand), **estats, **ballot_condorcet(m, B, u, back, P_l),
+                            **ties(m, B, P_l),
                             "sincerity": sin if defined else "",
                             "fidelity": float(fidelity(m, B, uf).mean()) if defined else "",
                             "settled": int(settled), "adapted": act[r] if adaptive is not None else "",

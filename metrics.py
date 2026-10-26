@@ -109,6 +109,22 @@ def ballot_condorcet(method, B, u, back, P):
     return {"bcw": kind, "p_bcw": float(P[cb]) if cb is not None else ""}
 
 
+def ties(method, B, P):
+    """Ties in one result (columns since 2026-10-26):
+    split         1 if the winner is drawn by lot among several candidates of the original field (the
+                  method's result is a lottery: a tie broken at random, equal margins locked in every
+                  order, or a method that draws, as Condorcet-random-drop), else 0
+    zero_margins  share of candidate pairs that the cast ballots leave tied (as many voters put a above
+                  b as b above a; pairwise counts as in ballot_condorcet, on the field the voters face);
+                  only for ballots that record an order, else empty"""
+    split = int(np.max(P) < 1 - 1e-9)
+    if not BALLOTS[method.ballot].ordered:
+        return {"split": split, "zero_margins": ""}
+    gt = (B[:, :, None] > B[:, None, :]).sum(axis=0)
+    iu = np.triu_indices(B.shape[1], 1)
+    return {"split": split, "zero_margins": float(np.mean(gt[iu] == gt.T[iu]))}
+
+
 def efficiency(rows, base):
     num = sum(r["U_method"] - r[base] for r in rows)
     den = sum(r["U_best"] - r[base] for r in rows)

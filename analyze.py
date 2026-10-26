@@ -152,6 +152,8 @@ ADDED_COLUMNS = {
     "U_manip1": (None, "2026-10-17, manipulation test (run.py --manipulation)"),
     "U_manip2": (None, "2026-10-17, manipulation test (run.py --manipulation)"),
     "p_bcw": (None, "2026-10-12, Condorcet winner in the ballots"),
+    "split": (None, "2026-10-26, ties"),
+    "zero_margins": (None, "2026-10-26, ties"),
 }
 REQUIRED_COLUMNS = ["WM_best", "U_rb", "sincerity", "U_cands", "nom_changed", "noshow"]
 LACKING = {}           # input -> added columns it lacks (filled as in ADDED_COLUMNS)
@@ -311,6 +313,7 @@ def arrays(rows):
     A = {k: np.zeros((E, M)) for k in ["num_s", "num_l", "cw_s", "cw_l", "wm_s", "wm_l", "sin"] + TYPES + NOM}
     A.update({k: np.full((E, M), np.nan) for k in ["fid_s", "fid_l", "pbcw_s", "pbcw_l", "adapted", "us", "ul"]})   # absent in older CSVs
     A.update({k: np.full((E, M), "", dtype=object) for k in ["bcw_s", "bcw_l"]})    # ballot Condorcet winner
+    A.update({k: np.full((E, M), np.nan) for k in ["split_s", "split_l", "zero_s", "zero_l"]})   # ties (2026-10-26)
     A.update({k + sfx: np.full((E, M), np.nan) for k in PART for sfx in ("_s", "_l")})
     A.update({k: np.full((E, M), np.nan) for k in MANIP})
     den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
@@ -330,6 +333,7 @@ def arrays(rows):
             for k in NOM:
                 A[k][i, j] = float(r[k])
             A["bcw_s"][i, j], A["pbcw_s"][i, j] = r.get("bcw", ""), float(r.get("p_bcw") or "nan")
+            A["split_s"][i, j], A["zero_s"][i, j] = float(r.get("split") or "nan"), float(r.get("zero_margins") or "nan")
             if sincerity_defined(r["method"]):            # blank for TRASH and Inverse-* (also in older CSVs)
                 A["fid_s"][i, j] = float(r.get("fidelity") or "nan")
             for k in PART:
@@ -350,6 +354,7 @@ def arrays(rows):
             A["num_l"][i, j], A["cw_l"][i, j], A["wm_l"][i, j] = num, pcw, nwm
             A["ul"][i, j] = float(r["U_method"])
             A["bcw_l"][i, j], A["pbcw_l"][i, j] = r.get("bcw", ""), float(r.get("p_bcw") or "nan")
+            A["split_l"][i, j], A["zero_l"][i, j] = float(r.get("split") or "nan"), float(r.get("zero_margins") or "nan")
             if sincerity_defined(r["method"]):
                 A["sin"][i, j] = float(r["sincerity"] or "nan")
                 A["fid_l"][i, j] = float(r.get("fidelity") or "nan")
@@ -576,6 +581,7 @@ def analyse_condition(rows, boot, seed=0):
            "participation": participation_summary(A, W),
            "manipulation": manipulation_summary(A, W, dens[0]),
            "ballot_cw": ballot_cw_summary(A, has),
+           "ties": ties_summary(A),
            # Pareto front on point estimates; undefined sincerity (TRASH, Inverse-*) counts as worst
            "pareto": set(pareto(np.nan_to_num(np.stack([point[a][0] for a in FRONT], axis=1), nan=-np.inf), tol))}
     for a in AXES + EXTRA + ["sincerity", "fidelity", "fidelity_honest"] + TYPES:
@@ -607,6 +613,24 @@ def ballot_cw_summary(A, has):
             p = A["pbcw" + sfx][:, j]
             d["ce_ballots" + sfx] = float(np.nanmean(p)) if (~np.isnan(p)).any() else float("nan")
         out[j] = d
+    return out
+
+
+def ties_summary(A):
+    """Per method, for honest (_s) and learned (_l) ballots (metrics.ties): split, the share of
+    elections whose winner is drawn by lot; zero_any, the share of elections whose cast ballots leave
+    at least one pair of candidates tied; zero_pairs, the share of tied pairs, averaged over elections.
+    The zero shares are nan for ballots that record no order. None for runs from before 2026-10-26."""
+    if np.isnan(A["split_l"]).all():
+        return None
+    out = {}
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        for sfx in ("_s", "_l"):
+            out["split" + sfx] = np.nanmean(A["split" + sfx], axis=0)
+            z = A["zero" + sfx]
+            out["zero_pairs" + sfx] = np.nanmean(z, axis=0)
+            out["zero_any" + sfx] = np.where(np.isnan(z).all(axis=0), np.nan, np.nanmean(np.where(np.isnan(z), np.nan, z > 0), axis=0))
     return out
 
 
@@ -864,11 +888,16 @@ def main():
         cols = []
         for x in AXES + EXTRA + ["sincerity", "fidelity", "fidelity_honest"] + TYPES:
             cols += [x, x + "_lo", x + "_hi"]
-        w.writerow(PARAMS + ["condition", "elections", "method", "group"] + cols + ["pareto_front", "dominated_by"])
+        tie_cols = [c + s for c in ("split", "zero_any", "zero_pairs") for s in ("_honest", "")]   # blank before 2026-10-26
+        w.writerow(PARAMS + ["condition", "elections", "method", "group"] + cols + ["pareto_front", "dominated_by"] + tie_cols)
         for key, r in results.items():
+            ti = r["ties"]
             for j, m in enumerate(r["methods"]):
+                tv = ["" if ti is None or np.isnan(ti[c][j]) else f"{ti[c][j]:.5f}"
+                      for c in (k + s for k in ("split", "zero_any", "zero_pairs") for s in ("_s", "_l"))]
                 w.writerow(list(key) + [r["tag"], r["elections"], m, group_of(m)]
-                           + [f"{r[x][j]:.5f}" for x in cols] + [int(j in r["pareto"]), dom_text(r["dominated_by"][j], "; ")])
+                           + [f"{r[x][j]:.5f}" for x in cols] + [int(j in r["pareto"]), dom_text(r["dominated_by"][j], "; ")]
+                           + tv)
 
     # plots
     for key, r in results.items():
@@ -1129,6 +1158,19 @@ def main():
                 L.append(f"| {r['methods'][j]} | " + " | ".join(f"{pc(d[c + '_l'])} ({pc(d[c + '_s'])})"
                          for c in ("same", "false", "none", "spurious", "ce_ballots"))
                          + f" | {pc(r['CE*'][j])} |")
+            L += [""]
+        ti = r["ties"]
+        if ti is not None:
+            pt = lambda x: "—" if np.isnan(x) else f"{x:.1%}"
+            L += ["**Ties.** Split: the share of elections whose winner is drawn by lot among several candidates (a tie "
+                  "the method breaks at random, or a method that draws). Tied pairs, for ordered ballots (rankings, "
+                  "scores, grades): the share of elections in which the cast ballots leave at least one pair of "
+                  "candidates tied (as many voters put one above the other as the other way round), and the share of "
+                  "all pairs that are tied. Learned ballots, honest in brackets.", "",
+                  "| Method | Split | Elections with a tied pair | Tied pairs |", "|---|---|---|---|"]
+            for j in np.argsort(-r["VSE*"], kind="stable"):
+                L.append(f"| {r['methods'][j]} | " + " | ".join(f"{pt(ti[c + '_l'][j])} ({pt(ti[c + '_s'][j])})"
+                                                                 for c in ("split", "zero_any", "zero_pairs")) + " |")
             L += [""]
         L += [f"![strategy arrows](arrows-{r['tag']}.png)", "", f"![strategy shifts](shift-{r['tag']}.png)", "",
               f"![sincerity](sincerity-{r['tag']}.png)", ""]
