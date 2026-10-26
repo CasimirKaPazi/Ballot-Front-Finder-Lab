@@ -1711,6 +1711,18 @@ COMPARISONS["extended"] = COMPARISONS["standard"] + ["ESR", "DMS", "Geometric me
                                                      "Soft Minimax-40", "MARS-T"]
 
 
+def follows_score_range(method):
+    """True for a method whose results depend on --max-score: its ballot type uses the score range
+    (score_range in ballots.Ballot) and it does not fix its own range (settings)."""
+    m = METHODS[method]
+    return BALLOTS[m.ballot].score_range and (m.settings or {}).get("max_score") is None
+
+
+# every method that follows --max-score, add-ons included (built from the ballot types, so a new
+# method on score ballots joins by itself): the selection for a max-score sweep
+COMPARISONS["max-score"] = [k for k in METHODS if follows_score_range(k)]
+
+
 def sincerity_defined(method):
     """Sincerity and fidelity are left undefined (blank) for methods whose honest ballot works against
     the voter's own interest: TRASH (the candidate ranked lower wins) and the Inverse-* methods (honest

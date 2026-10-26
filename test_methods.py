@@ -697,6 +697,15 @@ assert ballot_condorcet(Bor, Bb, u2, lambda P: P, Bor.tally(Bb))["bcw"] in ("fal
 assert ballot_condorcet(METHODS["Plurality"], METHODS["Plurality"].sincere(u2), u2, lambda P: P, np.ones(4) / 4)["bcw"] == ""
 print("ballot Condorcet winner ok")
 
+# Ties (metrics.ties): a split result, and the share of candidate pairs the cast ballots leave tied
+from metrics import ties
+_Sc = np.array([[5, 3, 0], [0, 3, 5]], dtype=float)                # A-B and B-C 1:1 each, A-C 1:1
+assert ties(METHODS["Score"], _Sc, np.array([0.0, 1.0, 0.0])) == {"split": 0, "zero_margins": 1.0}
+_Sc = np.array([[5, 3, 0], [3, 5, 0], [0, 5, 3]], dtype=float)    # B > A 2:1, B > C 3:0, A > C 2:1: none tied
+assert ties(METHODS["Score"], _Sc, np.array([0.5, 0.5, 0.0])) == {"split": 1, "zero_margins": 0.0}
+assert ties(METHODS["Plurality"], METHODS["Plurality"].sincere(u2), np.ones(4) / 4) == {"split": 1, "zero_margins": ""}
+print("ties ok")
+
 # Truncated rankings (unranked = 0, tied last) and laziness
 import methods as _mm
 from strategy import mutate as _mutate
@@ -800,6 +809,18 @@ assert _strip(_fixed, "Score-10") == _strip(_glob, "Score")      # Score-10 at -
 _mm.set_max_score(5)                                             # one_election sets the run's range
 del METHODS["Score-10"]
 print("method settings ok")
+
+# The max-score set (COMPARISONS): exactly the methods whose sincere ballots change with the range
+_by = {}
+for _g in (5, 9):
+    _mm.set_max_score(_g)
+    _by[_g] = {_n: _m.sincere(_u) for _n, _m in METHODS.items()}
+_mm.set_max_score(5)
+_moves = sorted(_n for _n in METHODS if not np.array_equal(_by[5][_n], _by[9][_n]))
+assert _moves == sorted(_mm.COMPARISONS["max-score"]), \
+    f"max-score set and range dependence differ: {set(_moves) ^ set(_mm.COMPARISONS['max-score'])}"
+assert {"Score", "STAR", "Score runoff", "BTR-score"} <= set(_moves) and not {"MCA", "321", "IRV", "Approval"} & set(_moves)
+print(f"max-score set ok ({len(_moves)} methods)")
 
 # Electorate models (models.py)
 import models as _md

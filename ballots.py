@@ -603,6 +603,7 @@ class Ballot:
     lazy: bool = False          # laziness applies
     approval: bool = False      # the honest ballot uses the approval threshold (approves): sincere(u, lazy, draw)
     ordered: bool = False       # records an order of the candidates
+    score_range: bool = False   # uses the score range 0..MAXS (--max-score changes it; the max-score set)
 
     def chosen(self, X):
         """The part of the ballots the voter chooses (marks), as sincerity and fidelity look at it."""
@@ -617,13 +618,13 @@ BALLOTS = {b.name: b for b in [
     Ballot("approval", approval_ballots, _mutate_approval, _exag_approval, _implied_marks, _worst_approval,
            lazy=True, approval=True),
     Ballot("score", score_ballots, _mutate_score, _exag_score, _implied_score, _worst_score,
-           lazy=True, ordered=True),
+           lazy=True, ordered=True, score_range=True),
     Ballot("fav_run", fav_run_ballots, _mutate_fav_run, _exag_fav_run, _implied_marks, _worst_fav,
            marks=_marks_run),
     Ballot("app_run", app_run_ballots, _mutate_app_run, _exag_app_run, _implied_marks, _worst_approval,
            marks=_marks_run, lazy=True, approval=True),
     Ballot("score_run", score_run_ballots, _mutate_score_run, _exag_score_run, _implied_score, _worst_score,
-           marks=_marks_score_run, lazy=True),
+           marks=_marks_score_run, lazy=True, score_range=True),
     Ballot("veto", veto_ballots, _mutate_veto, _exag_veto, _implied_veto, _worst_veto),
     Ballot("weak", lazy_rank_ballots, _mutate_weak, _exag_weak, _implied_rank, _worst_ranking,
            lazy=True, ordered=True),                                      # honest: strict; ties only strategic

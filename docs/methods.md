@@ -25,9 +25,10 @@ Every method belongs to exactly one group. Groups can be used wherever methods a
 
 - `standard`, the default selection: the methods most discussed, those of Quinn's vse-sim (Plurality, IRV, Borda, Approval, Score, STAR, MJ, MAV, 321, Ranked pairs, Schulze) the common single-winner proposals and methods in use (TTR, Supplementary vote, ER-IRV, IRV-3, Approval runoff, Approval cond. runoff, Copeland, Kemeny-Young, Minimax, MMWV, MMPO, BTR-IRV), a reference between Score and STAR (Score runoff: STAR's runoff as a separate election, joined 2026-10-20), with the strongest found here (MARS, ARA, BTR-score, Smith//Score, Soft Minimax-D): 29 methods. Copeland//Margins-ER (the earlier Ranked Robin) left the set on 2026-10-19: once Equal Vote's name came to mean any Condorcet method, this particular variant is no longer a live proposal. Geometric median and Condorcet-random-drop are left out: idealised reference cases rather than practical methods.
 - `extended`: the standard set and the strongest newer methods not in it (ESR, DMS, Geometric median, Soft Minimax, Soft Minimax-40, MARS-T): 35 methods. The selection of the reference runs ([reference-runs.md](reference-runs.md)), so that every test shows them in all conditions.
+- `max-score`: every method whose results depend on the score range (`--max-score`): those on a ballot type that uses the range (the score ballot, Score runoff's ballot, add-on types built on them) and that do not fix their own range. Built from the ballot types, so new methods and add-ons join by themselves; a test checks that it holds exactly the methods whose sincere ballots change with the range. MCA and 321 (three fixed grades) are not in it. It includes Inverse-Score: `--methods max-score --exclude inverse` for a max-score sweep.
 - `er-pairs`, each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Copeland//Margins/Copeland//Margins-ER. Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.
 
-Example: `--methods condorcet STAR`, `--methods er-pairs`, `--methods all --exclude inverse`. Without `--methods`, run.py and sweep.py run the `standard` set; `--exclude` then takes methods out of it. Every other method, group, add-on, or `all` can be named in `--methods`.
+Example: `--methods condorcet STAR`, `--methods er-pairs`, `--methods max-score`, `--methods all --exclude inverse`. Without `--methods`, run.py and sweep.py run the `standard` set; `--exclude` then takes methods out of it. Every other method, group, add-on, or `all` can be named in `--methods`.
 
 ## Methods
 
@@ -185,7 +186,7 @@ A new method does not have to go into methods.py: put a Python file into the fol
 |---|---|---|
 | `METHODS` | yes | `{name: Method(ballot, decide, feats)}` (or `Method(ballot, full=tally)` for a rule that needs the whole ballot matrix); names must not clash with existing ones. Optional `settings={"max_score": X}` fixes the score range for this method, named `Name-X` (see [model.md](model.md), Score range) |
 | `FEATURES` | no | new per-voter ballot features, `{name: (function(B) -> array per voter, shape of the sum given C)}`; they are summed over voters and poll samples, which keeps tallies fast |
-| `BALLOTS` | no | new ballot types, `{name: ballots.Ballot(...)}`: honest ballots, strategic changes, exaggerations, implied values and the worst ballot (see ballots.py; rarely needed) |
+| `BALLOTS` | no | new ballot types, `{name: ballots.Ballot(...)}`: honest ballots, strategic changes, exaggerations, implied values and the worst ballot (see ballots.py; rarely needed). A type that uses the score range sets `score_range=True` (one made with `dataclasses.replace` from the score ballot keeps it), so its methods join the `max-score` set |
 | `GROUP` | no | the group its methods join: an existing one (e.g. `rated`) or a new one; default `addons` |
 | `test()` | no | its own checks (a small profile with a known winner), run by test_methods.py |
 
