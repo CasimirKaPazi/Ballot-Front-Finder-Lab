@@ -154,6 +154,8 @@ ADDED_COLUMNS = {
     "p_bcw": (None, "2026-10-12, Condorcet winner in the ballots"),
     "split": (None, "2026-10-26, ties"),
     "zero_margins": (None, "2026-10-26, ties"),
+    "U_ml": (None, "2026-10-26, the maximal lottery as a reference point"),
+    "WM_ml": (None, "2026-10-26, the maximal lottery as a reference point"),
 }
 REQUIRED_COLUMNS = ["WM_best", "U_rb", "sincerity", "U_cands", "nom_changed", "noshow"]
 LACKING = {}           # input -> added columns it lacks (filled as in ADDED_COLUMNS)
@@ -319,7 +321,8 @@ def arrays(rows):
     den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
     dwm = np.zeros(E)          # per election: WM_best - WM_rb (WME denominator)
     has = np.zeros(E)
-    ele = {k: np.full(E, np.nan) for k in ["cw_is_util", "U_cw", "U_best", "fav_ratio", "U_rb", "WM_rb", "U_rand"]}
+    ele = {k: np.full(E, np.nan) for k in ["cw_is_util", "U_cw", "U_best", "fav_ratio", "U_rb", "WM_rb", "U_rand",
+                                         "U_ml", "WM_ml"]}
     cands = [None] * E           # per election: (total utility, worst margin, normalized total or None) of every
                                  # candidate, for the frontier
     for r in rows:
@@ -495,15 +498,20 @@ def region(cands, dens, ele, steps=720):
 
 
 def references(cands, dens, ele):
-    """Reference points in the VSE/WME plane, as fractions: the random ballot (0, 0 by definition)
-    and a random candidate (the zero of classical VSE; its WME is the average worst margin of the
-    candidates). None when the candidates' values are missing."""
+    """Reference points in the VSE/WME plane, as fractions: the random ballot (0, 0 by definition),
+    a random candidate (the zero of classical VSE; its WME is the average worst margin of the
+    candidates) and the maximal lottery of the sincere preferences (metrics.maximal_lottery; runs
+    since 2026-10-26). None when the candidates' values are missing."""
     if any(c is None for c in cands):
         return None
     du, dw = dens[0].sum(), dens[1].sum()
     v = sum(U.mean() - urb for (U, W, _), urb in zip(cands, ele["U_rb"])) / du
     w = sum(W.mean() - wrb for (U, W, _), wrb in zip(cands, ele["WM_rb"])) / dw
-    return {"random ballot": (0.0, 0.0), "random candidate": (float(v), float(w))}
+    out = {"random ballot": (0.0, 0.0), "random candidate": (float(v), float(w))}
+    if not np.isnan(ele["U_ml"]).any():
+        out["maximal lottery"] = (float((ele["U_ml"] - ele["U_rb"]).sum() / du),
+                                  float((ele["WM_ml"] - ele["WM_rb"]).sum() / dw))
+    return out
 
 
 def region_span(R):
@@ -536,6 +544,10 @@ def frontier_text(F, R=None, refs=None, N=None):
                   f"{N[-1, 1] * 100:.1f}); the dotted line in the plots.")
     rc = refs and refs.get("random candidate")
     rc_text = f" A random candidate (the zero of classical VSE) gives VSE {rc[0] * 100:.1f} / WME {rc[1] * 100:.1f}." if rc else ""
+    ml = refs and refs.get("maximal lottery")
+    if ml:
+        rc_text += (f" The maximal lottery of the sincere preferences (the Condorcet winner if there is one, else a "
+                    f"lottery no candidate beats in expectation) gives VSE {ml[0] * 100:.1f} / WME {ml[1] * 100:.1f}.")
     k = int(np.argmax(F[:, 0] + F[:, 1]))
 
     def rng_(a, b, name):         # the other axis at one end of the region: one value, or a range (ties)

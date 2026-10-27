@@ -48,7 +48,7 @@ from models import draw_electorate, model_text, MODELS
 from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
-from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, FRONT_TOLERANCE
+from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, maximal_lottery, FRONT_TOLERANCE
 import participation as part
 import manipulation as manip
 
@@ -105,6 +105,10 @@ def one_election(job):
                                   ele.voter_weights, ele.cand_weights, getattr(sc, "utility", "exp"))
     m_cand = worst_margins(u)                       # each candidate's worst head-to-head margin
     estats = electorate_stats(u)                    # properties of the electorate, for the report
+    # the maximal lottery of the sincere preferences, a reference point like the random ballot
+    gt = (u[:, :, None] > u[:, None, :]).sum(axis=0)
+    p_ml = maximal_lottery((gt - gt.T).astype(float))
+    estats["U_ml"], estats["WM_ml"] = float(p_ml @ u.sum(axis=0)), float(p_ml @ m_cand)
     # every candidate's total utility and worst margin, for the frontier of what any rule could reach
     estats["U_cands"] = ";".join(f"{x:.6g}" for x in u.sum(axis=0))
     estats["WM_cands"] = ";".join(f"{x:.6g}" for x in m_cand)

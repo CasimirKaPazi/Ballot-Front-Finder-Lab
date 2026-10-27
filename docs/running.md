@@ -136,6 +136,7 @@ Column names are the option names with underscores, except for the options of th
 | fidelity | 2026-10-12 | blank; their sincerity column holds the earlier measure (the report warns) |
 | bcw, p_bcw | 2026-10-12 | blank |
 | split, zero_margins | 2026-10-26 | blank (ties not recorded) |
+| U_ml, WM_ml | 2026-10-26 | blank (no maximal lottery reference point) |
 | manip1, manip2, U_manip1, U_manip2 | 2026-10-17 | blank (manipulation not tested) |
 
 **Renamed methods.** The results files store each method by its name. When a method is renamed, the old name goes into `RENAMED` in methods.py (old name → current name; groups in `RENAMED_GROUPS`), so older runs keep combining with newer ones: `analyze.py` reads old names as the current ones and says so in the report, and the old names still work in `--methods`, `--exclude`, `--show`, `--hide` and `--track`. This is only for a pure rename, with the same rule and the same results. A method whose rule changes gets a new name and no entry, so old and new results are never mixed. A removed method gets no entry either: its rows in old runs stay under their old name. An add-on may not use an old name.

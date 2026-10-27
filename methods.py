@@ -667,6 +667,36 @@ def d_trash(s):
     return _trash(s, place_dist(s["first"], 1), place_dist(-s["last"], 1))
 
 
+def d_cw_else_score_loser(s):
+    """CW else Score loser: the Condorcet winner of the score ballots (equal scores: no preference) if
+    there is one, otherwise the candidate with the lowest score total (ties split). A test of the
+    measures, not a proposal: a Condorcet method where the ballots show a Condorcet winner, as bad as
+    possible where they do not (on coarse score ballots, equal scores hide it in some elections)."""
+    M = margins_of(s)
+    off = ~np.eye(len(M), dtype=bool)
+    cw = np.flatnonzero(((M > 0) | ~off).all(axis=1))
+    if len(cw) == 1:
+        P = np.zeros(len(M))
+        P[cw[0]] = 1.0
+        return P
+    return uniform_max(-s["sum"].astype(float))
+
+
+def d_cl_else_score_winner(s):
+    """CL else Score winner: the Condorcet loser of the score ballots (beaten by every other candidate)
+    if there is one, otherwise the Score winner (ties split). A test of the measures, not a proposal:
+    spatial electorates nearly always have a Condorcet loser, so mostly that candidate; Score only
+    where the ballots show none."""
+    M = margins_of(s)
+    off = ~np.eye(len(M), dtype=bool)
+    cl = np.flatnonzero(((M < 0) | ~off).all(axis=1))
+    if len(cl) == 1:
+        P = np.zeros(len(M))
+        P[cl[0]] = 1.0
+        return P
+    return uniform_max(s["sum"].astype(float))
+
+
 def _trash(s, pw, aw):
     M = margins_of(s)
     P = np.zeros(len(pw))
@@ -1577,6 +1607,8 @@ METHODS = {
     "Random pair runoff": M_("rank", d_random_pair, ("n", "first", "gt")),
     "Anti-plurality": M_("veto", d_sum, ("sum",)),
     "TRASH": M_("rank", d_trash, ("first", "last", "gt")),
+    "CW else Score loser": M_("score", d_cw_else_score_loser, ("sum", "gt")),
+    "CL else Score winner": M_("score", d_cl_else_score_winner, ("sum", "gt")),
     # inverse: tests of the strategy model. Same ballot and count as the original, but the sincere
     # ballot expresses reversed preferences (name the least liked; approve those below the mean; rank
     # upside down), so honest voting elects (nearly) the worst candidate. Voters who learn to reverse
@@ -1597,12 +1629,12 @@ METHODS = {
 # --hide, --track).
 GROUPS = {
     "condorcet": ["Ranked pairs", "Schulze", "Schulze-ER", "Kemeny-Young", "Copeland", "Copeland//Margins",
-                  "Copeland//Margins-ER", "SICT", "Condorcet-random-drop"],
+                  "Copeland//Margins-ER", "SICT"],
     "minimax-family": ["Minimax", "Minimax-ER", "MMWV", "MMPO", "MMPOWV"],
     "condorcet-based": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
     "plurality-based": ["Plurality", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs", "DSC", "DAC"],
     "approval-based": ["Approval", "MDDA", "MAMPO"],
-    "rated": ["Score", "Reciprocal score", "INS", "DMS", "ESR", "Geometric median"],
+    "rated": ["Score", "Reciprocal score", "INS", "DMS", "ESR"],
     # median grade or Bucklin-like: the grade level at which a candidate reaches a majority
     "median-based": ["MJ", "MAV", "MCA"],
     "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "MARS-T", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore", "STLR", "Soft Minimax",
@@ -1611,7 +1643,9 @@ GROUPS = {
     # a real, separate runoff: voters come back and vote between the finalists (model.md, Two-round
     # elections); a class of its own, as the runoff is assumed sincere and turnout unchanged
     "two-round": ["TTR", "Approval runoff", "Approval cond. runoff", "Score runoff"],
-    "references": ["Random pair runoff", "Anti-plurality", "TRASH"],
+    # benchmarks and idealised rules, not proposals (Geometric median and Condorcet-random-drop since 2026-10-26)
+    "references": ["Random pair runoff", "Anti-plurality", "TRASH", "Geometric median", "Condorcet-random-drop",
+                   "CW else Score loser", "CL else Score winner"],
     "inverse": ["Inverse-Plurality", "Inverse-Approval", "Inverse-Minimax", "Inverse-IRV", "Inverse-ER-IRV", "Inverse-TTR",
                 "Inverse-Borda", "Inverse-Score"],
 }
@@ -1718,7 +1752,7 @@ COMPARISONS = {
                  "Minimax-ER", "MMWV", "Schulze", "Schulze-ER", "Copeland//Margins", "Copeland//Margins-ER"],
 }
 
-COMPARISONS["extended"] = COMPARISONS["standard"] + ["ESR", "DMS", "Geometric median", "Soft Minimax",
+COMPARISONS["extended"] = COMPARISONS["standard"] + ["ESR", "DMS", "Soft Minimax",
                                                      "Soft Minimax-40", "MARS-T"]
 
 

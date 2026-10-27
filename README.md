@@ -1,6 +1,6 @@
 # Ballot Front Finder Lab
 
-A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 66 in all (one of them, IDS, as an add-on; more can be added), plus three reference methods and eight test methods. A standard set of 29, the most discussed and the strongest, is what a run uses unless told otherwise. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
+A simulator for comparing single-winner voting methods: plurality, runoffs, IRV, Condorcet methods, score and approval methods and their hybrids, 64 in all (one of them, IDS, as an add-on; more can be added), plus seven reference methods and eight test methods. A standard set of 29, the most discussed and the strongest, is what a run uses unless told otherwise. It asks how good the winner of each method is, not only when everyone votes honestly but also when voters respond strategically to polls, and how honest voters can afford to be under each method.
 
 [Results](https://github.com/CasimirKaPazi/Ballot-Front-Finder-Lab-Results) in a separate repository.
 
@@ -27,8 +27,8 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 ## Features
 
 **Methods** ([methods](docs/methods.md))
-- 66 single-winner methods in ten families: plurality-based (Plurality, IRV and variants, coalition methods), Condorcet (Ranked pairs, Schulze, Kemeny-Young, Copeland, Copeland//Margins, …), the minimax family, Condorcet-based hybrids (Black, Baldwin, Nanson, BTR, Smith//Score, …), approval-based (Approval, MDDA, MAMPO), rated (Score, DMS, ESR, Geometric median, …), median-based (MJ, MAV, MCA), score–pairwise hybrids (STAR, MARS, ARA, 3-2-1, Soft Minimax, …), positional (Borda, Dowdall) and two-round methods with a real, separate runoff (TTR, Approval runoff, Score runoff, …). Ties are counted exactly, as shared winning chances.
-- A standard set of 29, the most discussed methods and the strongest found here, is the default; every other method, family or set can be named. The set `extended` adds the strongest newer methods (35 in all).
+- 64 single-winner methods in ten families: plurality-based (Plurality, IRV and variants, coalition methods), Condorcet (Ranked pairs, Schulze, Kemeny-Young, Copeland, Copeland//Margins, …), the minimax family, Condorcet-based hybrids (Black, Baldwin, Nanson, BTR, Smith//Score, …), approval-based (Approval, MDDA, MAMPO), rated (Score, DMS, ESR, …), median-based (MJ, MAV, MCA), score–pairwise hybrids (STAR, MARS, ARA, 3-2-1, Soft Minimax, …), positional (Borda, Dowdall) and two-round methods with a real, separate runoff (TTR, Approval runoff, Score runoff, …). Ties are counted exactly, as shared winning chances.
+- A standard set of 29, the most discussed methods and the strongest found here, is the default; every other method, family or set can be named. The set `extended` adds the strongest newer methods (34 in all).
 - New methods as add-ons: one Python file in `addons/` with a counting rule; ballots, strategy and measures come with the ballot type. A [tutorial](docs/addons.md) walks through writing one with little Python.
 
 **Electorates** ([model](docs/model.md), Electorates)

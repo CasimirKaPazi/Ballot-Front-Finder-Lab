@@ -733,6 +733,29 @@ assert ties(METHODS["Score"], _Sc, np.array([0.5, 0.5, 0.0])) == {"split": 1, "z
 assert ties(METHODS["Plurality"], METHODS["Plurality"].sincere(u2), np.ones(4) / 4) == {"split": 1, "zero_margins": ""}
 print("ties ok")
 
+# Maximal lottery (metrics.maximal_lottery): the Condorcet winner when there is one; in a cycle
+# A>B by 1, B>C by 3, C>A by 5 the lottery (3, 5, 1) / 9, which no candidate beats in expectation
+from metrics import maximal_lottery
+assert np.allclose(maximal_lottery(np.array([[0, 2, 1], [-2, 0, 3], [-1, -3, 0]], float)), [1, 0, 0])
+_Mc = np.array([[0, 1, -5], [-1, 0, 3], [5, -3, 0]], float)
+assert np.allclose(maximal_lottery(_Mc), np.array([3, 5, 1]) / 9)
+_rg = np.random.default_rng(8)
+for _ in range(30):
+    _ur = _rg.random((_rg.integers(4, 40), _rg.integers(2, 8)))
+    _gt = (_ur[:, :, None] > _ur[:, None, :]).sum(0)
+    _Mr = (_gt - _gt.T).astype(float)
+    _pr = maximal_lottery(_Mr)
+    assert abs(_pr.sum() - 1) < 1e-9 and _pr.min() >= 0 and (_pr @ _Mr).min() > -1e-7
+print("maximal lottery ok")
+# CW else Score loser and CL else Score winner (references, tests of the measures): A beats B and C,
+# C loses to both; in a cycle A>B>C>A there is neither, so the Score loser C or the Score winner A
+_s = {"sum": np.array([10.0, 8.0, 3.0]), "gt": np.array([[0, 3, 4], [2, 0, 5], [1, 0, 0]])}
+check("CW else Score loser, with a Condorcet winner", _methods_mod.d_cw_else_score_loser(_s), [1, 0, 0])
+check("CL else Score winner, with a Condorcet loser", _methods_mod.d_cl_else_score_winner(_s), [0, 0, 1])
+_s["gt"] = np.array([[0, 3, 1], [2, 0, 4], [4, 1, 0]])
+check("CW else Score loser, in a cycle", _methods_mod.d_cw_else_score_loser(_s), [0, 0, 1])
+check("CL else Score winner, in a cycle", _methods_mod.d_cl_else_score_winner(_s), [1, 0, 0])
+
 # Truncated rankings (unranked = 0, tied last) and laziness
 import methods as _mm
 from strategy import mutate as _mutate

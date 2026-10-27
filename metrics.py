@@ -49,6 +49,32 @@ def electorate_stats(u):
             "fav_ratio": float(np.median(u.max(axis=1) / u.min(axis=1))) if u.min() > 0 else ""}
 
 
+def maximal_lottery(M, tol=1e-9):
+    """The maximal lottery for pairwise margins M (M[a, b]: voters preferring a to b minus the reverse):
+    a lottery p over the candidates that no candidate beats in expectation (p @ M >= 0 in every column),
+    the optimal mixed strategy of the symmetric zero-sum game M (Fishburn 1984). With a Condorcet
+    winner it elects that candidate; in a cycle it mixes the candidates of the cycle. Found by support
+    enumeration (smallest supports first): on the support S the lottery makes every candidate of S
+    tie with it (M[S, S]^T p = 0, sum 1), and no candidate outside beats it. With an odd number of voters
+    and strict preferences it is unique; with tied margins the first one found is used."""
+    from itertools import combinations
+    C = len(M)
+    for k in range(1, C + 1):
+        for S in combinations(range(C), k):
+            S = list(S)
+            A = np.vstack([M[np.ix_(S, S)].T, np.ones(k)])
+            b = np.r_[np.zeros(k), 1.0]
+            q, *_ = np.linalg.lstsq(A, b, rcond=None)
+            if np.abs(A @ q - b).max() > 1e-7 or q.min() < -tol:
+                continue
+            p = np.zeros(C)
+            p[S] = np.clip(q, 0, None)
+            p /= p.sum()
+            if (p @ M).min() >= -1e-7 * max(1.0, np.abs(M).max()):
+                return p
+    raise ValueError("no maximal lottery found")      # cannot happen: a symmetric zero-sum game has a solution
+
+
 def election_row(u, P, m):
     """Quantities for one election: u utilities, P method's winner probabilities,
     m worst margins from worst_margins (the same for all methods)."""
