@@ -68,7 +68,7 @@ AXES_SHOWN = ["VSE*", "WME*", "sincerity"]
 NEAR = (1.0, 2.0)          # points: "near the front" if no method is better by this much on both VSE* and WME*
 
 
-OUTPUT_FILES = {"report.md", "methods.csv", "pairs.csv", "conditions.csv", "beatpath.csv", "beatpath.png",
+OUTPUT_FILES = {"report.md", "methods.csv", "pairs.csv", "conditions.csv", "beatpath.csv", "beatpath.png", "beatpath.svg", "beatpath.pdf",
                 "command.txt"}   # what compare.py writes
 
 
@@ -426,6 +426,9 @@ def main():
                          "matrix (default: half of the conditions)")
     ap.add_argument("--min-elections", type=int, default=100,
                     help="conditions (or replicates) with fewer elections are left out and listed (default 100)")
+    ap.add_argument("--format", nargs="+", default=["png"], choices=["png", "svg", "pdf"],
+                    help="file format(s) of the plots; the report links the first (svg and pdf: vector, sharp at any zoom)")
+    ap.add_argument("--dpi", type=int, default=150, help="resolution of png plots (default 150)")
     ap.add_argument("--boot", type=int, default=1000,
                     help="bootstrap replicates per condition (as analyze.py, so both agree on each condition)")
     ap.add_argument("--beat-share", type=float, default=0.5,
@@ -639,6 +642,7 @@ def main():
     if len(order) > 1:
         try:
             import plots
+            plots.FORMATS, plots.DPI = list(dict.fromkeys(a.format)), a.dpi
             plots.beatpath(order, [(A, B, fa) for A, B, fa, _, _ in kept], os.path.join(out, "beatpath.png"),
                            {m: group_of(m) for m in order}, a.beat_share)
             beat_png = True
@@ -727,7 +731,7 @@ def main():
               "so a method is dominated at this level by everything above it along the arrows. Methods of the main "
               "table only.", ""]
         if beat_png:
-            L += ["![clear dominance](beatpath.png)", ""]
+            L += [f"![clear dominance](beatpath.{plots.ext()})", ""]
         L += ["Dominated by none at this level: " + (", ".join(top_layer) or "—") + ".", ""]
         lines = []
         for m in order:
@@ -814,7 +818,7 @@ def main():
     with open(os.path.join(out, "report.md"), "w") as f:
         f.write(an.md_stars("\n".join(L)) + "\n")
     print(f"wrote {out}/: report.md, methods.csv, pairs.csv, conditions.csv, beatpath.csv"
-          + (", beatpath.png" if beat_png else "") + ", command.txt "
+          + (f", beatpath.{a.format[0]}" if beat_png else "") + ", command.txt "
           f"({n_cond} conditions, {len(meth)} methods)")
 
 

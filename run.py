@@ -215,7 +215,7 @@ def out_path(name):
 # instead of having files written into it, or overwritten.
 RUN_FILES = ["elections.csv", "elections.csv.tmp", "summary.csv", "table.txt", "command.txt"]
 SWEEP_FILES = ["command.txt", "elections.csv"]          # elections.csv: sweeps before runs/
-ANALYSIS_FILES = ["report.md", "summary.csv", "command.txt", "*.png"]
+ANALYSIS_FILES = ["report.md", "summary.csv", "command.txt", "*.png", "*.svg", "*.pdf"]
 OWN_DIRS = ["analysis", "analysis-vs-*", "runs"]
 
 

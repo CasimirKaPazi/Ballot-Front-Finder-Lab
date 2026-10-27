@@ -37,6 +37,7 @@ values themselves are the result.
 Outputs in the analysis folder (--out: a bare name goes into output/):
     summary.csv                one row per (condition, method): estimates, intervals, dominated_by
     report.md                  tables per condition, comparisons, plots
+    (plots as .png by default; --format svg or pdf for vector graphics, --dpi for the resolution)
     arrows-<c>.png             per condition: honest -> strategic in the VSE/WME plane, all methods together
     shift-<c>.png              per condition: the same shifts as one row per method (VSE and WME panels)
     sincerity-<c>.png          per condition: VSE* and WME* against sincerity
@@ -835,6 +836,9 @@ def main():
                          "analysis-vs-<first>/ in the last input's folder (the first input is the base). "
                          "A run or sweep folder given here gets the analysis inside it, never over its files")
     ap.add_argument("--boot", type=int, default=1000, help="bootstrap replicates")
+    ap.add_argument("--format", nargs="+", default=["png"], choices=["png", "svg", "pdf"],
+                    help="file format(s) of the plots; the report links the first (svg and pdf: vector, sharp at any zoom)")
+    ap.add_argument("--dpi", type=int, default=150, help="resolution of png plots (default 150)")
     ap.add_argument("--compare", nargs="*", default=[], help='pairs "A:B" for paired differences')
     ap.add_argument("--hide", nargs="*", default=["references", "inverse"],
                     help="methods or groups left out of the scatter plots (they stay in tables and heatmaps); "
@@ -848,6 +852,7 @@ def main():
                     help="methods (or groups) to follow across all conditions: track-<method>.png each")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
+    plots.FORMATS, plots.DPI = list(dict.fromkeys(a.format)), a.dpi
     found = [input_paths(p) for p in a.csv]
     a.csv = [f for files, _ in found for f in files]
     a.out = analysis_folder(a.out, [folder for _, folder in found])
@@ -943,7 +948,7 @@ def main():
         conds_p = [(results[key], dict(zip(PARAMS, key))) for key in keys]
         same = all(k in SAME_ELECTORATES for k in varying)
         for m in select(a.track):
-            fn = "track-" + "".join(ch if ch.isalnum() else "_" for ch in m) + ".png"
+            fn = "track-" + "".join(ch if ch.isalnum() else "_" for ch in m) + "." + plots.ext()
             if plots.track(conds_p, m, varying, PARAM_NAMES, os.path.join(a.out, fn), same, a.errorbars):
                 tracked.append((m, fn))
 
@@ -1016,13 +1021,13 @@ def main():
           "push-over raises a disliked candidate to the top, burial keeps the favourite on top and reverses a "
           "preference below it.", ""]
     if len(results) > 1:
-        L += ["## Across conditions", "", "![axes](axes-heatmap.png)", ""]
+        L += ["## Across conditions", "", f"![axes](axes-heatmap.{plots.ext()})", ""]
         if chains:
             L += ["**Sweeps:** for each parameter varied around the base, the methods' learned values as a chain "
                   "of arrows in the order of the parameter's values (light to dark). Parameters that only affect "
                   "learning start each chain at the honest point; others show the honest values as a dashed chain. "
                   "Parameters changed together (e.g. exits and clones) form one chain.",
-                  ""] + [f"![sweep over {label}](chain-{k}.png)\n" for k, label in chains.items()]
+                  ""] + [f"![sweep over {label}](chain-{k}.{plots.ext()})\n" for k, label in chains.items()]
         if tracked:
             L += ["**Tracked methods:** each method across all conditions, in the VSE*/WME* plane (learned ballots; "
                   "honest values open). With two varied parameters, lines follow one and colour shows the other.", ""]
@@ -1191,17 +1196,17 @@ def main():
                 L.append(f"| {r['methods'][j]} | " + " | ".join(f"{pt(ti[c + '_l'][j])} ({pt(ti[c + '_s'][j])})"
                                                                  for c in ("split", "zero_any", "zero_pairs")) + " |")
             L += [""]
-        L += [f"![strategy arrows](arrows-{r['tag']}.png)", "", f"![strategy shifts](shift-{r['tag']}.png)", "",
-              f"![sincerity](sincerity-{r['tag']}.png)", ""]
+        L += [f"![strategy arrows](arrows-{r['tag']}.{plots.ext()})", "", f"![strategy shifts](shift-{r['tag']}.{plots.ext()})", "",
+              f"![sincerity](sincerity-{r['tag']}.{plots.ext()})", ""]
         if r.get("fid_plot"):
-            L += [f"![fidelity](fidelity-{r['tag']}.png)", ""]
+            L += [f"![fidelity](fidelity-{r['tag']}.{plots.ext()})", ""]
         if r.get("tri_plot"):
             L += ["**Trade-off on the Pareto front:** for each weighting of VSE*, WME* and sincerity (a point of the "
                   "triangle; corners: all weight on one axis), the Pareto method with the highest weighted sum. Each "
                   "axis is stretched to the range the Pareto methods span on it, so the picture shows the trade-offs "
                   "within the front, not their absolute size. Point estimates; the methods hidden in the scatter plots are "
                   "left out, so it is the Pareto front of the methods shown.", "",
-                  f"![trade-off](tradeoff-{r['tag']}.png)", ""]
+                  f"![trade-off](tradeoff-{r['tag']}.{plots.ext()})", ""]
         if a.compare:
             L += ["Paired differences (first minus second), percentage points:", "",
                   "| Pair | " + " | ".join(AXES + EXTRA + ["sincerity"]) + " |", "|---|" + "---|" * len(AXES + EXTRA + ["sincerity"])]

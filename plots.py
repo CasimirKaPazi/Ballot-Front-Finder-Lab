@@ -6,6 +6,7 @@ from blue (sincere) through purple to dark red (much reversed preference). Heatm
 """
 import textwrap
 import zlib
+import os
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -77,8 +78,24 @@ UNREACHABLE = "#ecebe7"
 BOUNDARY = "#a8a7a2"       # line along the edge of every unreachable area
 
 
-REACH = 0.5     # a boundary (100, the frontier) is brought into view only if it lies within this share
+REACH = 0.0     # a boundary (100, the frontier) is brought into view only if it lies within this share
                 # of the data's span beyond the data; further away it would squeeze the methods together
+                # (0 since 2026-10-27: the plots zoom on the methods, boundaries show where they fall in view)
+DOT = 0.81      # dot areas x this (0.9 of the earlier diameter, 2026-10-27)
+FORMATS = ["png"]   # file formats of the plots, the first linked in the reports (analyze.py / compare.py --format)
+DPI = 150           # resolution of raster formats (--dpi)
+
+
+def save(fig, path):
+    """Save a figure in every format of FORMATS: path's extension is replaced by each."""
+    base = os.path.splitext(path)[0]
+    for f in FORMATS:
+        fig.savefig(f"{base}.{f}", dpi=DPI)
+
+
+def ext():
+    """The file extension of the plots the reports link to."""
+    return FORMATS[0]
 
 
 def _pad(ax, frac=0.08, min_span=1.0):
@@ -179,7 +196,7 @@ def _frontier(ax, F, R=None, refs=None, N=None):
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
     for name, (rx_, ry_) in (refs or {}).items():
-        ax.scatter([rx_ * 100], [ry_ * 100], marker="x", s=30, color=INK2, linewidths=1.1, zorder=2.5, clip_on=True)
+        ax.scatter([rx_ * 100], [ry_ * 100], marker="x", s=DOT * 30, color=INK2, linewidths=1.1, zorder=2.5, clip_on=True)
         ax.annotate(name, (rx_ * 100, ry_ * 100), xytext=(4, -4), textcoords="offset points", fontsize=7,
                     color=MUTED, ha="left", va="top", zorder=2.5, annotation_clip=True)
     if F is None or len(F) == 0:
@@ -273,9 +290,9 @@ def arrows(r, path, hide, errorbars=False):
         x1, y1 = r["VSE*"][j] * 100, r["WME*"][j] * 100
         ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
                     arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.1, shrinkA=4, shrinkB=5, mutation_scale=9))
-        ax.scatter([x0], [y0], s=34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
+        ax.scatter([x0], [y0], s=DOT * 34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
         sj = r["sincerity"][j]
-        ax.scatter([x1], [y1], s=64, color=MUTED if np.isnan(sj) else cmap(norm(sj * 100)), edgecolors=MUTED,
+        ax.scatter([x1], [y1], s=DOT * 64, color=MUTED if np.isnan(sj) else cmap(norm(sj * 100)), edgecolors=MUTED,
                    linewidths=0.6, zorder=4)
         anchors.append((x1, y1))
         texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
@@ -296,7 +313,7 @@ def arrows(r, path, hide, errorbars=False):
     cb.outline.set_visible(False)
     fig.tight_layout()
     _repel(ax, texts, anchors)
-    fig.savefig(path, dpi=150)
+    save(fig, path)
     plt.close(fig)
 
 
@@ -312,15 +329,15 @@ def shift(r, path, hide):
                 ax.annotate("", xy=(x1, y), xytext=(x0, y),
                             arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.2, shrinkA=4, shrinkB=5,
                                             mutation_scale=8))
-            ax.scatter([x0], [y], s=34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
-            ax.scatter([x1], [y], s=58, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=4)
+            ax.scatter([x0], [y], s=DOT * 34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
+            ax.scatter([x1], [y], s=DOT * 58, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=4)
         ax.set_xlabel(title)
         ax.grid(axis="y", visible=False)
         _unreachable(ax, "x")
     axs[0].set_yticks(range(len(idx)), names)
     axs[0].set_title(f"What strategy does: honest (open) → learned ballots (filled)\n{r['label']}", loc="left")
     fig.tight_layout()
-    fig.savefig(path, dpi=150)
+    save(fig, path)
     plt.close(fig)
 
 
@@ -334,7 +351,7 @@ def sincerity(r, path, hide):
         for j in idx:
             x, y = r["sincerity"][j] * 100, r[axis][j] * 100
             anchors.append((x, y))
-            ax.scatter([x], [y], s=60, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=3)
+            ax.scatter([x], [y], s=DOT * 60, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=3)
             texts.append(ax.text(x + 0.12, y, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=4))
         ax.set_xlabel("sincerity of learned ballots (%)")
         ax.set_ylabel(name)
@@ -342,7 +359,7 @@ def sincerity(r, path, hide):
         _repel(ax, texts, anchors)
     axs[0].set_title(f"Quality under strategy against sincerity (upper right is best)\n{r['label']}", loc="left")
     fig.tight_layout()
-    fig.savefig(path, dpi=150)
+    save(fig, path)
     plt.close(fig)
 
 
@@ -362,8 +379,8 @@ def fidelity(r, path, hide):
         x1, y1 = r["fidelity"][j] * 100, r["sincerity"][j] * 100
         ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
                     arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.0, shrinkA=4, shrinkB=5, mutation_scale=9))
-        ax.scatter([x0], [y0], s=30, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.1, zorder=3)
-        ax.scatter([x1], [y1], s=60, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=4)
+        ax.scatter([x0], [y0], s=DOT * 30, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.1, zorder=3)
+        ax.scatter([x1], [y1], s=DOT * 60, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=4)
         anchors.append((x1, y1))
         texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
     ax.set_xlabel("fidelity: how well the ballots reproduce the utility differences (%)")
@@ -374,7 +391,7 @@ def fidelity(r, path, hide):
                  f"left: information lost, down: preferences reversed; {r['label']}", loc="left")
     fig.tight_layout()
     _repel(ax, texts, anchors)
-    fig.savefig(path, dpi=150)
+    save(fig, path)
     plt.close(fig)
     return True
 
@@ -476,7 +493,7 @@ def tradeoff(r, path, axes=("VSE*", "WME*", "sincerity"), hide=()):
                                         f"(in brackets); {r['label']}", 110),
              ha="left", va="top", fontsize=8.5, color=INK2)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
-    fig.savefig(path, dpi=150)
+    save(fig, path)
     plt.close(fig)
     return True
 
@@ -518,12 +535,12 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
             lx, ly, hx, hy = series(m)
             if learning_only:
                 pts = [(hx[0], hy[0])] + list(zip(lx, ly))
-                ax.scatter([hx[0]], [hy[0]], s=28, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.1, zorder=3)
+                ax.scatter([hx[0]], [hy[0]], s=DOT * 28, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.1, zorder=3)
             else:
                 pts = list(zip(lx, ly))
                 ax.plot(hx, hy, ls="--", lw=0.8, color="#c4c3be", zorder=1)
                 for i in range(k):
-                    ax.scatter([hx[i]], [hy[i]], s=24, facecolors=SURFACE, edgecolors=shades[i], linewidths=1.1,
+                    ax.scatter([hx[i]], [hy[i]], s=DOT * 24, facecolors=SURFACE, edgecolors=shades[i], linewidths=1.1,
                                zorder=3)
                 # label the honest chain too (grey italics), at its last point, so honest and learned
                 # chains can be told apart when they lie far from each other
@@ -537,7 +554,7 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
                             arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=0.9, shrinkA=3, shrinkB=4,
                                             mutation_scale=7))
             for i in range(k):
-                ax.scatter([lx[i]], [ly[i]], s=40, color=shades[i], edgecolors=SURFACE, linewidths=0.8, zorder=4)
+                ax.scatter([lx[i]], [ly[i]], s=DOT * 40, color=shades[i], edgecolors=SURFACE, linewidths=0.8, zorder=4)
             anchors.append((lx[-1], ly[-1]))
             texts.append(ax.text(lx[-1], ly[-1], m, fontsize=7.5, color=INK2, va="center", zorder=5))
         ax.set_title(g, loc="left", fontsize=10)
@@ -585,7 +602,7 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
         fig.tight_layout(rect=(0, 0, 1, 1 - (0.55 + 0.22 * rows) / H))
     for ax, texts, anchors in labelled:
         _repel(ax, texts, anchors)
-    fig.savefig(path, dpi=150)
+    save(fig, path)
     plt.close(fig)
 
 
@@ -615,7 +632,7 @@ def track(conds, method, varying, names, path, same_electorates, errorbars=False
     # honest points: one if the electorates are the same in every condition, else one per condition
     hon = pts[:1] if same_electorates else pts
     for r, p, j in hon:
-        ax.scatter(*xy(r, j, False), s=34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
+        ax.scatter(*xy(r, j, False), s=DOT * 34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
     if len(varying) == 2:
         k1, k2 = sorted(varying, key=lambda k: -len({p[k] for _, p, _ in pts}))   # lines along k1, colour by k2
         v2 = sorted({p[k2] for _, p, _ in pts}, key=num)
@@ -625,7 +642,7 @@ def track(conds, method, varying, names, path, same_electorates, errorbars=False
             X = [xy(r, j) for r, p, j in line]
             ax.plot([x for x, _ in X], [y for _, y in X], color=shades[v], lw=1.4, zorder=3,
                     label=f"{lab(k2)} {v}")
-            ax.scatter([x for x, _ in X], [y for _, y in X], s=36, color=shades[v], edgecolors=SURFACE,
+            ax.scatter([x for x, _ in X], [y for _, y in X], s=DOT * 36, color=shades[v], edgecolors=SURFACE,
                        linewidths=0.7, zorder=4)
             for (x, y), (r, p, j) in zip(X, line):
                 anchors.append((x, y)); texts.append(ax.text(x, y, p[k1], fontsize=7, color=INK2, va="center", zorder=5))
@@ -637,7 +654,7 @@ def track(conds, method, varying, names, path, same_electorates, errorbars=False
         if len(varying) == 1:
             ax.plot([x for x, _ in X], [y for _, y in X], color=MUTED, lw=1.0, zorder=2)
         for i, ((x, y), (r, p, j)) in enumerate(zip(X, order)):
-            ax.scatter([x], [y], s=40, color=CHAIN(0.2 + 0.8 * i / max(1, len(X) - 1)), edgecolors=SURFACE,
+            ax.scatter([x], [y], s=DOT * 40, color=CHAIN(0.2 + 0.8 * i / max(1, len(X) - 1)), edgecolors=SURFACE,
                        linewidths=0.7, zorder=4)
             t = p[varying[0]] if len(varying) == 1 else r["tag"]
             anchors.append((x, y)); texts.append(ax.text(x, y, t, fontsize=7, color=INK2, va="center", zorder=5))
@@ -661,7 +678,7 @@ def track(conds, method, varying, names, path, same_electorates, errorbars=False
                  + ("; bars: each point's own 95% interval" if errorbars else ""), loc="left")
     fig.tight_layout()
     _repel(ax, texts, anchors)
-    fig.savefig(path, dpi=150)
+    save(fig, path)
     plt.close(fig)
     return True
 
@@ -702,7 +719,7 @@ def axes_heatmap(results, axes, path):
         ax.set_title(f"{axis} (%)", loc="left")
     fig.suptitle("Axis values by condition", x=0.01, ha="left", fontweight="bold")
     fig.tight_layout()
-    fig.savefig(path, dpi=150)
+    save(fig, path)
     plt.close(fig)
 
 
@@ -760,5 +777,5 @@ def beatpath(nodes, edges, path, groups, share):
     handles = [plt.Rectangle((0, 0), 1, 1, facecolor=tint[g], edgecolor=GRID) for g in names]
     ax.legend(handles, names, loc="upper right", fontsize=6, frameon=False, ncol=min(3, len(names)))
     fig.tight_layout(rect=(0, 0.04, 1, 1))
-    fig.savefig(path, dpi=150)
+    save(fig, path)
     plt.close(fig)

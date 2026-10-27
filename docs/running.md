@@ -102,6 +102,8 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | (positional) | | one or more run or sweep folders (or elections CSV files) |
 | `--out` | `analysis/` in the input folder; with several inputs `analysis-vs-<first>/` in the last one | analysis folder (a run or sweep folder named here gets the analysis inside it) |
 | `--boot` | 1000 | bootstrap replicates |
+| `--format` | png | file format(s) of the plots, one or more of png, svg, pdf (`--format png svg` writes both); the report links the first. svg and pdf are vector graphics, sharp at any zoom |
+| `--dpi` | 150 | resolution of png plots |
 | `--compare` | none | pairs `"A:B"` for paired differences |
 | `--hide` | `references` | methods or groups left out of the scatter and chain plots; `--hide` alone shows all |
 | `--show` | all | only these methods or groups in the scatter and sweep plots (overrides `--hide`), e.g. `--show condorcet STAR` |
@@ -198,6 +200,8 @@ python compare.py output/falloff --pairs "ESR:Score" "Score runoff:Minimax"
 | `--min-conditions` | half of the conditions | fewer: listed separately |
 | `--min-elections` | 100 | conditions (or replicates) with fewer elections are left out, and listed in the report |
 | `--boot` | 1000 | bootstrap replicates per condition (as `analyze.py`, so both agree) |
+| `--format` | png | file format(s) of the beatpath plot, one or more of png, svg, pdf (`--format png svg` writes both); the report links the first. svg and pdf are vector graphics, sharp at any zoom |
+| `--dpi` | 150 | resolution of png plots |
 | `--beat-share` | 0.5 | beatpath: an arrow when one method dominates the other in at least this share of the shared conditions |
 | `--depth` | 2 | folder levels searched for runs |
 | `--force-versions` | off | compare mixed simulator versions (stated in the report) |
