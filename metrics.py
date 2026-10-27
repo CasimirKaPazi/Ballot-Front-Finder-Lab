@@ -75,6 +75,75 @@ def maximal_lottery(M, tol=1e-9):
     raise ValueError("no maximal lottery found")      # cannot happen: a symmetric zero-sum game has a solution
 
 
+# Reference points of the VSE/WME plane besides the random ballot, a random candidate and the maximal
+# lottery (columns U_<key>, WM_<key>; since 2026-10-27): rules that see the sincere preferences or the
+# positions, as benchmarks, not proposals
+REF_POINTS = {"cwrb": "Condorcet winner, else random ballot",
+              "cwuw": "Condorcet winner, else utility winner",
+              "pair": "random pair, majority",
+              "median": "nearest the median voter",
+              "mean": "nearest the mean voter"}
+
+
+def _geometric_median(X, steps=100, tol=1e-9):
+    """The point with the smallest total distance to the rows of X (Weiszfeld, from the mean)."""
+    x = X.mean(axis=0)
+    for _ in range(steps):
+        d = np.maximum(np.linalg.norm(X - x, axis=1), 1e-12)
+        nx = (X / d[:, None]).sum(axis=0) / (1 / d).sum()
+        if np.abs(nx - x).max() < tol:
+            return nx
+        x = nx
+    return x
+
+
+def reference_points(u, m, voters, cands, vw=None):
+    """Per election, for each REF_POINTS key: the expected total utility (U_<key>) and worst margin
+    (WM_<key>) of its winner lottery. u: utilities; m: worst margins (worst_margins); voters, cands:
+    positions; vw: the voters' dimension weights (ks models; their mean scales the space, as in
+    show_electorates), or None.
+      cwrb    the Condorcet winner if there is one, else a random voter's favourite (random ballot):
+              what electing the Condorcet winner is worth on its own
+      cwuw    the Condorcet winner if there is one, else the utility winner: the best a rule respecting
+              the Condorcet winner can do
+      pair    two candidates drawn at random, the sincere majority decides (ties half each)
+      median  the candidate nearest the voters' geometric median (the median voter, in several dimensions)
+      mean    the candidate nearest the voters' mean (the utility winner under quadratic utility)"""
+    n, C = u.shape
+    U = u.sum(axis=0)
+    gt = (u[:, :, None] > u[:, None, :]).sum(axis=0)
+    M = gt - gt.T
+    cw = np.flatnonzero((M > 0).sum(axis=1) == C - 1)
+    rb = np.bincount(u.argmax(axis=1), minlength=C) / n
+    uw = (U >= U.max() - 1e-12).astype(float)
+    uw /= uw.sum()
+    one = np.eye(C)[cw[0]] if len(cw) == 1 else None
+    pair = np.zeros(C)
+    for a in range(C):
+        for b in range(a + 1, C):
+            if M[a, b] > 0:
+                pair[a] += 1
+            elif M[a, b] < 0:
+                pair[b] += 1
+            else:
+                pair[a] += 0.5
+                pair[b] += 0.5
+    pair /= pair.sum()
+    w = vw.mean(axis=0) if vw is not None else np.ones(voters.shape[1])
+    V, K = voters * w, cands * w
+
+    def nearest(x):
+        d = np.linalg.norm(K - x, axis=1)
+        p = (d <= d.min() + 1e-12).astype(float)
+        return p / p.sum()
+    lots = {"cwrb": one if one is not None else rb, "cwuw": one if one is not None else uw, "pair": pair,
+            "median": nearest(_geometric_median(V)), "mean": nearest(V.mean(axis=0))}
+    out = {}
+    for k, p in lots.items():
+        out[f"U_{k}"], out[f"WM_{k}"] = float(p @ U), float(p @ m)
+    return out
+
+
 def election_row(u, P, m):
     """Quantities for one election: u utilities, P method's winner probabilities,
     m worst margins from worst_margins (the same for all methods)."""

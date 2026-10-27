@@ -787,6 +787,19 @@ for _ in range(30):
     _pr = maximal_lottery(_Mr)
     assert abs(_pr.sum() - 1) < 1e-9 and _pr.min() >= 0 and (_pr @ _Mr).min() > -1e-7
 print("maximal lottery ok")
+# Further reference points (metrics.reference_points): a
+# Condorcet winner is elected by both CW points; the random pair counts each pair's majority
+from metrics import reference_points
+_u3 = np.array([[1.0, 0.5, 0.0]] * 3 + [[0.0, 1.0, 0.5]] * 2, float)       # B beats A 2:3? no: A 3, B 2 first
+_m3 = worst_margins(_u3)
+_pos = np.array([[0.0], [0.0], [0.0], [1.0], [1.0]])
+_cpos = np.array([[0.0], [1.0], [2.0]])
+_rp = reference_points(_u3, _m3, _pos, _cpos)
+_U3 = _u3.sum(axis=0)
+assert abs(_rp["U_cwrb"] - _U3[0]) < 1e-12 and abs(_rp["U_cwuw"] - _U3[0]) < 1e-12        # A is the Condorcet winner
+assert abs(_rp["U_pair"] - (2 * _U3[0] + _U3[1]) / 3) < 1e-12                              # A, A, B win the 3 pairs
+assert abs(_rp["U_median"] - _U3[0]) < 1e-12 and abs(_rp["U_mean"] - _U3[0]) < 1e-12      # centre at 0.4: nearest A
+print("reference points ok")
 # CW else Score loser and CL else Score winner (references, tests of the measures): A beats B and C,
 # C loses to both; in a cycle A>B>C>A there is neither, so the Score loser C or the Score winner A
 _s = {"sum": np.array([10.0, 8.0, 3.0]), "gt": np.array([[0, 3, 4], [2, 0, 5], [1, 0, 0]])}
@@ -894,7 +907,7 @@ _fixed = one_election({"sc": Scenario(n_voters=21, n_cands=4), "p": {**_jp, "max
                        "names": ["Score-10", "STAR"]})
 _glob = one_election({"sc": Scenario(n_voters=21, n_cands=4), "p": {**_jp, "max_score": 10}, "e": 0, "rounds": [1, 2],
                       "names": ["Score"]})
-_strip = lambda rows, n: [{k: v for k, v in r.items() if k != "method"} for r in rows if r["method"] == n]
+_strip = lambda rows, n: [{k: v for k, v in r.items() if k not in ("method", "Ur_cands")} for r in rows if r["method"] == n]   # Ur_cands: rounded to the run's range
 assert _strip(_fixed, "Score-10") == _strip(_glob, "Score")      # Score-10 at --max-score 5 = Score at --max-score 10
 _mm.set_max_score(5)                                             # one_election sets the run's range
 del METHODS["Score-10"]
@@ -1162,6 +1175,7 @@ assert "2 distinct condition(s)" in _rep and "utility linear" in _rep and "| Min
 with open(os.path.join(_tmp, "comparison", "methods.csv")) as _f:
     assert {r["method"]: r["conditions"] for r in _csv.DictReader(_f)} == {"Score": "2.000", "Minimax": "2.000", "STAR": "2.000"}
 assert os.path.exists(os.path.join(_tmp, "comparison", "beatpath.csv")) and "## Clear dominance (beatpath)" in _rep
+assert os.path.exists(os.path.join(_tmp, "comparison", "method-map.csv")) and "## Map of the methods" in _rep
 # bootstrap draws depend only on the elections (and --seed): the same condition gets the same draws in
 # analyze.py and compare.py, whatever else is analysed, and the order of the rows does not matter
 import analyze as _an

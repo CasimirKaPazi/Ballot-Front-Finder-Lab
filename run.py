@@ -47,8 +47,9 @@ from scenario import Scenario, electorate_positions
 from models import draw_electorate, model_text, MODELS
 from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined
+from ballots import score_ballots
 from strategy import learn, respond, strategy_types, default_poll_size, fidelity
-from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, maximal_lottery, FRONT_TOLERANCE
+from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, maximal_lottery, reference_points, FRONT_TOLERANCE
 import participation as part
 import manipulation as manip
 
@@ -110,12 +111,15 @@ def one_election(job):
     gt = (u[:, :, None] > u[:, None, :]).sum(axis=0)
     p_ml = maximal_lottery((gt - gt.T).astype(float))
     estats["U_ml"], estats["WM_ml"] = float(p_ml @ u.sum(axis=0)), float(p_ml @ m_cand)
+    estats.update(reference_points(u, m_cand, voters, cands, ele.voter_weights))   # further reference points
     # every candidate's total utility and worst margin, for the frontier of what any rule could reach
     estats["U_cands"] = ";".join(f"{x:.6g}" for x in u.sum(axis=0))
     estats["WM_cands"] = ";".join(f"{x:.6g}" for x in m_cand)
     # every candidate's total of the voters' normalized utilities (each voter stretched to 0..1, least to
     # most liked), for the frontier of normalized ballots (analyze.normalized_frontier)
     mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
+    # the same rounded to the score range: the honest score ballots' totals, for the line of rounded ballots
+    estats["Ur_cands"] = ";".join(f"{x:.6g}" for x in score_ballots(u, 0.0).sum(axis=0))
     estats["Un_cands"] = ";".join(f"{x:.6g}" for x in ((u - mn) / np.where(mx - mn > 1e-12, mx - mn, 1)).sum(axis=0))
     # strategic voters: own random stream, the same voters for every method
     # adaptive voters: the next share of the same draw; their place in it is their personal threshold (0..1)

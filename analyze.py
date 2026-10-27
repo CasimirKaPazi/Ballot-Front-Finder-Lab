@@ -56,7 +56,7 @@ from collections import OrderedDict
 import numpy as np
 
 import plots
-from metrics import pareto, FRONT_TOLERANCE
+from metrics import pareto, FRONT_TOLERANCE, REF_POINTS
 from run import out_path, write_command, group_text, strategy_text, cand_text, width_text, check_folder, ANALYSIS_FILES, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
 from models import model_text, MODELS
 from methods import GROUPS, METHODS, select, group_of, sincerity_defined, current_name
@@ -156,6 +156,8 @@ ADDED_COLUMNS = {
     "split": (None, "2026-10-26, ties"),
     "zero_margins": (None, "2026-10-26, ties"),
     "U_ml": (None, "2026-10-26, the maximal lottery as a reference point"),
+    "Ur_cands": (None, "2026-10-27, the line of rounded ballots"),
+    **{f"{a}_{k}": (None, "2026-10-27, further reference points") for k in REF_POINTS for a in ("U", "WM")},
     "campaign": ("0.0", "2026-10-27, campaigns: older runs had none"),
     "risk": ("0", "2026-10-27, risk by satisfaction: older runs used the fixed aggressive share"),
     "risk_tolerance": ("0.1", "2026-10-27, risk by satisfaction (not used by older runs)"),
@@ -329,7 +331,7 @@ def arrays(rows):
     dwm = np.zeros(E)          # per election: WM_best - WM_rb (WME denominator)
     has = np.zeros(E)
     ele = {k: np.full(E, np.nan) for k in ["cw_is_util", "U_cw", "U_best", "fav_ratio", "U_rb", "WM_rb", "U_rand",
-                                         "U_ml", "WM_ml"]}
+                                         "U_ml", "WM_ml"] + [f"{a}_{k}" for k in REF_POINTS for a in ("U", "WM")]}
     cands = [None] * E           # per election: (total utility, worst margin, normalized total or None) of every
                                  # candidate, for the frontier
     for r in rows:
@@ -359,7 +361,8 @@ def arrays(rows):
                 ele[k][i] = float(r[k] or "nan")              # empty without a Condorcet winner
             if r["U_cands"]:
                 cands[i] = (np.array(r["U_cands"].split(";"), float), np.array(r["WM_cands"].split(";"), float),
-                            np.array(r["Un_cands"].split(";"), float) if r.get("Un_cands") else None)
+                            np.array(r["Un_cands"].split(";"), float) if r.get("Un_cands") else None,
+                            np.array(r["Ur_cands"].split(";"), float) if r.get("Ur_cands") else None)
         else:
             A["num_l"][i, j], A["cw_l"][i, j], A["wm_l"][i, j] = num, pcw, nwm
             A["ul"][i, j] = float(r["U_method"])
@@ -431,7 +434,7 @@ def frontier(cands, dens, ele, steps=101):
     pts = []
     for lam in np.linspace(0, 1, steps):
         nu = nw = 0.0
-        for (U, W, _), urb, wrb in zip(cands, ele["U_rb"], ele["WM_rb"]):
+        for (U, W, *_), urb, wrb in zip(cands, ele["U_rb"], ele["WM_rb"]):
             gu, gw = (U - urb) / du, (W - wrb) / dw
             c = np.argmax(lam * gu + (1 - lam) * gw + 1e-12 * gu + 1e-12 * gw)   # break exact ties toward both
             nu, nw = nu + gu[c], nw + gw[c]
@@ -443,7 +446,7 @@ def frontier(cands, dens, ele, steps=101):
     return np.array(out)
 
 
-def normalized_frontier(cands, dens, ele, steps=101):
+def normalized_frontier(cands, dens, ele, steps=101, which=2):
     """What a rule could reach that sees the voters' utilities only as each voter would normalize them
     on a ballot: stretched to 0..1 between their least and most liked candidate, so how much one voter
     cares compared with another is lost (pairwise preferences, and so the worst margins, stay as they
@@ -452,19 +455,28 @@ def normalized_frontier(cands, dens, ele, steps=101):
     real VSE and WME. Points not dominated by another point of the curve, from best WME to best VSE;
     None without the normalized totals (runs from before 2026-10-20). Not a strict bound (a rule could
     in principle infer more from the ballots), but the limit of taking normalized ballots at face value;
-    rounding to the score range comes on top."""
-    if any(c is None or c[2] is None for c in cands):
+    rounding to the score range comes on top.
+    which=3: the same with the normalized utilities rounded to the score range (the honest score
+    ballots, rounded_frontier); there equal totals are frequent, so ties are split evenly, as Score
+    splits them."""
+    if any(c is None or len(c) <= which or c[which] is None for c in cands):
         return None
     du, dw = dens[0].sum(), dens[1].sum()
-    dun = sum(Un.max() - Un.min() for U, W, Un in cands) or 1.0   # one scale for all elections, as du
+    dun = sum(c[which].max() - c[which].min() for c in cands) or 1.0   # one scale for all elections, as du
     pts = []
     for lam in np.linspace(0, 1, steps):
         nu = nw = 0.0
-        for (U, W, Un), urb, wrb in zip(cands, ele["U_rb"], ele["WM_rb"]):
+        for c_, urb, wrb in zip(cands, ele["U_rb"], ele["WM_rb"]):
+            U, W, Un = c_[0], c_[1], c_[which]
             gu, gw = (U - urb) / du, (W - wrb) / dw
             gn = Un / dun
-            c = np.argmax(lam * gn + (1 - lam) * gw + 1e-12 * gn + 1e-12 * gw)
-            nu, nw = nu + gu[c], nw + gw[c]
+            if which == 2:
+                c = np.argmax(lam * gn + (1 - lam) * gw + 1e-12 * gn + 1e-12 * gw)
+                nu, nw = nu + gu[c], nw + gw[c]
+            else:
+                v = lam * gn + (1 - lam) * gw
+                win = v >= v.max() - 1e-12
+                nu, nw = nu + gu[win].mean(), nw + gw[win].mean()
         pts.append((nu, nw))
     pts = np.array(pts)
     keep = [k for k, p in enumerate(pts)
@@ -491,7 +503,7 @@ def region(cands, dens, ele, steps=720):
     t = np.linspace(0, 2 * np.pi, steps, endpoint=False)
     D = np.stack([np.cos(t), np.sin(t)], axis=1)                     # K x 2
     pts = np.zeros((steps, 2))
-    for (U, W, _), urb, wrb in zip(cands, ele["U_rb"], ele["WM_rb"]):
+    for (U, W, *_), urb, wrb in zip(cands, ele["U_rb"], ele["WM_rb"]):
         G = np.stack([(U - urb) / du, (W - wrb) / dw], axis=1)       # C x 2
         c = np.argmax(G @ D.T, axis=0)
         pts += G[c]
@@ -512,12 +524,13 @@ def references(cands, dens, ele):
     if any(c is None for c in cands):
         return None
     du, dw = dens[0].sum(), dens[1].sum()
-    v = sum(U.mean() - urb for (U, W, _), urb in zip(cands, ele["U_rb"])) / du
-    w = sum(W.mean() - wrb for (U, W, _), wrb in zip(cands, ele["WM_rb"])) / dw
+    v = sum(U.mean() - urb for (U, W, *_), urb in zip(cands, ele["U_rb"])) / du
+    w = sum(W.mean() - wrb for (U, W, *_), wrb in zip(cands, ele["WM_rb"])) / dw
     out = {"random ballot": (0.0, 0.0), "random candidate": (float(v), float(w))}
-    if not np.isnan(ele["U_ml"]).any():
-        out["maximal lottery"] = (float((ele["U_ml"] - ele["U_rb"]).sum() / du),
-                                  float((ele["WM_ml"] - ele["WM_rb"]).sum() / dw))
+    for k, name in [("ml", "maximal lottery")] + list(REF_POINTS.items()):
+        if not np.isnan(ele[f"U_{k}"]).any():
+            out[name] = (float((ele[f"U_{k}"] - ele["U_rb"]).sum() / du),
+                         float((ele[f"WM_{k}"] - ele["WM_rb"]).sum() / dw))
     return out
 
 
@@ -541,7 +554,7 @@ def electorate_summary(dens, has, ele):
             "fav": float(np.nanmedian(ele["fav_ratio"])) if not np.isnan(ele["fav_ratio"]).all() else float("nan")}
 
 
-def frontier_text(F, R=None, refs=None, N=None):
+def frontier_text(F, R=None, refs=None, N=None, NR=None, max_score=None):
     if F is None:
         return ""
     n_text = ""
@@ -549,12 +562,21 @@ def frontier_text(F, R=None, refs=None, N=None):
         n_text = (f" With normalized ballots (each voter's utilities stretched between their least and most "
                   f"liked candidate, taken at face value) at most VSE {N[-1, 0] * 100:.1f} (at WME "
                   f"{N[-1, 1] * 100:.1f}); the dotted line in the plots.")
+    if NR is not None and len(NR):
+        n_text += (f" With the normalized ballots rounded to the score range (the honest score ballots"
+                   + (f", 0–{max_score}" if max_score else "") + f") at most VSE {NR[-1, 0] * 100:.1f} (at WME "
+                   f"{NR[-1, 1] * 100:.1f}); the dash-dotted line.")
     rc = refs and refs.get("random candidate")
     rc_text = f" A random candidate (the zero of classical VSE) gives VSE {rc[0] * 100:.1f} / WME {rc[1] * 100:.1f}." if rc else ""
     ml = refs and refs.get("maximal lottery")
     if ml:
         rc_text += (f" The maximal lottery of the sincere preferences (the Condorcet winner if there is one, else a "
                     f"lottery no candidate beats in expectation) gives VSE {ml[0] * 100:.1f} / WME {ml[1] * 100:.1f}.")
+    more = [(name, refs[name]) for name in REF_POINTS.values() if refs and name in refs]
+    if more:
+        rc_text += " Further reference points (VSE / WME): " + "; ".join(
+            f"{name} {p[0] * 100:.1f} / {p[1] * 100:.1f}" for name, p in more) + "."
+
     k = int(np.argmax(F[:, 0] + F[:, 1]))
 
     def rng_(a, b, name):         # the other axis at one end of the region: one value, or a range (ties)
@@ -593,6 +615,7 @@ def analyse_condition(rows, boot, seed=0):
     res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs, "halves": halves, "frontier": frontier(cands, dens, ele),
            "region": region(cands, dens, ele),
            "nfrontier": normalized_frontier(cands, dens, ele),
+           "rfrontier": normalized_frontier(cands, dens, ele, which=3),
            "references": references(cands, dens, ele),
            "electorate": electorate_summary(dens, has, ele),
            "nomination": {k: A[k].mean(axis=0) for k in NOM},
@@ -707,6 +730,7 @@ def label(key, varying, first):
                      for k in diff) or "base"
 
 
+POINT_KEYS = {"rb": "random ballot", "rc": "random candidate", "ml": "maximal lottery", **REF_POINTS}   # --points
 PARAM_NAMES = {"campaign": "campaigns (share planned with)", "risk": "risk by satisfaction",
                "risk_tolerance": "risk tolerance", "group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error", "converge": "convergent rounds",
@@ -839,6 +863,15 @@ def main():
     ap.add_argument("--format", nargs="+", default=["png"], choices=["png", "svg", "pdf"],
                     help="file format(s) of the plots; the report links the first (svg and pdf: vector, sharp at any zoom)")
     ap.add_argument("--dpi", type=int, default=150, help="resolution of png plots (default 150)")
+    ap.add_argument("--overlay", nargs="*", default=["frontier", "guides", "normalized", "rounded", "points"],
+                    choices=["frontier", "guides", "normalized", "rounded", "points"],
+                    help="what the VSE/WME plots draw besides the methods: the reachable frontier and region, the "
+                         "guide lines, the normalized-ballots line, the line of rounded ballots, reference points "
+                         "(default: all; --overlay with "
+                         "no names: none)")
+    ap.add_argument("--points", nargs="+", default=["rb", "rc", "cwrb", "pair", "median", "mean"], choices=list(POINT_KEYS),
+                    help="which reference points to draw (default all but ml and cwuw, which lie next to cwrb; "
+                         "all values are in the report): " + ", ".join(f"{k} = {v}" for k, v in POINT_KEYS.items()))
     ap.add_argument("--compare", nargs="*", default=[], help='pairs "A:B" for paired differences')
     ap.add_argument("--hide", nargs="*", default=["references", "inverse"],
                     help="methods or groups left out of the scatter plots (they stay in tables and heatmaps); "
@@ -853,6 +886,8 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
     plots.FORMATS, plots.DPI = list(dict.fromkeys(a.format)), a.dpi
+    plots.OVERLAY = set(a.overlay)
+    plots.POINTS = {POINT_KEYS[k] for k in a.points}
     found = [input_paths(p) for p in a.csv]
     a.csv = [f for files, _ in found for f in files]
     a.out = analysis_folder(a.out, [folder for _, folder in found])
@@ -940,12 +975,15 @@ def main():
         shown_vals = [" / ".join(str(shown(q, dict(zip(PARAMS, key))[q])) for q in ps) for key in chain_keys]
         name = "-".join(ps)
         chains[name] = " + ".join(PARAM_NAMES.get(q, q) for q in ps)
-        plots.chain([results[key] for key in chain_keys], chains[name], shown_vals,
+        # the line of rounded ballots depends on the score range: not shared across a max-score sweep
+        chain_rs = [dict(results[key], rfrontier=None) if "max_score" in ps else results[key] for key in chain_keys]
+        plots.chain(chain_rs, chains[name], shown_vals,
                     os.path.join(a.out, f"chain-{name}.png"), a.hide, all(q in LEARNING_ONLY for q in ps), GROUPS,
                     all(q in SAME_ELECTORATES for q in ps))
     tracked = []
     if a.track and len(results) > 1:
-        conds_p = [(results[key], dict(zip(PARAMS, key))) for key in keys]
+        conds_p = [(dict(results[key], rfrontier=None) if "max_score" in varying else results[key], dict(zip(PARAMS, key)))
+                   for key in keys]
         same = all(k in SAME_ELECTORATES for k in varying)
         for m in select(a.track):
             fn = "track-" + "".join(ch if ch.isalnum() else "_" for ch in m) + "." + plots.ext()
@@ -1087,7 +1125,8 @@ def main():
               + f", scores 0..{p['max_score']}"
               + (f"; nomination: exits {p['exits']}, clones {p['clones']}" if p['exits'] != '0' or p['clones'] != '0' else "")
               + "." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")
-              + frontier_text(r["frontier"], r["region"], r["references"], r.get("nfrontier")),
+              + frontier_text(r["frontier"], r["region"], r["references"], r.get("nfrontier"), r.get("rfrontier"),
+                              dict(zip(PARAMS, key)).get("max_score")),
               "",
               "**Pareto front** (point estimates: no other method at least as good on all of VSE*, WME*, "
               "sincerity and better on one): "

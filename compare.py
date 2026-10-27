@@ -46,6 +46,8 @@ Outputs (default: RUNS_FOLDER/comparison/):
                      --beat-share of the conditions both were run in (and more often than B dominates
                      A); arrows implied by a chain are left out (matplotlib needed)
     beatpath.csv     every such pair, with its shares and whether the plot shows its arrow
+    method-map.png   the map of the methods: how often two methods elect different winners, honest and
+                     learned, laid out in two dimensions (method-map.csv: the coordinates)
     command.txt      the command
 """
 import argparse
@@ -69,6 +71,7 @@ NEAR = (1.0, 2.0)          # points: "near the front" if no method is better by 
 
 
 OUTPUT_FILES = {"report.md", "methods.csv", "pairs.csv", "conditions.csv", "beatpath.csv", "beatpath.png", "beatpath.svg", "beatpath.pdf",
+                "method-map.csv", "method-map.png", "method-map.svg", "method-map.pdf",
                 "command.txt"}   # what compare.py writes
 
 
@@ -338,7 +341,14 @@ def analyse_unit(parts, boot, seed=0):
     v, w = vals["VSE*"] * 100, vals["WME*"] * 100
     near = {d: np.array([not np.any((v >= v[i] + d) & (w >= w[i] + d)) for i in range(M)]) for d in NEAR}
     seeds = sorted({int(c // 10_000_000) for c in codes})
-    return {"methods": methods, "elections": E, "vals": vals, "dom": dom, "better": better,
+    # for the method map: per pair of (method, honest or learned), the share of elections in which their
+    # winners differ (judged by the winner's total utility: different winners differ in it)
+    S = np.concatenate([A["num_s"], A["num_l"]], axis=1)              # E x 2M
+    tol = 1e-9 * max(1.0, float(np.nanmax(np.abs(S))) if S.size else 1.0)
+    differ = np.zeros((S.shape[1], S.shape[1]))
+    for i in range(S.shape[1]):
+        differ[i] = np.mean(np.abs(S - S[:, [i]]) > tol, axis=0)
+    return {"methods": methods, "elections": E, "differ": differ, "vals": vals, "dom": dom, "better": better,
             "pareto": par, "near": near, "cover": cover, "seeds": [str(x) for x in seeds],
             "files": sorted({p.file.split("/")[0] for p in parts})}
 
@@ -550,6 +560,51 @@ def main():
             u["label"] += f" (replicate: {u['elections']} elections, seed {', '.join(u['seeds'])})"
     n_cond = len(reps)
 
+    # the method map: disagreement averaged over the conditions (each counting once, as above)
+    names_map = sorted(keep)
+    Mn = len(names_map)
+    num, den = np.zeros((2 * Mn, 2 * Mn)), np.zeros((2 * Mn, 2 * Mn))
+    for u in us:
+        idx = [names_map.index(m) for m in u["methods"] if m in names_map]
+        loc = [j for j, m in enumerate(u["methods"]) if m in names_map]
+        both = np.r_[idx, np.array(idx) + Mn].astype(int)
+        lb = np.r_[loc, np.array(loc) + len(u["methods"])].astype(int)
+        w = np.array([[weight(u, u["methods"][a % len(u["methods"])], u["methods"][b % len(u["methods"])])
+                       for b in lb] for a in lb])
+        num[np.ix_(both, both)] += w * u["differ"][np.ix_(lb, lb)]
+        den[np.ix_(both, both)] += w
+    with np.errstate(invalid="ignore"):
+        Dmap = num / den
+    map_png = False
+    ok = [m for i, m in enumerate(names_map) if not np.isnan(Dmap[i, :Mn]).any()]
+    if len(ok) >= 3:
+        sel = [names_map.index(m) for m in ok]
+        sel2 = sel + [i + Mn for i in sel]
+        Dm = Dmap[np.ix_(sel2, sel2)]
+        Dm = np.where(np.isnan(Dm), np.nanmean(Dm), Dm)
+        Dm = (Dm + Dm.T) / 2
+        np.fill_diagonal(Dm, 0)
+        Hc = np.eye(len(Dm)) - 1.0 / len(Dm)
+        Gm = -0.5 * Hc @ (Dm ** 2) @ Hc                            # classical multidimensional scaling
+        ev, evec = np.linalg.eigh(Gm)
+        top = np.argsort(ev)[::-1][:2]
+        XY = evec[:, top] * np.sqrt(np.maximum(ev[top], 0))
+        expl = float(np.maximum(ev[top], 0).sum() / np.maximum(ev, 0).sum()) if np.maximum(ev, 0).sum() > 0 else float("nan")
+        with open(os.path.join(out, "method-map.csv"), "w", newline="") as f:
+            wr = csv.writer(f)
+            wr.writerow(["method", "group", "x_honest", "y_honest", "x_learned", "y_learned"])
+            for i, m in enumerate(ok):
+                wr.writerow([m, group_of(m), f"{XY[i, 0]:.4f}", f"{XY[i, 1]:.4f}", f"{XY[i + len(ok), 0]:.4f}",
+                             f"{XY[i + len(ok), 1]:.4f}"])
+        try:
+            import plots
+            plots.FORMATS, plots.DPI = list(dict.fromkeys(a.format)), a.dpi
+            plots.method_map(ok, XY[:len(ok)], XY[len(ok):], {m: group_of(m) for m in ok},
+                             os.path.join(out, "method-map.png"), expl)
+            map_png = True
+        except ImportError:
+            pass
+
     # per method
     meth = OrderedDict()
     for m in sorted(keep):
@@ -739,6 +794,16 @@ def main():
             if down:
                 lines.append(f"- **{m}** → " + ", ".join(f"{B} ({fa:.0%})" for B, fa in down))
         L += (lines or ["- No pair reaches this share."]) + [""]
+
+    if map_png:
+        L += ["## Map of the methods", "",
+              "How alike the methods are in what they do: the distance between two methods is the share of elections "
+              "in which they elect different winners, averaged over the conditions (each counting once). The map "
+              "lays these distances out in two dimensions (classical multidimensional scaling) with honest (open) "
+              "and learned ballots (filled) in one layout, an arrow from each method's honest to its strategic "
+              f"behaviour. The two dimensions show {expl:.0%} of the spread; methods close together elect the same "
+              "winner in most elections, whatever their family. Coordinates in method-map.csv.", "",
+              f"![map of the methods](method-map.{a.format[0]})", ""]
 
     # exceptions: where the usual outcome flips
     def sentences(A, B):

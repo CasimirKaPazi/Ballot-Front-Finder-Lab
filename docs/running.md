@@ -104,6 +104,8 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--boot` | 1000 | bootstrap replicates |
 | `--format` | png | file format(s) of the plots, one or more of png, svg, pdf (`--format png svg` writes both); the report links the first. svg and pdf are vector graphics, sharp at any zoom |
 | `--dpi` | 150 | resolution of png plots |
+| `--overlay` | frontier guides normalized rounded points | what the VSE/WME plots draw besides the methods; no names: only the methods ([analysis.md](analysis.md), Reachable region) |
+| `--points` | rb rc cwrb pair median mean | which reference points to draw, of rb, rc, ml, cwrb, cwuw, pair, median, mean; ml and cwuw are left out by default since they lie next to cwrb (the report gives all values) |
 | `--compare` | none | pairs `"A:B"` for paired differences |
 | `--hide` | `references` | methods or groups left out of the scatter and chain plots; `--hide` alone shows all |
 | `--show` | all | only these methods or groups in the scatter and sweep plots (overrides `--hide`), e.g. `--show condorcet STAR` |
@@ -142,6 +144,7 @@ Column names are the option names with underscores, except for the options of th
 | bcw, p_bcw | 2026-10-12 | blank |
 | split, zero_margins | 2026-10-26 | blank (ties not recorded) |
 | U_ml, WM_ml | 2026-10-26 | blank (no maximal lottery reference point) |
+| U_/WM_ cwrb, cwuw, pair, median, mean; Ur_cands | 2026-10-27 | blank (no further reference points, no line of rounded ballots) |
 | campaign, risk, risk_tolerance; camp_follow, camp_top, bold | 2026-10-27 | read as 0, 0 and 0.1 (no campaigns, the fixed aggressive split); the three outputs blank |
 | manip1, manip2, U_manip1, U_manip2 | 2026-10-17 | blank (manipulation not tested) |
 
@@ -188,7 +191,8 @@ python compare.py output/falloff --pairs "ESR:Score" "Score runoff:Minimax"
 - **The report** (`comparison/report.md`): the conditions, named by what differs from the defaults of `run.py`; per method the share of its conditions in which it is undominated, on the Pareto front and near the front, its means and its worst condition; a matrix of who dominates whom among the leading methods (`--top`, default 12; only methods run in at least half the conditions, `--min-conditions`, the others are listed separately); and the **exceptions**: for pairs of leading methods where each is ahead somewhere, how often each is, and in which conditions the less usual outcome happens, with the settings those conditions share. Pairs asked for with `--pairs "A:B"` get a section of their own (**Requested pairs**, in the order given), each with a line also when there is no clear difference, when the two were never run together, or when one is not among the compared methods. The names are checked before any data is read; a misspelled one stops the comparison with the closest names as suggestions.
 - **Progress and memory:** the terminal shows the three steps (reading, analysing each condition, the report), each file and condition as it is done, and every million rows of a large file. Each file is read once and only the columns the comparison needs are kept, as compact numbers (about 70 bytes per row instead of every column), so several gigabytes of results fit in a few hundred megabytes of memory; in a test, 600,000 rows (0.34 GB) took 12 seconds and 350 MB.
 - **Clear dominance (beatpath):** `beatpath.png` draws the methods of the main table in layers, with an arrow from A down to B when A dominates B in at least half of the conditions both were run in (`--beat-share`) and more often than B dominates A. Arrows implied by a chain of others are left out, so the top layer holds the methods nobody dominates at that level, and each method sits below the lowest one that dominates it. The report lists the arrows with their shares.
-- **Tables:** `methods.csv`, `pairs.csv` (every ordered pair: shared conditions, clearly better per axis, dominates, and in which conditions), `conditions.csv`, `beatpath.csv` (every pair at the beatpath share, and whether its arrow is drawn).
+- **Map of the methods:** `method-map.png` places every method so that methods electing the same winner in most elections sit close together: the distance is the share of elections in which two methods elect different winners, averaged over the conditions (each counting once), laid out in two dimensions by multidimensional scaling. Honest (open) and learned ballots (filled) share one layout, with an arrow from each method's honest to its strategic behaviour, so the map shows both the families as the results see them and how strategy moves the methods. The title gives how much of the distances two dimensions show.
+- **Tables:** `methods.csv`, `pairs.csv` (every ordered pair: shared conditions, clearly better per axis, dominates, and in which conditions), `conditions.csv`, `beatpath.csv` (every pair at the beatpath share, and whether its arrow is drawn), `method-map.csv` (the coordinates of the map of the methods).
 - The averages describe the collection of runs in the folder, not all possible electorates: which conditions are in it decides what "on average" means, so the report lists them all.
 
 | Flag | Default | |
