@@ -76,6 +76,9 @@ def main():
     ap.add_argument("--poll-error", type=float, nargs="+", default=[2.0])
     ap.add_argument("--aggressive", type=float, nargs="+", default=[0.5])
     ap.add_argument("--lazy", type=float, nargs="+", default=[0.0])
+    ap.add_argument("--campaign", type=float, nargs="+", default=[0.0])
+    ap.add_argument("--risk", type=int, nargs="+", default=[0], choices=[0, 1])
+    ap.add_argument("--risk-tolerance", type=float, nargs="+", default=[0.1])
     ap.add_argument("--converge", type=int, nargs="+", default=[0])
     ap.add_argument("--seeds", type=int, nargs="+", default=[1])
     ap.add_argument("--workers", type=int, default=None)
@@ -121,7 +124,7 @@ def main():
     if skipped:
         grid = [p for p in grid if valid_combination(p)]
         print(f"skipped {len(skipped)} combination(s) that cannot run (--strategic + --adaptive above 1, "
-              "or --adaptive with --converge)")
+              "or --adaptive, --campaign or --risk with --converge)")
     # Conditions that differ only in the number of poll rounds come from one run (strategy.respond):
     # merge them, keeping the order of first appearance.
     runs = {}

@@ -733,6 +733,46 @@ assert ties(METHODS["Score"], _Sc, np.array([0.5, 0.5, 0.0])) == {"split": 1, "z
 assert ties(METHODS["Plurality"], METHODS["Plurality"].sincere(u2), np.ones(4) / 4) == {"split": 1, "zero_margins": ""}
 print("ties ok")
 
+# Campaigns (docs/campaigns.md; strategy._move_ballots, _campaigns, _answer with promises)
+import strategy as _stc
+_methods_mod.set_voter_lazy(None); _methods_mod.set_voter_approval(None)
+# the move "W above X" for a voter A 1.0, B 0.7, X 0.3, W 0.0 on 0..5 scores: W lifted to just above X,
+# which rounds to a tie at the bottom (half a vote less for X over W)
+_mv = _stc._move_ballots(METHODS["Score"], np.array([[1.0, 0.7, 0.3, 0.0]]), 3, 2)
+assert _mv[0].tolist() == [5, 3, 0, 0], _mv
+# rankings: X just above Y; the Inverse-* ballot too (read the ordinary way)
+_ur = np.array([[0.9, 0.6, 0.3, 0.1]])
+_r = _stc._move_ballots(METHODS["Borda"], _ur, 3, 1)[0]
+assert _r[3] > _r[1] and _r[0] > _r[3], _r
+_ri = _stc._move_ballots(METHODS["Inverse-Borda"], _ur, 0, 3)[0]
+assert _ri[0] > _ri[3], _ri
+# two-round ballots: only the round-1 marks follow the campaign, the runoff ranking stays sincere
+_sr = METHODS["Score runoff"]
+assert np.array_equal(np.mod(_stc._move_ballots(_sr, _ur, 3, 1), 4), np.mod(_sr.sincere(_ur), 4))
+# a Condorcet loser winning (CL else Score winner): the Score winner A recommends a move that, with
+# half its audience following, removes the loser's defeat, so A wins
+_uc = np.array([[1, .6, .3, 0]] * 3 + [[.2, 1, .5, 0]] * 2 + [[.3, .5, 1, 0]] + [[.5, .2, 0, .1]] * 3, float)
+_mc = METHODS["CL else Score winner"]
+_Bc = _mc.sincere(_uc)
+check("CL else Score winner, toy profile: the loser D wins", _mc.tally(_Bc), [0, 0, 0, 1])
+_Fc = _mc.features(_Bc)
+_Tc = np.repeat(_Fc.sum(axis=0)[None], 5, axis=0)
+_cu = np.array([[1, .5, .3, .1], [.5, 1, .4, .1], [.3, .4, 1, .1], [.1, .1, .1, 1]])
+_rc = {c: (mv, P) for c, mv, P in _stc._campaigns(_mc, _uc, _Bc, _Fc, _Tc, np.zeros((5, 9), int),
+                                                     _mc.decide_many(_Tc, 4), 3, 0, 0.5, _cu)}
+assert 0 in _rc and np.allclose(_rc[0][1].mean(axis=0), [1, 0, 0, 0]), _rc
+# the choice: careful voters ignore promises; bold voters take a costless recommendation over an
+# exaggeration that gains as little, and accept a small loss within their tolerance
+_g = {0: 0.0, 1: 0.0, 2: -0.05}
+_gain = lambda b: _g[int(b[0])]
+_c3 = [np.array([0.0]), np.array([1.0]), np.array([2.0])]
+_rng0 = np.random.default_rng(0)
+assert _stc._answer(_gain, "fav", np.array([9.0]), _c3, 0, _rng0, eager=False, promises=[None, 0.3, 0.5]) is None
+assert _stc._answer(_gain, "fav", np.array([9.0]), _c3, 0, _rng0, eager=True, promises=[None, 0.3, None])[0] == 1
+assert _stc._answer(_gain, "fav", np.array([9.0]), _c3[2:], 0, _rng0, eager=True, promises=[0.5]) is None
+assert _stc._answer(_gain, "fav", np.array([9.0]), _c3[2:], 0, _rng0, eager=True, tol=0.1, promises=[0.5])[0] == 2
+print("campaigns ok")
+
 # Maximal lottery (metrics.maximal_lottery): the Condorcet winner when there is one; in a cycle
 # A>B by 1, B>C by 3, C>A by 5 the lottery (3, 5, 1) / 9, which no candidate beats in expectation
 from metrics import maximal_lottery

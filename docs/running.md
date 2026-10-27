@@ -70,6 +70,9 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--samples` | 5 | polls per round (they stand for the uncertainty; 10 until 2026-10-26); with `--converge`, bootstrap resamples per round |
 | `--poll-error` | 2 | voters treat polls as this many times less precise than their sampling error |
 | `--aggressive` | 0.5 | share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) only when the polls show a gain (poll rounds only) |
+| `--campaign` | 0 (off) | poll rounds, experimental: above 0, every candidate recommends a move each round, planned with this share of its audience following (0.5 suggested); bold (aggressive) voters may follow ([campaigns.md](campaigns.md)) |
+| `--risk` | 0 | poll rounds, experimental: 1 = each voter is careful or bold by their satisfaction with the polls and a personal threshold, instead of the fixed `--aggressive` split ([campaigns.md](campaigns.md)) |
+| `--risk-tolerance` | 0.1 | with `--risk 1`: how much loss bold voters accept, per unit of their shortfall below their threshold |
 | `--lazy` | 0 | laziness of honest ballots, 0–1: each voter's cut is drawn between 0 and this (see [model.md](model.md), Truncation and laziness) |
 | `--poll-size` | 0 | voters per poll; 0 = half the electorate, rounded to an odd number |
 | `--search` | 10 | random ballot changes a group tries per poll round, after the naive exaggerations |
@@ -137,6 +140,7 @@ Column names are the option names with underscores, except for the options of th
 | bcw, p_bcw | 2026-10-12 | blank |
 | split, zero_margins | 2026-10-26 | blank (ties not recorded) |
 | U_ml, WM_ml | 2026-10-26 | blank (no maximal lottery reference point) |
+| campaign, risk, risk_tolerance; camp_follow, camp_top, bold | 2026-10-27 | read as 0, 0 and 0.1 (no campaigns, the fixed aggressive split); the three outputs blank |
 | manip1, manip2, U_manip1, U_manip2 | 2026-10-17 | blank (manipulation not tested) |
 
 **Renamed methods.** The results files store each method by its name. When a method is renamed, the old name goes into `RENAMED` in methods.py (old name → current name; groups in `RENAMED_GROUPS`), so older runs keep combining with newer ones: `analyze.py` reads old names as the current ones and says so in the report, and the old names still work in `--methods`, `--exclude`, `--show`, `--hide` and `--track`. This is only for a pure rename, with the same rule and the same results. A method whose rule changes gets a new name and no entry, so old and new results are never mixed. A removed method gets no entry either: its rows in old runs stay under their old name. An add-on may not use an old name.

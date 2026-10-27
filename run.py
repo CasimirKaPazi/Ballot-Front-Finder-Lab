@@ -88,6 +88,7 @@ def one_election(job):
     adapt = p.get("adaptive", 0.0)
     exits, clones, poll_size, poll_error = p["exits"], p["clones"], p["poll_size"], p["poll_error"]
     search, converge, aggr, start = p["search"], p["converge"], p["aggressive"], p["start"]
+    phi, risky = p.get("campaign", 0.0), bool(p.get("risk", 0))
     set_max_score(p["max_score"])                   # per process: workers do not share module state
     set_lazy(p.get("lazy", 0.0))                    # laziness (methods.set_lazy)
     rng = np.random.default_rng([seed, e])
@@ -123,6 +124,12 @@ def one_election(job):
     adaptive = personal_thresholds(draw, share, adapt)
     # aggressive strategic voters (exaggerate when it cannot hurt) vs kind ones: own stream, same for every method
     aggressive = np.random.default_rng([seed, e, zlib.crc32(b"aggressive")]).random(len(u)) < aggr
+    # --risk: each voter's personal risk threshold (own stream, the same for every method; docs/campaigns.md)
+    risk = ({"threshold": np.random.default_rng([seed, e, zlib.crc32(b"risk")]).random(len(u)),
+             "kappa": p.get("risk_tolerance", 0.1)} if risky else None)
+    # --campaign: candidates' utilities for every candidate (their own preferences), as in nomination
+    cu_all = (clone_setup(voters, cands, sc.width, np.random.default_rng([seed, e, zlib.crc32(b"clones")]),
+                          ele.voter_weights, ele.cand_weights, getattr(sc, "utility", "exp"))[1] if phi > 0 else None)
     out = []
     for name in names:
         m = METHODS[name]
@@ -130,6 +137,7 @@ def one_election(job):
             # Strategic nomination (nomination.py): the field the voters face. Without it, the original field.
             # Results are always judged on the original field (a clone's win counts as its original's).
             uf, back = u, (lambda P: P)
+            orig = np.arange(C)                       # the original candidate of each field entry
             nstats = {"nom_exits": 0, "nom_clones": 0, "nom_settled": 1, "nom_moves": 0, "nom_changed": 0}
             if nominating:
                 # the candidates' order of moves is a property of the election: the same stream for every
@@ -138,6 +146,7 @@ def one_election(job):
                 field, st = nominate(m, u, u_clone, cu, nrng, exits, clones)
                 ents = field.entries()
                 uf, back = utilities(ents, u, u_clone), (lambda P, ents=ents: to_original(P, ents, C))
+                orig = np.array([d for d, _ in ents])
             P_h = back(m.honest(uf))
             if nominating:
                 nstats = {**st, "nom_changed": int(np.abs(P_h - m.honest(u)).sum() > 1e-9)}
@@ -157,27 +166,34 @@ def one_election(job):
                 perm = np.random.default_rng([seed, e, zlib.crc32(b"relabel")]).permutation(C)
                 B0 = np.empty_like(dummy[name])
                 B0[:, perm] = dummy[name]
-            act = {}
+            act, cst = {}, {}
+            camp = {"share": phi, "cand_u": cu_all[np.ix_(orig, orig)]} if phi > 0 else None
             if converge > 0:     # convergent learning does not use rounds: one result for every rounds value
                 res = [learn(m, uf, mrng, converge, samples, group_cap(group_size, len(u)), strategic)] * len(rounds)
             else:                # all requested numbers of poll rounds from one run (see strategy.respond)
                 act = {}
                 res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
                               poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0,
-                              adaptive=adaptive, activated=act)
+                              adaptive=adaptive, activated=act, campaign=camp, risk=risk, cstats=cst)
             sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
             sincere_row.update(ties(m, m.sincere(uf), P_h))
             sincere_row.update(manip.manipulation(m, m.sincere(uf), uf, u, back) if manipulating else manip.NAN)
             for r, (B, settled, sin) in zip(rounds, res):
                 P_l = back(m.tally(B))
-                out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row})
+                out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row,
+                            "camp_follow": "", "camp_top": "", "bold": ""})
+                cs_r = cst.get(r, {})
                 out.append({"rounds": r, "election": e, "method": name, "ballots": "learned",
                             **election_row(u, P_l, m_cand), **estats, **ballot_condorcet(m, B, u, back, P_l),
                             **ties(m, B, P_l),
                             "sincerity": sin if defined else "",
                             "fidelity": float(fidelity(m, B, uf).mean()) if defined else "",
                             "settled": int(settled), "adapted": act[r] if adaptive is not None else "",
-                            **strategy_types(B, m.pref(uf)), **nstats, **check(B), **manip.NAN})
+                            **strategy_types(B, m.pref(uf)), **nstats, **check(B), **manip.NAN,
+                            # campaigns and risk (docs/campaigns.md): blank when off
+                            "camp_follow": cs_r.get("follow", "") if camp else "",
+                            "camp_top": (int(orig[cs_r["top"]]) if cs_r.get("top", -1) >= 0 else -1) if camp and cs_r else "",
+                            "bold": cs_r.get("bold", "") if risk is not None else ""})
     set_voter_lazy(None)
     set_voter_approval(None)
     return out
@@ -274,7 +290,8 @@ def resolve_adaptive(p):
 def valid_combination(p):
     """A condition the simulation can run: shares of strategic and adaptive voters within 1, and no
     adaptive voters with convergent learning (sweep.py skips the others)."""
-    return p["strategic"] + p["adaptive"] <= 1 + 1e-9 and not (p["adaptive"] > 0 and p["converge"] > 0)
+    return (p["strategic"] + p["adaptive"] <= 1 + 1e-9 and not (p["adaptive"] > 0 and p["converge"] > 0)
+            and not ((p.get("campaign", 0) > 0 or p.get("risk", 0)) and p["converge"] > 0))
 
 
 def check_params(a, error):
@@ -314,6 +331,14 @@ def check_params(a, error):
         error("--start previous needs the original field: not with --exits or --clones")
     if "previous" in vals("start") and any(vals("converge")):
         error("--start previous is for poll rounds, not --converge")
+    if any(v < 0 or v > 1 for v in vals("campaign")):
+        error("--campaign must be between 0 (off) and 1")
+    if any(v < 0 for v in vals("risk_tolerance")):
+        error("--risk-tolerance must be 0 or more")
+    if (max(vals("campaign")) > 0 or max(vals("risk")) > 0) and min(vals("converge")) > 0:
+        error("--campaign and --risk are for poll rounds, not --converge")
+    if (max(vals("campaign")) > 0 or max(vals("risk")) > 0) and "previous" in vals("start"):
+        error("--campaign and --risk are not available with --start previous yet")
 
 
 def cand_text(disp, shift):
@@ -331,13 +356,18 @@ def width_text(p):
 
 def strategy_text(p, n):
     """One-line description of the strategy model of a run (p: namespace or dict of parameters)."""
-    g = (lambda k: p[k]) if isinstance(p, dict) else (lambda k: getattr(p, k))
+    g0 = (lambda k: p[k]) if isinstance(p, dict) else (lambda k: getattr(p, k))
+    g = lambda k: g0(k) if k not in LATER_PARAMS else (p.get(k, LATER_PARAMS[k]) if isinstance(p, dict)
+                                                        else getattr(p, k, LATER_PARAMS[k]))
     if int(g("converge")) > 0:
         return (f"convergent learning {g('converge')} rounds x {g('samples')} poll samples, "
                 f"group size {group_text(g('group_size'))}")
     ps = int(g("poll_size")) or default_poll_size(int(n))
     return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
-            f"search {g('search')}, aggressive share {g('aggressive')}"
+            f"search {g('search')}, "
+            + (f"risk by satisfaction (tolerance {g('risk_tolerance')})" if int(g("risk"))
+               else f"aggressive share {g('aggressive')}")
+            + (f", campaigns (planned with {g('campaign')} of the audience)" if float(g("campaign")) > 0 else "")
             + (f", laziness {g('lazy')}" if float(g("lazy")) > 0 else "")
             + ("; first poll from a previous election" if g("start") == "previous" else ""))
 
@@ -364,7 +394,10 @@ def group_text(g):
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "utility", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
           "strategic", "adaptive", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
-          "start", "seed"]
+          "start", "seed", "campaign", "risk", "risk_tolerance"]
+# Run parameters added later, with the value that gives the earlier behaviour: filled in where a caller
+# leaves them out (simulate), so callers written before them keep working
+LATER_PARAMS = {"campaign": 0.0, "risk": 0, "risk_tolerance": 0.1}
 
 
 def previous_election(args):
@@ -448,6 +481,7 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     workers: processes (None: one per core); 0: no worker processes, everything in this one.
     Shows progress (see Progress) unless progress is False. Returns the new rows with p as columns."""
     names = names or list(METHODS)
+    p = {**LATER_PARAMS, **p}
     rounds = list(p["rounds"]) if isinstance(p["rounds"], (list, tuple)) else [p["rounds"]]
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"],
                   p["cand_dispersion"], p["cand_shift"], p.get("model", "clusters"), p.get("ks_alpha", 1.5),
@@ -712,6 +746,14 @@ def parser():
     ap.add_argument("--aggressive", type=float, default=0.5,
                     help="share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) "
                          "only when the polls show a gain (poll rounds only)")
+    ap.add_argument("--campaign", type=float, default=0.0,
+                    help="poll rounds: 0 = off; above 0, every candidate recommends a move each round, planned with "
+                         "this share of its audience following (e.g. 0.5; docs/campaigns.md)")
+    ap.add_argument("--risk", type=int, default=0, choices=[0, 1],
+                    help="poll rounds: 1 = each voter is careful or bold by their satisfaction with the polls, "
+                         "instead of the fixed --aggressive split (docs/campaigns.md)")
+    ap.add_argument("--risk-tolerance", type=float, default=0.1,
+                    help="with --risk 1: how much loss bold voters accept, per unit of their shortfall (κ)")
     ap.add_argument("--lazy", type=float, default=0.0,
                     help="laziness of honest ballots, 0..1: each voter has a cut drawn between 0 and this, and ranks, "
                          "approves or scores only candidates whose utility, stretched to 0..1 between least and most "

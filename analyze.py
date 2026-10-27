@@ -155,6 +155,12 @@ ADDED_COLUMNS = {
     "split": (None, "2026-10-26, ties"),
     "zero_margins": (None, "2026-10-26, ties"),
     "U_ml": (None, "2026-10-26, the maximal lottery as a reference point"),
+    "campaign": ("0.0", "2026-10-27, campaigns: older runs had none"),
+    "risk": ("0", "2026-10-27, risk by satisfaction: older runs used the fixed aggressive share"),
+    "risk_tolerance": ("0.1", "2026-10-27, risk by satisfaction (not used by older runs)"),
+    "camp_follow": (None, "2026-10-27, campaigns"),
+    "camp_top": (None, "2026-10-27, campaigns"),
+    "bold": (None, "2026-10-27, risk by satisfaction"),
     "WM_ml": (None, "2026-10-26, the maximal lottery as a reference point"),
 }
 REQUIRED_COLUMNS = ["WM_best", "U_rb", "sincerity", "U_cands", "nom_changed", "noshow"]
@@ -700,7 +706,8 @@ def label(key, varying, first):
                      for k in diff) or "base"
 
 
-PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
+PARAM_NAMES = {"campaign": "campaigns (share planned with)", "risk": "risk by satisfaction",
+               "risk_tolerance": "risk tolerance", "group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error", "converge": "convergent rounds",
                "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion",
                "cand_shift": "candidate shift", "lazy": "laziness", "model": "electorate model",
@@ -710,7 +717,7 @@ PARAM_NAMES = {"group_size": "group size", "cands": "candidates", "strategic": "
                "field_kappa": "field saturation", "field_salience": "salience field",
                "noise_strength": "noise strength", "adaptive": "adaptive share", "utility": "utility"}
 LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "adaptive", "poll_size", "poll_error", "search", "converge",
-                 "aggressive", "start"}   # same electorates
+                 "aggressive", "start", "campaign", "risk", "risk_tolerance"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)
 
 
