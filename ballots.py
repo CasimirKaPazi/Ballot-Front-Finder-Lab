@@ -132,19 +132,27 @@ def score_ballots(u, lazy=0.0):
     return np.where(cares(u, lazy), B, 0.0) if lazy_on(lazy) else B
 
 
+def runoff_ranking(u, lazy=0.0):
+    """The runoff part of two-round ballots: the ranking by utility, with laziness truncated as a lazy
+    ranking is (the candidates the voter does not care about unranked, tied last). A runoff between two
+    candidates the voter would leave unranked gets no vote from them: they stay away (since 2026-10-28;
+    before, every voter voted in every runoff)."""
+    return lazy_rank_ballots(u, lazy)
+
+
 def fav_run_ballots(u, lazy=0.0):
-    """Mark the favourite; ranking by utility."""
-    return rank_ballots(u) + u.shape[1] * fav_ballots(u)
+    """Mark the favourite (laziness never leaves it out); the runoff ranking (runoff_ranking)."""
+    return runoff_ranking(u, lazy) + u.shape[1] * fav_ballots(u)
 
 
 def app_run_ballots(u, lazy=0.0, draw=0.5):
-    """Round 1: the approval set (approves); ranking by utility. Laziness: the round-1 approvals only."""
-    return rank_ballots(u) + u.shape[1] * approval_ballots(u, lazy, draw)
+    """Round 1: the approval set (approves); the runoff ranking (runoff_ranking). Laziness: both."""
+    return runoff_ranking(u, lazy) + u.shape[1] * approval_ballots(u, lazy, draw)
 
 
 def score_run_ballots(u, lazy=0.0):
-    """Round 1: the score ballot (score_ballots); ranking by utility. Laziness: the round-1 scores only."""
-    return rank_ballots(u) + u.shape[1] * score_ballots(u, lazy)
+    """Round 1: the score ballot (score_ballots); the runoff ranking (runoff_ranking). Laziness: both."""
+    return runoff_ranking(u, lazy) + u.shape[1] * score_ballots(u, lazy)
 
 
 def veto_ballots(u, lazy=0.0):
@@ -620,7 +628,7 @@ BALLOTS = {b.name: b for b in [
     Ballot("score", score_ballots, _mutate_score, _exag_score, _implied_score, _worst_score,
            lazy=True, ordered=True, score_range=True),
     Ballot("fav_run", fav_run_ballots, _mutate_fav_run, _exag_fav_run, _implied_marks, _worst_fav,
-           marks=_marks_run),
+           marks=_marks_run, lazy=True),                       # laziness: the runoff ranking only
     Ballot("app_run", app_run_ballots, _mutate_app_run, _exag_app_run, _implied_marks, _worst_approval,
            marks=_marks_run, lazy=True, approval=True),
     Ballot("score_run", score_run_ballots, _mutate_score_run, _exag_score_run, _implied_score, _worst_score,

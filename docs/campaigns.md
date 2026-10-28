@@ -27,7 +27,7 @@ A recommendation is a pair (X, Y): "vote as if you liked X a little more than Y"
 
 Example, score ballots 0–5, a follower with utilities A 1.0, B 0.7, X 0.3, W 0.0, and the campaign "W above X" (W the Condorcet loser who is winning). The follower prefers X to W, so they move W to just above X: the sincere ballot is A 5, B 3, X 0, W 0, W and X tied at the bottom, half a vote less for X over W. On a ranking, W moves to just above X. A follower for whom Y is near the top lifts X a long way, which sincerity counts.
 
-**Why only this one move.** The first version also offered the naive exaggerations for X against Y (top score down to X, nothing from Y down). With them, campaigns cost most methods 5 to 20 points of VSE\* with all voters strategic (journal, user's run of 2026-10-27, and First trials below): every candidate found an exaggeration that would work for it, and bold voters followed. With the simple move alone, campaigns are much weaker and much cheaper.
+**Why only this one move.** The first version also offered the naive exaggerations for X against Y (top score down to X, nothing from Y down). With them, campaigns cost most methods 5 to 20 points of VSE\* with all voters strategic (First trials, below): every candidate found an exaggeration that would work for it, and bold voters followed. With the simple move alone, campaigns are much weaker and much cheaper.
 
 The pairs considered are those with the poll winner W in them: (X, W) and (W, Y) for every other candidate, so 2(C − 1) moves. This keeps the cost linear in the number of candidates. It covers:
 
@@ -119,7 +119,7 @@ Unit tests:
 - a profile where a campaign costs its followers something, followed with bold voters and not with careful ones;
 - off: the same results as without the code (regression check, all equal).
 
-Predictions to test with short runs, then the user's large ones:
+Predictions to test with short runs, then large ones:
 
 1. **CL else Score winner and the inverse methods recover** with campaigns; Inverse-Plurality partly, and more with `--risk`.
 2. **Methods that need no coordination change little**: Score, STAR, Minimax, Ranked pairs within a point or two of VSE\* and WME\*.
@@ -130,9 +130,9 @@ Predictions to test with short runs, then the user's large ones:
 
 ## First trials (2026-10-27)
 
-**First version** (moves with exaggerations, every voter choosing the most promising campaign). Sweep (Claude): 200 elections at the defaults (adaptive voters). It lifted the extreme methods (CL else Score winner +85 VSE\* with risk), but the Condorcet methods lost 2 to 5 points of WME\*, and the rounds rarely settled. The user's run with all voters strategic and φ = 1 showed losses of 5 to 10 points of WME\* for most methods. Short runs with all voters strategic (60 elections) traced it to the exaggerations: Score fell from 87 to 67 VSE\*, IRV from 84 to 68; with the simple move alone the ordinary methods stayed within a few points.
+**First version** (moves with exaggerations, every voter choosing the most promising campaign). Sweep: 200 elections at the defaults (adaptive voters). It lifted the extreme methods (CL else Score winner +85 VSE\* with risk), but the Condorcet methods lost 2 to 5 points of WME\*, and the rounds rarely settled. A run of 200 elections with all voters strategic and φ = 1 (`--strategic 1 --adaptive 0 --campaign 0 1`) showed losses of 5 to 10 points of WME\* for most methods. Short runs with all voters strategic (60 elections) traced it to the exaggerations: Score fell from 87 to 67 VSE\*, IRV from 84 to 68; with the simple move alone the ordinary methods stayed within a few points.
 
-**Basic version** (the simple move, loyalty, only bold voters follow). Sweep (Claude): 200 elections, all voters strategic (`--strategic 1 --adaptive 0`), the standard set and the extreme methods, `--campaign 0 0.5` × `--risk 0 1`; paired differences against both off, VSE\* / WME\*, percentage points; "clear" when the 95% bootstrap interval excludes 0.
+**Basic version** (the simple move, loyalty, only bold voters follow). Sweep: 200 elections, all voters strategic (`--strategic 1 --adaptive 0`), the standard set and the extreme methods, `--campaign 0 0.5` × `--risk 0 1`; paired differences against both off, VSE\* / WME\*, percentage points; "clear" when the 95% bootstrap interval excludes 0.
 
 | | campaigns only | campaigns and risk |
 |---|---|---|
@@ -152,6 +152,8 @@ The first run of the basic version took the follower's ballot for the Inverse-\*
 - **The ordinary methods move by a few points**, both ways: the Condorcet methods gain a little VSE\*, several rated and median methods lose a little; most differences are not clear at 200 elections.
 - **Plurality loses about 10 points of VSE\***, clear. Coordination is what Plurality is most sensitive to, so this may be a real effect (campaigns concentrate votes on fewer candidates) rather than an artefact; it needs a closer look.
 - **The rounds settle less often**, still.
+
+**Swings between rounds** (2026-10-28; `sweep.py --methods extended references --elections 500 --campaign 0 0.25 --rounds 1 2 3 4 5 6`; per election, how often the winner changes from one round to the next, and how often it returns to the winner of two rounds before, over rounds 3–6). For the ordinary methods campaigns add a few points of changes (Plurality 10.2% → 14.4%, TTR 9.6% → 13.2%, IRV to 13.6%), with returns about a third of the changes as without campaigns: no swing. CL else Score winner does swing: changes 12% → 35%, returns 4% → 15%. A campaign removes the Condorcet loser's defeat, the Score winner leads the next poll, the followers stop following (adaptive voters in part because the race no longer matters to them), and the loser is back: a successful campaign undermines its own motivation. Left as it is; partial adjustment would damp it, but it would change every method and add a parameter for one test method. (Lottery results, as of Random pair runoff, Anti-plurality and TRASH, cannot be compared this way and are left out.)
 
 ## Open points
 

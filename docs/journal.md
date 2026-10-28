@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-28 | Two-round methods, runoff part: with laziness the runoff ranking is truncated as a lazy ranking is, so a voter who cares about neither finalist stays away from the runoff; strategic voters keep their own runoff ranking (the naive exaggerations used to replace it by the full one, which for Inverse-TTR, whose count reads the runoff reversed, made exaggerating voters vote against their preference in the runoff); changes the results of the two-round methods with `--lazy`, and of Inverse-TTR | every voter voted in every runoff; Inverse-TTR's exaggerations reversed the runoff |
 | 2026-10-27 | Further reference points (CW//random ballot, CW//utility winner, random pair, median voter, mean voter) and the line of rounded ballots (the normalized line with the ballots rounded to the score range), per election in the results; `analyze.py --overlay` and `--points` choose what the plots draw; `compare.py` draws a map of the methods (how often two methods elect different winners, honest and learned, in two dimensions; method-map.png/.csv); results unchanged | random ballot, random candidate and maximal lottery only |
 | 2026-10-27 | Plots: `--format` (png, svg, pdf; several at once) and `--dpi` in analyze.py and compare.py; dots 0.9 of their earlier size; the VSE/WME plots zoom on the methods and no longer widen the axes to show the frontier or the 100 line (they show where they fall in view) | png at 150 dpi; axes widened to the frontier when it was near the data |
 | 2026-10-27 | Experimental options `--campaign` (candidates recommend one simple move each; bold voters may follow the campaign of the candidate they like most) and `--risk` (careful or bold by satisfaction, instead of the fixed aggressive split), off by default; results unchanged with both off (regression check). Design and first trials in [campaigns.md](campaigns.md) | — |
@@ -549,7 +550,7 @@ Same / False / None: shares of the 580 elections with a real Condorcet winner; S
 
 ## First look: Soft Minimax (2026-10-10)
 
-Run (Claude, small): 100 elections, defaults, poll rounds 1 and 3; Soft Minimax with the clip at 20%, 40% and 60% of the score range, against Score, STAR, IC-MARS, INS, Minimax and MMPO. Point estimates; most differences are ties at this size. VSE\* / WME\* / sincerity at round 3:
+Small run: 100 elections, defaults, poll rounds 1 and 3; Soft Minimax with the clip at 20%, 40% and 60% of the score range, against Score, STAR, IC-MARS, INS, Minimax and MMPO. Point estimates; most differences are ties at this size. VSE\* / WME\* / sincerity at round 3:
 
 | Method | VSE\* | WME\* | Sincerity |
 |---|---|---|---|
@@ -569,7 +570,7 @@ Run (Claude, small): 100 elections, defaults, poll rounds 1 and 3; Soft Minimax 
 
 ## New methods: DSC, DAC, STLR, INS, MAMPO, COWPEA Lottery (2026-10-10)
 
-Run (user): `sweep.py --one-at-a-time --strategic 0.5 1 --aggressive 0.5 0 1`, 400 elections, one poll round, defaults otherwise; the new methods with STAR, Score, Approval, MDDA, MMPO, Plurality and Random pair runoff for reference. INS was then still called "Iterated normalized score". Base condition, VSE\* / WME\* / sincerity, and paired differences:
+Run: `sweep.py --one-at-a-time --strategic 0.5 1 --aggressive 0.5 0 1`, 400 elections, one poll round, defaults otherwise; the new methods with STAR, Score, Approval, MDDA, MMPO, Plurality and Random pair runoff for reference. INS was then still called "Iterated normalized score". Base condition, VSE\* / WME\* / sincerity, and paired differences:
 
 | Method | VSE\* | WME\* | Sincerity |
 |---|---|---|---|
@@ -595,7 +596,7 @@ Run (user): `sweep.py --one-at-a-time --strategic 0.5 1 --aggressive 0.5 0 1`, 4
 
 ## Candidates unlike the electorate (2026-10-10)
 
-Run (user): `sweep.py --one-at-a-time --cand-dispersion 1 0.25 0.5 0.75 1.5 --cand-shift 0 0.5 1`, 200 elections, one poll round, defaults otherwise (strategic share 0.5, aggressive share 0.5), most methods. Voters are the same in every condition; only the candidates are moved ([model.md](model.md), Electorates). Condorcet efficiency with honest ballots, which keeps its meaning across conditions (Condorcet methods: 100 by construction):
+Run: `sweep.py --one-at-a-time --cand-dispersion 1 0.25 0.5 0.75 1.5 --cand-shift 0 0.5 1`, 200 elections, one poll round, defaults otherwise (strategic share 0.5, aggressive share 0.5), most methods. Voters are the same in every condition; only the candidates are moved ([model.md](model.md), Electorates). Condorcet efficiency with honest ballots, which keeps its meaning across conditions (Condorcet methods: 100 by construction):
 
 | Method | dispersion 0.25 | 0.5 | 0.75 | 1 (base) | 1.5 | shift 0.5 | shift 1 |
 |---|---|---|---|---|---|---|---|
@@ -632,7 +633,7 @@ With strategy (VSE\* / WME\*), selected:
 
 ## First look: candidates unlike the electorate (2026-10-10)
 
-Run (Claude, small): `sweep.py --one-at-a-time --elections 40 --cand-dispersion 1 0.25 0.5 1.5 --cand-shift 0 0.5 1 2`, ten methods, defaults otherwise (one poll round). 40 elections: point estimates, noisy. Condorcet efficiency with honest ballots (CE), which keeps its meaning across conditions:
+Small run: `sweep.py --one-at-a-time --elections 40 --cand-dispersion 1 0.25 0.5 1.5 --cand-shift 0 0.5 1 2`, ten methods, defaults otherwise (one poll round). 40 elections: point estimates, noisy. Condorcet efficiency with honest ballots (CE), which keeps its meaning across conditions:
 
 | Method | base | dispersion 0.25 | 0.5 | 1.5 | shift 0.5 | 1 | 2 |
 |---|---|---|---|---|---|---|---|
@@ -651,7 +652,7 @@ Run (Claude, small): `sweep.py --one-at-a-time --elections 40 --cand-dispersion 
 
 ## Lock-in: starting from a previous election's result, full strategy (2026-10-10)
 
-Run (user): `--start honest previous --rounds 1 2 3 4 5 6 7 8 --strategic 1 --aggressive 1`, 200 elections, defaults otherwise; Score, Approval, IC-MARS, Minimax, IRV, IRV-3, ER-IRV, TTR, Borda. The first poll shows either the honest ballots or the final ballots of one previous (dummy) election under the same method, its candidates relabelled at random ([model.md](model.md), Starting information). Same elections in both; VSE\* / WME\*:
+Run: `--start honest previous --rounds 1 2 3 4 5 6 7 8 --strategic 1 --aggressive 1`, 200 elections, defaults otherwise; Score, Approval, IC-MARS, Minimax, IRV, IRV-3, ER-IRV, TTR, Borda. The first poll shows either the honest ballots or the final ballots of one previous (dummy) election under the same method, its candidates relabelled at random ([model.md](model.md), Starting information). Same elections in both; VSE\* / WME\*:
 
 | Method | start | round 1 | round 2 | round 3 | round 5 | round 8 |
 |---|---|---|---|---|---|---|
@@ -674,7 +675,7 @@ Run (user): `--start honest previous --rounds 1 2 3 4 5 6 7 8 --strategic 1 --ag
 | Borda | honest | 50 / 42 | 70 / 65 | 61 / 59 | 68 / 68 | 75 / 70 |
 | | previous | 72 / 62 | 63 / 61 | 65 / 60 | 69 / 67 | 67 / 59 |
 
-Second run, same settings (user), more methods; VSE\* / WME\*:
+Second run, same settings, more methods; VSE\* / WME\*:
 
 | Method | start | round 1 | round 2 | round 3 | round 5 | round 8 |
 |---|---|---|---|---|---|---|
@@ -706,7 +707,7 @@ Second run, same settings (user), more methods; VSE\* / WME\*:
 
 ## First look: starting from a previous election's result (2026-10-10)
 
-Run (Claude, small): `sweep.py --start honest previous --rounds 1 3 8 --elections 30 --methods Plurality IRV ER-IRV TTR Approval Score STAR Minimax Borda`, defaults otherwise (strategic share 0.5, aggressive share 0.5). 30 elections: point estimates only, a few points are noise. VSE\* / WME\*:
+Small run: `sweep.py --start honest previous --rounds 1 3 8 --elections 30 --methods Plurality IRV ER-IRV TTR Approval Score STAR Minimax Borda`, defaults otherwise (strategic share 0.5, aggressive share 0.5). 30 elections: point estimates only, a few points are noise. VSE\* / WME\*:
 
 | Method | honest start, round 1 | previous, round 1 | honest, round 3 | previous, round 3 | honest, round 8 | previous, round 8 |
 |---|---|---|---|---|---|---|
@@ -726,7 +727,7 @@ Run (Claude, small): `sweep.py --start honest previous --rounds 1 3 8 --election
 
 ## Model test: Inverse-\* methods (2026-10-10)
 
-Run (Claude, small): `sweep.py --strategic 1 --rounds 1 3 8 15 --methods inverse Plurality Approval Minimax --elections 40`, with `--aggressive 0.5` (default) and `--aggressive 1`; defaults otherwise. 40 elections: point estimates only, differences of a few points are noise.
+Small run: `sweep.py --strategic 1 --rounds 1 3 8 15 --methods inverse Plurality Approval Minimax --elections 40`, with `--aggressive 0.5` (default) and `--aggressive 1`; defaults otherwise. 40 elections: point estimates only, differences of a few points are noise.
 
 The Inverse-\* methods count like their originals, but their sincere ballot expresses reversed preferences, so honest voting elects nearly the worst candidate (VSE about −200). With full strategy and enough rounds, voters should learn to reverse their ballots and get the original's result back.
 
@@ -738,7 +739,7 @@ VSE\* / WME\* with all strategic voters aggressive (`--aggressive 1`):
 | Inverse-Minimax | −22 / −26 | 76 / 84 | 86 / 83 | 85 / 85 | Minimax 87 / 98 |
 | Inverse-Plurality | −46 / −69 | −44 / −67 | −44 / −67 | −44 / −67 | Plurality 88 / 65 |
 
-Second small run (Claude, 20 elections, `--strategic 1 --aggressive 1 --rounds 1 3 8`), the further inverse methods; VSE\* / WME\* (Inverse-ER-IRV and ER-IRV from a separate run with the same settings and elections):
+Second small run (20 elections, `--strategic 1 --aggressive 1 --rounds 1 3 8`), the further inverse methods; VSE\* / WME\* (Inverse-ER-IRV and ER-IRV from a separate run with the same settings and elections):
 
 | Method | round 1 | round 3 | round 8 | original, round 8 |
 |---|---|---|---|---|
@@ -757,7 +758,7 @@ Second small run (Claude, 20 elections, `--strategic 1 --aggressive 1 --rounds 1
 
 ## Current picture: all methods, poll rounds 5, with nomination (2026-10-09)
 
-Run (user): all 59 methods, 400 elections, 99 voters, 6 candidates, defaults (strategic share 0.5, aggressive share 0.5, poll error 2.0x, max score 5), `--rounds 5 --exits 1 --clones 2`. First run with separate runoffs and shared random streams (section below). Replaces the picture of 2026-10-06 further down, which used convergent learning and other axes. Only one round count, so differences between methods not in the "Dominated by" column are point estimates; the frontier's most balanced point is VSE 95.3 / WME 96.7.
+Run: all 59 methods, 400 elections, 99 voters, 6 candidates, defaults (strategic share 0.5, aggressive share 0.5, poll error 2.0x, max score 5), `--rounds 5 --exits 1 --clones 2`. First run with separate runoffs and shared random streams (section below). Replaces the picture of 2026-10-06 further down, which used convergent learning and other axes. Only one round count, so differences between methods not in the "Dominated by" column are point estimates; the frontier's most balanced point is VSE 95.3 / WME 96.7.
 
 Undominated on all four axes (VSE, WME, VSE\*, WME\*; the analysis since judges dominance on VSE\*, WME\* and sincerity only, see the note at the top): **STAR, ARA, MARS, Condorcet-random-drop, Minimax, Schulze, Ranked pairs.** Beaten on a single axis only:
 
@@ -789,7 +790,7 @@ Undominated on all four axes (VSE, WME, VSE\*, WME\*; the analysis since judges 
 
 ## Equal ranking and two-round elections, poll rounds 1–6 (2026-10-09)
 
-Run (user): `--rounds 1 2 3 4 5 6`, 400 elections, nomination on (`--exits 1 --clones 2`), defaults otherwise; the ER pairs plus IRV-3, TTR, Supplementary vote and the three approval methods. Paired differences per round.
+Run: `--rounds 1 2 3 4 5 6`, 400 elections, nomination on (`--exits 1 --clones 2`), defaults otherwise; the ER pairs plus IRV-3, TTR, Supplementary vote and the three approval methods. Paired differences per round.
 
 - **Equal-ranking versions are mostly ties with their strict versions.** Honest values are identical (sincere ballots are strict). Under strategy, Minimax-ER, Schulze-ER, Baldwin-ER and Ranked Robin vs Ranked Robin-SR are ties in every round. ER-IRV is better than IRV twice (VSE\* +1.7 in round 1, WME\* +2.9 in round 4) and tied otherwise. Borda-ER vs Borda is a tie in every round, with the sign changing (−1.7 / −2.1 in round 1, +0.8 / +2.1 in round 3, −2.4 / −1.4 in round 6). The behaviour differs consistently: ER voters compromise less and bury more (Borda-ER 7–8% compromise and 24–28% burial vs 13–15% and 19% for Borda). Part of that burial is compromise by tying: a voter who ties the preferred leader with the favourite and moves the other leader down counts as burial, because the favourite stays on top. The prediction that ER versions are always better: equal or slightly better for IRV and the Condorcet methods, not shown for Borda.
 - **Approval cond. runoff is equal to or better than Approval:** better on honest WME (+1.5) and, barely, on VSE\* in rounds 2 and 4 (+1.4 to +1.6); ties otherwise.
@@ -840,7 +841,7 @@ The burial artefact is gone for rated ballots. Ranked ballots show about 40% bur
 
 ## Aggressive share 0–1 × poll rounds 1–5, full strategy (2026-10-09)
 
-Run (user): `--aggressive 0 0.25 0.5 0.75 1 --rounds 1 2 3 4 5 --strategic 1`, 200 elections per condition, defaults otherwise.
+Run: `--aggressive 0 0.25 0.5 0.75 1 --rounds 1 2 3 4 5 --strategic 1`, 200 elections per condition, defaults otherwise.
 
 WME\* in round 1 by aggressive share (share of strategic voters who exaggerate whenever it cannot hurt; the others only when the polls show a gain):
 
@@ -867,7 +868,7 @@ WME\* in round 1 by aggressive share (share of strategic voters who exaggerate w
 
 ## Poll rounds 1–5, full strategy; aggressive and kind voters (2026-10-09)
 
-Run (user): `--rounds 1 2 3 4 5 --strategic 1`, 200 elections, defaults otherwise (all strategic voters aggressive, the only behaviour at the time).
+Run: `--rounds 1 2 3 4 5 --strategic 1`, 200 elections, defaults otherwise (all strategic voters aggressive, the only behaviour at the time).
 
 - **Burial under Condorcet methods is large**, something convergent learning missed: 55–65% of voters for MMPO, MMWV, MMPOWV, Ranked Robin, SICT; about 45% for Schulze, Baldwin, Black. Burying the other leader is the naive exaggeration, taken whenever it cannot hurt in the polls.
 - **The methods that held up best before suffer most in round 1:** WME\* 79.5 (MMWV), 84.8 (MMPOWV), 78.6 (Ranked Robin), against 90–94 for Baldwin, Schulze and MMPO; STAR 87.4. With more rounds they recover: by round 3, WME\* 94.3 (MMWV), 93.6 (MMPOWV), 94.3 (Ranked Robin); STAR 93.6.

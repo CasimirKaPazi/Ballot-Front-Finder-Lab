@@ -772,6 +772,15 @@ assert _stc._answer(_gain, "fav", np.array([9.0]), _c3, 0, _rng0, eager=True, pr
 assert _stc._answer(_gain, "fav", np.array([9.0]), _c3[2:], 0, _rng0, eager=True, promises=[0.5]) is None
 assert _stc._answer(_gain, "fav", np.array([9.0]), _c3[2:], 0, _rng0, eager=True, tol=0.1, promises=[0.5])[0] == 2
 print("campaigns ok")
+# Laziness in the runoff of two-round ballots: a lazy voter who cares only about A and B ranks just
+# them in the runoff part, so a runoff between C and D gets no vote from them
+from ballots import fav_run_ballots as _frb
+_uz = np.array([[1.0, 0.9, 0.2, 0.1, 0.0]])
+_bz = _frb(_uz, 0.5)
+assert _bz.tolist() == [[9, 3, 0, 0, 0]], _bz
+_Rz = np.mod(_bz, 5)
+assert _Rz[0, 2] == _Rz[0, 3]                                       # C and D tied: no vote between them
+print("lazy runoff ok")
 
 # Maximal lottery (metrics.maximal_lottery): the Condorcet winner when there is one; in a cycle
 # A>B by 1, B>C by 3, C>A by 5 the lottery (3, 5, 1) / 9, which no candidate beats in expectation
