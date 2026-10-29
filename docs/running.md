@@ -31,7 +31,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | VSE_learned, WME_learned | the same with learned ballots |
 | CE, CE_learned | Condorcet efficiency, sincere and learned ballots |
 | sincerity | mean sincerity of the learned ballots, over all voters ([analysis.md](analysis.md), Sincerity and fidelity; elections.csv also has `fidelity`, for both ballot sets) |
-| settled | poll rounds: share of elections where the last round gave the same ballots as the round before (a fixed point); convergent learning: no group changed its ballot in the last round. Cycles never settle |
+| settled | share of elections where the last poll round gave the same ballots as the round before (a fixed point). Cycles never settle |
 
 `on_front` in the summary is a quick check on point estimates (VSE_learned, WME_learned, sincerity; no uncertainty). The analysis uses the tie-aware "Dominated by" instead ([analysis.md](analysis.md), Analysis).
 
@@ -67,19 +67,17 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--cand-shift` | 0.0 | candidates moved along the main dimension by this many voter SDs; see [model.md](model.md), Candidates unlike the electorate |
 | `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |
 | `--rounds` | 3 | poll rounds before the vote (0 = everyone sincere); see [model.md](model.md), Strategy engine. Three rounds take voters past the first answer to the honest poll, which leans on the modelling of sincere ballots, toward the state they settle in |
-| `--samples` | 5 | polls per round (they stand for the uncertainty; 10 until 2026-10-26); with `--converge`, bootstrap resamples per round |
+| `--samples` | 5 | polls per round (they stand for the uncertainty; 10 until 2026-10-26) |
 | `--poll-error` | 2 | voters treat polls as this many times less precise than their sampling error |
-| `--aggressive` | 0.5 | share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) only when the polls show a gain (poll rounds only) |
-| `--campaign` | 0 (off) | poll rounds, experimental: above 0, every candidate recommends a move each round, planned with this share of its audience following (0.5 suggested); bold (aggressive) voters may follow ([campaigns.md](campaigns.md)) |
-| `--risk` | 0 | poll rounds, experimental: 1 = each voter is careful or bold by their satisfaction with the polls and a personal threshold, instead of the fixed `--aggressive` split ([campaigns.md](campaigns.md)) |
+| `--aggressive` | 0.5 | share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) only when the polls show a gain |
+| `--campaign` | 0 (off) | experimental: above 0, every candidate recommends a move each round, planned with this share of its audience following (0.5 suggested); bold (aggressive) voters may follow ([campaigns.md](campaigns.md)) |
+| `--risk` | 0 | experimental: 1 = each voter is careful or bold by their satisfaction with the polls and a personal threshold, instead of the fixed `--aggressive` split ([campaigns.md](campaigns.md)) |
 | `--risk-tolerance` | 0.1 | with `--risk 1`: how much loss bold voters accept, per unit of their shortfall below their threshold |
 | `--lazy` | 0 | laziness of honest ballots, 0–1: each voter's cut is drawn between 0 and this (see [model.md](model.md), Truncation and laziness) |
 | `--poll-size` | 0 | voters per poll; 0 = half the electorate, rounded to an odd number |
-| `--search` | 10 | random ballot changes a group tries per poll round, after the naive exaggerations |
-| `--converge` | 0 | N > 0: convergent learning with N rounds instead of poll rounds (e.g. `--converge 20 --samples 10`) |
-| `--group-size` | 10 | convergent learning only: most voters that coordinate as one group: a number of voters (1 = every voter alone), a share of the electorate between 0 and 1 (0.05 = 5% of the voters, rounded, at least 1), or 0 = whole ranking group |
+| `--search` | 1 | random ballot changes a group tries per poll round, after the naive exaggerations, each from the best ballot so far (until 2026-10-29: 10, stopping after 3 in a row without gain) |
 | `--strategic` | 0 | share of voters who always vote strategically (see [model.md](model.md), Partial strategy) |
-| `--adaptive` | the rest | share of voters who decide each poll round whether to vote strategically, by how much the race between the two leaders matters to them (poll rounds only; `--strategic` + `--adaptive` ≤ 1, sweep.py skips other combinations; see [model.md](model.md), Partial strategy); left out: everyone not in `--strategic` (1 − `--strategic`), with `--converge` 0 |
+| `--adaptive` | the rest | share of voters who decide each poll round whether to vote strategically, by how much the race between the two leaders matters to them (`--strategic` + `--adaptive` ≤ 1, sweep.py skips other combinations; see [model.md](model.md), Partial strategy); left out: everyone not in `--strategic` (1 − `--strategic`) |
 | `--max-score` | 5 | score ballots range over 0–max (see [model.md](model.md), Score range) |
 | `--exits` | 0 | 1: candidates may withdraw and re-enter strategically (see [model.md](model.md), Strategic nomination) |
 | `--clones` | 0 | most clones in the race at once, fielded strategically; 0 = none (see [model.md](model.md), Strategic nomination) |
@@ -93,7 +91,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--overwrite` | off | replace an existing run in `--out` |
 | `--resume` | off | continue an interrupted run in `--out` with the same command (see Progress, saving and resuming) |
 
-`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--cluster-zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--converge`, `--group-size`, `--strategic`, `--adaptive`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid, one run after another, and writes one elections CSV per run into `output/<out>/runs/`. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--cluster-zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--strategic`, `--adaptive`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid, one run after another, and writes one elections CSV per run into `output/<out>/runs/`. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
 
 `analyze.py`:
 
@@ -241,6 +239,6 @@ python compare.py output/falloff --pairs "ESR:Score" "Score runoff:Minimax"
 Two checks, both quick:
 
 - `python test_methods.py`: hand-built checks. Each method on small profiles with a known winner, the ballot types, truncation and laziness, sincerity and fidelity, the add-ons.
-- `python regression.py`: does the simulator still give the same numbers? It runs twelve tiny conditions (two elections each: the base, five candidates, laziness with scores 0..10, convergent learning, strategic nomination, the first poll from a previous election, one for each electorate model and the salience option, and adaptive voters with laziness) with every method, including the references, the Inverse-\* methods and the add-ons, and with the manipulation test, and compares every column of every row with `regression.csv`. About a minute or less.
+- `python regression.py`: does the simulator still give the same numbers? It runs eleven tiny conditions (two elections each: the base, five candidates, laziness with scores 0..10, strategic nomination, the first poll from a previous election, one for each electorate model and the salience option, and adaptive voters with laziness) with every method, including the references, the Inverse-\* methods and the add-ons, and with the manipulation test, and compares every column of every row with `regression.csv`. About a minute or less.
 
 A change that only reorganises the code (moving, renaming, splitting files) must leave `regression.py` at "all equal". A change meant to alter results (a fixed bug, a new rule) shows up as differences, listed by method and column; once they are understood, `python regression.py --update` writes the new reference, and `regression.csv` is committed together with that change, so the history shows which commit changed which numbers. New methods (a new add-on) are listed but not counted as differences; `--update` adds them. Numbers count as equal within a relative tolerance of 1e-9, since the last digits can differ between numpy versions or machines.

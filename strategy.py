@@ -1,13 +1,11 @@
-"""Strategic voting. Two models; run.py uses poll rounds unless --converge is set.
-
-POLL ROUNDS (default; respond): a single election with a few polls before it.
+"""Strategic voting in poll rounds (respond): a single election with a few polls before it.
   Round 0: every voter votes sincerely ("naive", uninformed).
   Round r (1 ... rounds): a poll of round r-1 is published, and every strategic group answers it
   at the same time; nobody sees anyone else's answer before the next poll.
   - A poll publishes only the method's own counts (the summed ballot features the method decides
     from: first preferences for Plurality, approvals for Approval, the pairwise matrix for
     Condorcet methods, ...), from a random sample of `poll_size` voters (without replacement),
-    scaled up to the electorate. `samples` independent polls (30) stand for the uncertainty.
+    scaled up to the electorate. `samples` independent polls (5) stand for the uncertainty.
     Nobody sees anyone's preferences or individual ballots.
   - Uncertainty: voters treat a poll as `poll_error` times less precise than its sampling error
     (default 2: real polls miss results by about twice their stated sampling error, Shirani-Mehr,
@@ -21,36 +19,25 @@ POLL ROUNDS (default; respond): a single election with a few polls before it.
     bloc. Factions across rankings are not built in; they emerge when groups answer alike.
   - Answer: a group estimates the count for a ballot b as poll count - its own previous ballots
     + its size x b, and judges b by its expected utility gain over its sincere ballots, over
-    the polls. It first tries a few candidate ballots: its previous answer and the naive
+    the polls. It first tries a few candidate ballots: its previous answer, the naive
     exaggerations of its ballot type around the two leaders (A = the one it prefers, B = the
     other; `exaggerations`): approve everyone liked at least as much as A; top score down to A,
     0 from B down, stretched in between; vote A; A to the top and/or B to the bottom of a
-    ranking; a ranking truncated after A, or A alone; and the like. Aggressive voters take the best if it does not lose in the polls:
+    ranking; a ranking truncated after A, or A alone; and the like; and a push-over: the ballot for A
+    against B with the next place in the polls supported too (`pushover` in ballots.py). Aggressive voters take the best if it does not lose in the polls:
     exaggeration wins ties, they exaggerate when it cannot hurt, whatever the gap. Kind voters
     take it only if it strictly gains (honesty wins ties). `aggressive` marks the aggressive
     voters (None = all; drawn in run.py); aggressive and kind voters form separate groups. Then random
-    search (`search` proposals at most, stopping after PATIENCE = 3 in a row) takes a change only
-    if it strictly gains. A group none of whose candidates is safe and whose search finds no
+    search (`search` proposals, default 1, each a small change of the best ballot so far) takes a
+    change only if it strictly gains. Since the previous answer is tried first, the search goes on
+    over the rounds from where it stood. A group none of whose candidates is safe and whose search finds no
     gain stays sincere.
   - Settled: round `rounds` gives the same ballots as the round before (a fixed point).
   rounds = 0 gives the sincere ballots.
 
-CONVERGENT LEARNING (--converge N; learn): the earlier model. Groups take turns over N rounds,
-each seeing the others' latest strategic ballots through a fresh full-electorate poll, and
-keep a change if it pays. It finds where an electorate ends up after long adjustment, with
-far more information and coordination than one election offers. Kept for comparison.
-  - Coordination: `group_size` caps how many voters move together. Each ranking group is
-    split at random into subgroups of at most that size; 0 means no cap.
-  - Loop (rounds): a fresh "poll" is drawn each round: `samples` bootstrap resamples of the
-    electorate. Groups take turns in random order. A group proposes a ballot for all its
-    members: usually a small change to its current shared ballot, sometimes a return to
-    sincere. It keeps the proposal if its members' total expected utility, averaged over the
-    poll samples, goes up; a return to sincere is also kept when it is not worse (honesty wins
-    ties), so deviations that stopped paying off fade out instead of accumulating.
-
-Partial strategy (both): `strategic` marks the voters who take part (a random share of the
+Partial strategy: `strategic` marks the voters who take part (a random share of the
 electorate, drawn in run.py, the same voters for every method). The others always vote sincerely.
-Poll rounds only: adaptive voters decide each round whether to vote strategically, by their stake
+Adaptive voters decide each round whether to vote strategically, by their stake
 in the race that matters: |u(A) - u(B)| for the round's two leaders A and B, rescaled to 0..1
 between their least and most liked candidate. A voter is strategic in a round if the stake exceeds
 their personal threshold (`adaptive`: one value per voter, drawn once in run.py, uniform on 0..1,
@@ -62,9 +49,6 @@ import numpy as np
 import methods
 from outcomes import value
 from ballots import BALLOTS, _max_separated  # noqa: F401 (_max_separated: for the tests)
-
-BACK_TO_SINCERE = 0.15  # share of proposals that return a deviating group to sincere
-
 
 def mutate(b, ballot, rng):
     """One small change to a single ballot vector (length C) of type `ballot` (ballots.py)."""
@@ -141,7 +125,7 @@ def strategy_types(B, u, leaders=None):
                    runoffs)
       burial     - the favourite stays at the top, but a preference further down is reversed
     The three are exclusive; sincere voters count in none. leaders: the last poll round's two
-    leaders (since 2026-10-28; None: by the mean alone, as before, e.g. for convergent learning)."""
+    leaders (since 2026-10-28; None: by the mean alone, as before)."""
     rev = ((B[:, :, None] > B[:, None, :]) & (u[:, :, None] < u[:, None, :])).any(axis=(1, 2))
     top = B >= B.max(axis=1, keepdims=True)
     fav_top = top[np.arange(len(B)), u.argmax(axis=1)]
@@ -161,78 +145,7 @@ def poll_tallies(tally, B, polls):
     return np.array([tally(B[idx]) for idx in polls])
 
 
-def group_value(P, Ug):
-    """Expected total utility of a group, averaged over poll samples."""
-    return float(np.mean(value(P, Ug)))
-
-
-def learn(method, u, rng, rounds=20, samples=10, group_size=0, strategic=None):
-    """Convergent learning (see the module docstring). Return learned ballots, whether learning
-    settled, and mean sincerity (all voters). strategic: boolean mask of voters who take part
-    (None = all). run.py passes --samples (default 5, chosen for poll rounds)."""
-    n, C = u.shape
-    sincere = method.sincere(u)
-    B = sincere.copy()
-    keys = [tuple(r) for r in np.argsort(-u, axis=1, kind="stable")]
-    groups = {}
-    for v, k in enumerate(keys):
-        if strategic is None or strategic[v]:
-            groups.setdefault(k, []).append(v)
-    if not groups:
-        return B, True, 1.0
-    groups = [np.array(m) for m in groups.values()]
-    if group_size > 0:   # split each ranking group at random into subgroups of at most group_size
-        groups = [part for m in groups for part in np.array_split(rng.permutation(m), -(-len(m) // group_size))]
-    shared = [None] * len(groups)              # None = members vote sincerely
-    ref = [method.sincere(u[m].mean(axis=0, keepdims=True), methods.lazy_of(m), methods.approval_of(m))[0] for m in groups]
-    Ug = [u[m].sum(axis=0) for m in groups]
-    # Methods with features (all but Condorcet-random-drop) keep the summed features per poll sample
-    # and update them only for the group that changes; the result is the same as recounting.
-    inc = method.full is None
-    F = method.features(B) if inc else None
-    changed_last = True
-    for _ in range(rounds):
-        polls = rng.integers(0, n, (samples, n))
-        if inc:
-            W = np.stack([np.bincount(p, minlength=n) for p in polls]).astype(float)   # (samples, n)
-            S_cur = W @ F
-            P_cur = method.decide_many(S_cur, C)
-        else:
-            P_cur = poll_tallies(method.tally, B, polls)   # current ballots, tallied once per change
-        changed_last = False
-        for g in rng.permutation(len(groups)):
-            mem = groups[g]
-            to_sincere = shared[g] is not None and rng.random() < BACK_TO_SINCERE
-            if to_sincere:
-                prop_rows = sincere[mem]
-            else:
-                base = shared[g] if shared[g] is not None else ref[g]
-                prop = mutate(base, method.ballot, rng)
-                prop_rows = np.broadcast_to(prop, (len(mem), C))
-            if inc:
-                F_mem = method.features(np.ascontiguousarray(prop_rows))
-                S_new = S_cur + W[:, mem] @ (F_mem - F[mem])
-                P_new = method.decide_many(S_new, C)
-            else:
-                B2 = B.copy()
-                B2[mem] = prop_rows
-                P_new = poll_tallies(method.tally, B2, polls)
-            gain = group_value(P_new, Ug[g]) - group_value(P_cur, Ug[g])
-            if gain > 1e-12 or (to_sincere and gain >= -1e-12):   # honesty wins ties
-                if inc:
-                    F[mem], S_cur = F_mem, S_new
-                    B = B.copy()
-                    B[mem] = prop_rows
-                else:
-                    B = B2
-                P_cur = P_new
-                shared[g] = None if to_sincere else prop
-                changed_last = True
-    return B, not changed_last, float(sincerity(method, B, u).mean())
-
-
-PATIENCE = 3    # poll rounds: random search stops after this many proposals in a row without gain
-WIDEN = 6       # poll rounds: widen the polls up to 2**WIDEN times to find a runner-up
+WIDEN = 6       # widen the polls up to 2**WIDEN times to find a runner-up
 TOL = 1e-9
 
 
@@ -242,7 +155,7 @@ def default_poll_size(n):
     return m if m % 2 else m + 1
 
 
-def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=10, strategic=None, poll_error=2.0,
+def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strategic=None, poll_error=2.0,
             report=None, aggressive=None, start=None, adaptive=None, activated=None, campaign=None, risk=None,
             cstats=None, leaders=None):
     """Poll rounds (see the module docstring). Returns ballots of the last round, whether it
@@ -588,8 +501,9 @@ def _answer(gain, ballot_type, ref, cands, search, rng, eager=True, tol=0.0, pro
     naive exaggerations, campaign recommendations): the best one is taken if it does not lose in the
     polls (gain >= 0) for aggressive voters (eager: exaggeration wins ties, they exaggerate when it
     cannot hurt), or only if it strictly gains for kind voters (honesty wins ties). Then random search
-    (at most `search` proposals, stopping after PATIENCE in a row) from that ballot, or from the sincere
-    one: a change is taken only if it strictly gains. None = stay sincere.
+    (`search` proposals, each a small change of the best ballot so far) from that ballot, or from the
+    sincere one: a change is taken only if it strictly gains. The previous answer comes first, so the
+    search goes on from where it stood in the round before. None = stay sincere.
     tol: --risk, bold voters accept a loss up to this much (in the group's summed utility).
     promises: one per candidate ballot, the gain a campaign recommendation promises if its audience
     follows (None for other ballots; only bold voters get recommendations). Among ballots that gain
@@ -606,14 +520,10 @@ def _answer(gain, ballot_type, ref, cands, search, rng, eager=True, tol=0.0, pro
             take = v > best_v + TOL or (abs(v - best_v) <= TOL and pp > best_p + TOL)
         if take:
             best, best_v, best_p = c, v, (v if p is None else p)
-    cur, misses = (best if best is not None else ref), 0
+    cur = best if best is not None else ref
     for _ in range(search):
         prop = mutate(cur, ballot_type, rng)
         v = gain(prop)
         if v > best_v + TOL:
-            best, best_v, cur, misses = prop, v, prop, 0
-        else:
-            misses += 1
-            if misses >= PATIENCE:
-                break
+            best, best_v, cur = prop, v, prop
     return best

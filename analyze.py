@@ -57,7 +57,7 @@ import numpy as np
 
 import plots
 from metrics import pareto, FRONT_TOLERANCE, REF_POINTS
-from run import out_path, write_command, group_text, strategy_text, cand_text, width_text, check_folder, ANALYSIS_FILES, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
+from run import out_path, write_command, strategy_text, cand_text, width_text, check_folder, ANALYSIS_FILES, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
 from models import model_text, MODELS
 from methods import GROUPS, METHODS, select, group_of, sincerity_defined, current_name
 
@@ -187,6 +187,9 @@ def load(paths):
             if "fidelity" not in have:          # the sincerity column then holds the earlier measure
                 OLD_SINCERITY.append(source_name(p))
             for r in reader:
+                if r.get("converge", "0") not in ("", "0"):
+                    raise SystemExit(f"{p} holds results of convergent learning (--converge), which was removed "
+                                     "after version 1.0.0; analyse it with that version")
                 r.update(fill)                   # columns added later (ADDED_COLUMNS)
                 new = current_name(r["method"])  # methods renamed since (methods.RENAMED)
                 if new != r["method"]:
@@ -726,14 +729,13 @@ def label(key, varying, first):
     diff = [k for k in varying if p[k] != b[k]]
     if not varying:
         return "single condition"
-    return ", ".join(f"{names.get(k, k)} {group_text(p[k]) if k == 'group_size' else p[k]}"
-                     for k in diff) or "base"
+    return ", ".join(f"{names.get(k, k)} {p[k]}" for k in diff) or "base"
 
 
 POINT_KEYS = {"rb": "random ballot", "rc": "random candidate", "ml": "maximal lottery", **REF_POINTS}   # --points
 PARAM_NAMES = {"campaign": "campaigns (share planned with)", "risk": "risk by satisfaction",
-               "risk_tolerance": "risk tolerance", "group_size": "group size", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
-               "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error", "converge": "convergent rounds",
+               "risk_tolerance": "risk tolerance", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
+               "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error",
                "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion",
                "cand_shift": "candidate shift", "lazy": "laziness", "model": "electorate model",
                "ks_alpha": "ks faction alpha", "ks_cut": "ks cut",
@@ -741,14 +743,13 @@ PARAM_NAMES = {"campaign": "campaigns (share planned with)", "risk": "risk by sa
                "salience": "cluster salience", "salience_exponent": "cluster salience exponent", "fixed_variance": "cluster fixed variance",
                "field_kappa": "field saturation", "field_salience": "salience field",
                "noise_strength": "noise strength", "adaptive": "adaptive share", "utility": "utility"}
-LEARNING_ONLY = {"rounds", "samples", "group_size", "strategic", "adaptive", "poll_size", "poll_error", "search", "converge",
+LEARNING_ONLY = {"rounds", "samples", "strategic", "adaptive", "poll_size", "poll_error", "search",
                  "aggressive", "start", "campaign", "risk", "risk_tolerance"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)
 
 
 def param_order(k, v):
-    """Sort key for a parameter value: numbers by value (group size 0, whole ranking groups, counts as
-    the largest); words in their listed order (start: honest, previous; model: as in models.MODELS),
+    """Sort key for a parameter value: numbers by value; words in their listed order (start: honest, previous; model: as in models.MODELS),
     other words alphabetically, after the numbers."""
     words = {"start": ["honest", "previous"], "model": list(MODELS), "salience": ["none", "cluster"]}
     try:
@@ -756,7 +757,7 @@ def param_order(k, v):
     except ValueError:
         known = words.get(k, [])
         return (1, known.index(v) if v in known else len(known), str(v))
-    return (0, float("inf") if k == "group_size" and x == 0 else x, "")
+    return (0, x, "")
 
 
 DERIVED = {"salience": "salience_exponent"}   # columns set from another parameter (run.resolve_salience)
@@ -971,8 +972,7 @@ def main():
     chains = {}
     for k, chain_keys in sweep_chains(keys, varying).items():
         ps = k if isinstance(k, tuple) else (k,)
-        shown = lambda q, v: group_text(v) if q == "group_size" else v
-        shown_vals = [" / ".join(str(shown(q, dict(zip(PARAMS, key))[q])) for q in ps) for key in chain_keys]
+        shown_vals = [" / ".join(str(dict(zip(PARAMS, key))[q]) for q in ps) for key in chain_keys]
         name = "-".join(ps)
         chains[name] = " + ".join(PARAM_NAMES.get(q, q) for q in ps)
         # the line of rounded ballots depends on the score range: not shared across a max-score sweep
@@ -1052,8 +1052,7 @@ def main():
               "separated bars suggest a real difference (an approximation of the paired differences). In track "
               "plots they are each point's own interval."]
     L += ["- The strategic axes (VSE*, WME*) give the result after the poll rounds: voters see polls of the previous round "
-          "(the method's counts only) and answer them all at once (docs/model.md, Strategy engine). Under convergent learning "
-          "(--converge) they describe a long-run state instead and depend on the group size.",
+          "(the method's counts only) and answer them all at once (docs/model.md, Strategy engine).",
           "- **Compromise, burial, push-over** are shares of voters whose learned ballot reverses a real preference, "
           "by kind (see strategy.strategy_types): compromise raises a liked second choice, or the lesser evil of the "
           "two poll leaders, above the favourite; push-over raises a disliked candidate who is no poll leader to the "

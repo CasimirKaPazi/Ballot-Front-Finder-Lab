@@ -4,8 +4,8 @@ Usage:
     python run.py --elections 200                      # defaults: see docs/running.md, Parameters
 
 Each electorate is tallied twice per method: with sincere ballots, and after the groups
-(voters with the same sincere ranking) have answered polls strategically (see strategy.py: poll
-rounds by default, convergent learning with --converge). The "learned" rows hold those ballots.
+(voters with the same sincere ranking) have answered polls strategically (see strategy.py, poll
+rounds). The "learned" rows hold those ballots.
 
 Axes of the Pareto front (0 = random ballot, 100 = best candidate; see metrics.py):
     VSE, WME     voter satisfaction and worst-margin efficiency, sincere ballots
@@ -18,7 +18,7 @@ Partial strategy: --strategic p makes a random share p of the voters always stra
 voters for every method). --adaptive a makes a further share a adaptive: each poll round they vote
 strategically if the race between the two leaders matters enough to them. The rest always vote
 sincerely. Default: no one always strategic, everyone adaptive (--adaptive left out: everyone not
-in --strategic; with --converge nobody, as adaptive voters need poll rounds).
+in --strategic).
 
 Outputs, in one folder per run (--out; a name without a directory goes into output/; default
 run-<date>-<time>). `python analyze.py <folder>` puts its analysis into <folder>/analysis/.
@@ -48,7 +48,7 @@ from models import draw_electorate, model_text, MODELS
 from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined
 from ballots import score_ballots
-from strategy import learn, respond, strategy_types, default_poll_size, fidelity
+from strategy import respond, strategy_types, default_poll_size, fidelity
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, maximal_lottery, reference_points, FRONT_TOLERANCE
 import participation as part
 import manipulation as manip
@@ -85,10 +85,10 @@ def one_election(job):
     sc, p, e, rounds, names = job["sc"], job["p"], job["e"], job["rounds"], job["names"]
     participation, dummy = job.get("participation", False), job.get("dummy")
     manipulating = job.get("manipulation", False)
-    seed, samples, group_size, share = p["seed"], p["samples"], p["group_size"], p["strategic"]
+    seed, samples, share = p["seed"], p["samples"], p["strategic"]
     adapt = p.get("adaptive", 0.0)
     exits, clones, poll_size, poll_error = p["exits"], p["clones"], p["poll_size"], p["poll_error"]
-    search, converge, aggr, start = p["search"], p["converge"], p["aggressive"], p["start"]
+    search, aggr, start = p["search"], p["aggressive"], p["start"]
     phi, risky = p.get("campaign", 0.0), bool(p.get("risk", 0))
     set_max_score(p["max_score"])                   # per process: workers do not share module state
     set_lazy(p.get("lazy", 0.0))                    # laziness (methods.set_lazy)
@@ -172,14 +172,11 @@ def one_election(job):
                 B0[:, perm] = dummy[name]
             act, cst, lead = {}, {}, {}
             camp = {"share": phi, "cand_u": cu_all[np.ix_(orig, orig)]} if phi > 0 else None
-            if converge > 0:     # convergent learning does not use rounds: one result for every rounds value
-                res = [learn(m, uf, mrng, converge, samples, group_cap(group_size, len(u)), strategic)] * len(rounds)
-            else:                # all requested numbers of poll rounds from one run (see strategy.respond)
-                act = {}
-                res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
-                              poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0,
-                              adaptive=adaptive, activated=act, campaign=camp, risk=risk, cstats=cst,
-                              leaders=lead)
+            # all requested numbers of poll rounds from one run (see strategy.respond)
+            res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
+                          poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0,
+                          adaptive=adaptive, activated=act, campaign=camp, risk=risk, cstats=cst,
+                          leaders=lead)
             sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
             sincere_row.update(ties(m, m.sincere(uf), P_h))
             sincere_row.update(manip.manipulation(m, m.sincere(uf), uf, u, back) if manipulating else manip.NAN)
@@ -285,39 +282,34 @@ def resolve_salience(p):
 
 
 def resolve_adaptive(p):
-    """--adaptive left out (None): every voter who is not always strategic is adaptive (1 - --strategic),
-    or nobody with --converge (adaptive voters need poll rounds). Returns p with a number."""
+    """--adaptive left out (None): every voter who is not always strategic is adaptive (1 - --strategic).
+    Returns p with a number."""
     if p.get("adaptive") is None:
-        p = {**p, "adaptive": 0.0 if p.get("converge", 0) > 0 else round(1.0 - p["strategic"], 12)}
+        p = {**p, "adaptive": round(1.0 - p["strategic"], 12)}
     return p
 
 
 def valid_combination(p):
-    """A condition the simulation can run: shares of strategic and adaptive voters within 1, and no
-    adaptive voters with convergent learning (sweep.py skips the others)."""
-    return (p["strategic"] + p["adaptive"] <= 1 + 1e-9 and not (p["adaptive"] > 0 and p["converge"] > 0)
-            and not ((p.get("campaign", 0) > 0 or p.get("risk", 0)) and p["converge"] > 0))
+    """A condition the simulation can run: shares of strategic and adaptive voters within 1 (sweep.py
+    skips the others)."""
+    return p["strategic"] + p["adaptive"] <= 1 + 1e-9
 
 
 def check_params(a, error):
     """Reject values the simulation cannot use (a: parsed arguments; lists allowed, as in sweep.py)."""
     vals = lambda k: getattr(a, k) if isinstance(getattr(a, k), list) else [getattr(a, k)]
-    for k, lo in (("rounds", 0), ("samples", 1), ("search", 0), ("poll_size", 0), ("converge", 0), ("clones", 0)):
+    for k, lo in (("rounds", 0), ("samples", 1), ("search", 0), ("poll_size", 0), ("clones", 0)):
         if any(v < lo for v in vals(k)):
             error(f"--{k.replace('_', '-')} must be at least {lo}")
     for k in ("strategic", "adaptive", "aggressive", "lazy"):
         if any(v is not None and not 0 <= v <= 1 for v in vals(k)):
             error(f"--{k} must be between 0 and 1")
-    # (sweep.py skips the combinations that break these two; here only all of them breaking is an error;
+    # (sweep.py skips the combinations that break this; here only all of them breaking is an error;
     # an --adaptive left out (None) adapts to the others, see resolve_adaptive)
-    if min(vals("converge")) > 0 and max(vals("strategic")) == 0:
-        error("--converge needs a --strategic share (adaptive voters, the default, need poll rounds)")
     given = [v for v in vals("adaptive") if v is not None]
     if given and len(given) == len(vals("adaptive")):
         if min(vals("strategic")) + min(given) > 1 + 1e-9:
             error("--strategic and --adaptive together must be at most 1 (shares of the voters)")
-        if min(given) > 0 and min(vals("converge")) > 0:
-            error("--adaptive is for poll rounds: not with --converge")
     if any(v <= 0 for v in vals("field_kappa")):
         error("--field-kappa must be above 0")
     if any(v < 0 for v in vals("noise_strength")):
@@ -334,14 +326,10 @@ def check_params(a, error):
         error("--poll-error must be 0 or more")
     if "previous" in vals("start") and (any(vals("exits")) or any(vals("clones"))):
         error("--start previous needs the original field: not with --exits or --clones")
-    if "previous" in vals("start") and any(vals("converge")):
-        error("--start previous is for poll rounds, not --converge")
     if any(v < 0 or v > 1 for v in vals("campaign")):
         error("--campaign must be between 0 (off) and 1")
     if any(v < 0 for v in vals("risk_tolerance")):
         error("--risk-tolerance must be 0 or more")
-    if (max(vals("campaign")) > 0 or max(vals("risk")) > 0) and min(vals("converge")) > 0:
-        error("--campaign and --risk are for poll rounds, not --converge")
     if (max(vals("campaign")) > 0 or max(vals("risk")) > 0) and "previous" in vals("start"):
         error("--campaign and --risk are not available with --start previous yet")
 
@@ -364,9 +352,6 @@ def strategy_text(p, n):
     g0 = (lambda k: p[k]) if isinstance(p, dict) else (lambda k: getattr(p, k))
     g = lambda k: g0(k) if k not in LATER_PARAMS else (p.get(k, LATER_PARAMS[k]) if isinstance(p, dict)
                                                         else getattr(p, k, LATER_PARAMS[k]))
-    if int(g("converge")) > 0:
-        return (f"convergent learning {g('converge')} rounds x {g('samples')} poll samples, "
-                f"group size {group_text(g('group_size'))}")
     ps = int(g("poll_size")) or default_poll_size(int(n))
     return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
             f"search {g('search')}, "
@@ -377,28 +362,9 @@ def strategy_text(p, n):
             + ("; first poll from a previous election" if g("start") == "previous" else ""))
 
 
-def group_size_arg(x):
-    """--group-size: 0 (whole ranking groups), a whole number of voters, or a share of the electorate
-    between 0 and 1 (e.g. 0.05 = 5% of the voters)."""
-    v = float(x)
-    if v < 0 or (v > 1 and v != int(v)):
-        raise argparse.ArgumentTypeError("group size: 0, a whole number of voters, or a share between 0 and 1")
-    return int(v) if v == int(v) else v
-
-
-def group_cap(g, n):
-    """Group size cap in voters: a share 0 < g < 1 of n voters (at least 1), else g itself."""
-    return max(1, round(g * n)) if 0 < g < 1 else int(g)
-
-
-def group_text(g):
-    g = float(g)
-    return "unlimited" if g == 0 else f"{g:.0%} of voters" if g < 1 else f"{int(g)}"
-
-
 # Run parameters written into every row of the elections CSV
-PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "utility", "cand_dispersion", "cand_shift", "rounds", "samples", "group_size",
-          "strategic", "adaptive", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search", "converge",
+PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "utility", "cand_dispersion", "cand_shift", "rounds", "samples",
+          "strategic", "adaptive", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search",
           "start", "seed", "campaign", "risk", "risk_tolerance"]
 # Run parameters added later, with the value that gives the earlier behaviour: filled in where a caller
 # leaves them out (simulate), so callers written before them keep working
@@ -577,9 +543,9 @@ FINGERPRINT_PARAMS = {"voters": 31, "cands": 6, "model": "clusters", "dims": 3, 
                       "spread": 0.5, "salience": "none", "salience_exponent": 1.0, "fixed_variance": 0,
                       "field_kappa": 1.5, "field_salience": 0.0, "noise_strength": 3.0, "ks_alpha": 1.5,
                       "ks_cut": 0.2, "ks_shared": 0, "width": 1.0, "utility": "exp", "cand_dispersion": 1.0,
-                      "cand_shift": 0.0, "rounds": 2, "samples": 3, "group_size": 10, "strategic": 0.3,
+                      "cand_shift": 0.0, "rounds": 2, "samples": 3, "strategic": 0.3,
                       "adaptive": 0.5, "aggressive": 0.5, "lazy": 0.0, "max_score": 5, "exits": 0, "clones": 0,
-                      "poll_size": 0, "poll_error": 2.0, "search": 4, "converge": 0, "start": "honest", "seed": 7}
+                      "poll_size": 0, "poll_error": 2.0, "search": 4, "start": "honest", "seed": 7}
 FINGERPRINT_TIES = {**FINGERPRINT_PARAMS, "voters": 20, "cands": 5, "lazy": 0.5, "seed": 9}
 FINGERPRINT_COLS = ["U_method", "WM", "sincerity", "fidelity", "compromise", "burial", "pushover",
                     "U_best", "U_rb", "WM_best", "WM_rb"]
@@ -741,21 +707,20 @@ def parser():
     ap.add_argument("--rounds", type=int, default=3,
                     help="poll rounds before the vote (0 = everyone votes sincerely); see strategy.py")
     ap.add_argument("--samples", type=int, default=5,
-                    help="poll rounds: polls per round (they stand for the uncertainty; 10 until 2026-10-26); "
-                         "--converge: bootstrap resamples per round")
+                    help="polls per round (they stand for the uncertainty; 10 until 2026-10-26)")
     ap.add_argument("--poll-size", type=int, default=0,
-                    help="poll rounds only: voters per poll (0 = half the electorate, rounded to an odd number)")
-    ap.add_argument("--search", type=int, default=10,
-                    help="poll rounds only: random ballot changes a group tries per round, after the naive "
-                         "exaggerations (at most; it stops after 3 in a row without gain)")
+                    help="voters per poll (0 = half the electorate, rounded to an odd number)")
+    ap.add_argument("--search", type=int, default=1,
+                    help="random ballot changes a group tries per round, after the naive exaggerations, each from "
+                         "the best ballot so far (10, stopping after 3 in a row without gain, until 2026-10-29)")
     ap.add_argument("--aggressive", type=float, default=0.5,
                     help="share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) "
-                         "only when the polls show a gain (poll rounds only)")
+                         "only when the polls show a gain")
     ap.add_argument("--campaign", type=float, default=0.0,
-                    help="poll rounds: 0 = off; above 0, every candidate recommends a move each round, planned with "
+                    help="0 = off; above 0, every candidate recommends a move each round, planned with "
                          "this share of its audience following (e.g. 0.5; docs/campaigns.md)")
     ap.add_argument("--risk", type=int, default=0, choices=[0, 1],
-                    help="poll rounds: 1 = each voter is careful or bold by their satisfaction with the polls, "
+                    help="1 = each voter is careful or bold by their satisfaction with the polls, "
                          "instead of the fixed --aggressive split (docs/campaigns.md)")
     ap.add_argument("--risk-tolerance", type=float, default=0.1,
                     help="with --risk 1: how much loss bold voters accept, per unit of their shortfall (κ)")
@@ -765,21 +730,14 @@ def parser():
                          "liked, is at least their cut (0 = full ballots); strategic voters may deviate "
                          "(see docs/model.md, Truncation and laziness)"),
     ap.add_argument("--poll-error", type=float, default=2.0,
-                    help="poll rounds only: voters treat polls as this many times less precise than their "
+                    help="voters treat polls as this many times less precise than their "
                          "sampling error")
-    ap.add_argument("--converge", type=int, default=0,
-                    help="N > 0: instead of poll rounds, the convergent learning model with N rounds "
-                         "(groups see each other's moves; uses --group-size)")
-    ap.add_argument("--group-size", type=group_size_arg, default=10,
-                    help="--converge only (poll rounds use whole ranking groups): max voters coordinating as one "
-                         "group: a number of voters (1 = individual), a share of the electorate between 0 and 1 "
-                         "(0.05 = 5%%), or 0 = whole ranking group")
     ap.add_argument("--strategic", type=float, default=0.0,
                     help="share of voters who always vote strategically (random, the same for every method)")
     ap.add_argument("--adaptive", type=float, default=None,
                     help="share of voters who decide each poll round whether to vote strategically, by how much "
                          "the race between the two leaders matters to them (see docs/model.md, Partial strategy); "
-                         "the rest always vote sincerely. Default: everyone not in --strategic (with --converge: 0)")
+                         "the rest always vote sincerely. Default: everyone not in --strategic")
     ap.add_argument("--max-score", type=int, default=5,
                     help="score ballots range over 0..max (Score, STAR, MJ, ARA, ...; MCA and 321 keep 3 grades)")
     ap.add_argument("--exits", type=int, default=0, choices=[0, 1],

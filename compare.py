@@ -64,7 +64,7 @@ import analyze as an
 from analyze import PARAMS, PARAM_NAMES, FRONT, ADDED_COLUMNS, dominance, input_paths
 from metrics import pareto, FRONT_TOLERANCE
 from methods import select, GROUPS, group_of, current_name, sincerity_defined
-from run import write_command, default_params, group_text, VERSION
+from run import write_command, default_params, VERSION
 
 AXES_SHOWN = ["VSE*", "WME*", "sincerity"]
 NEAR = (1.0, 2.0)          # points: "near the front" if no method is better by this much on both VSE* and WME*
@@ -162,7 +162,7 @@ def describe(params, defaults):
 def label_of(diff):
     if not diff:
         return "defaults"
-    return ", ".join(f"{PARAM_NAMES.get(k, k)} {group_text(v) if k == 'group_size' else v}" for k, v in diff.items())
+    return ", ".join(f"{PARAM_NAMES.get(k, k)} {v}" for k, v in diff.items())
 
 
 def say(*parts):

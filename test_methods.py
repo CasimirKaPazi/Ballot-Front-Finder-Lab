@@ -260,11 +260,11 @@ for name in ["Plurality", "Borda", "IRV", "Minimax", "Score"]:
         assert f.inn.sum() >= 2 and len(f.clones) <= 2
 print("nomination: settled fields are equilibria ok")
 
-# Learning works on fields of 2 candidates (strategic exits can leave only two)
-from strategy import learn
+# Poll rounds work on fields of 2 candidates (strategic exits can leave only two)
+from strategy import respond as _respond2
 for name, m in METHODS.items():
-    learn(m, np.random.default_rng(1).random((15, 2)), np.random.default_rng(2), 2, 2, 5, None)
-print("learning on 2 candidates ok")
+    _respond2(m, np.random.default_rng(1).random((15, 2)), np.random.default_rng(2), rounds=2, samples=2, search=2)
+print("poll rounds on 2 candidates ok")
 
 # Poll rounds (strategy.respond)
 from strategy import respond, default_poll_size
@@ -452,8 +452,8 @@ from run import one_election
 
 def _p(**change):
     """Run parameters for one_election in the tests (the keys of run.PARAMS)."""
-    return {"seed": 3, "samples": 5, "group_size": 10, "strategic": 0.5, "max_score": 5, "exits": 0, "clones": 0,
-            "poll_size": 0, "poll_error": 2.0, "search": 2, "converge": 0, "aggressive": 0.5, "start": "honest",
+    return {"seed": 3, "samples": 5, "strategic": 0.5, "max_score": 5, "exits": 0, "clones": 0,
+            "poll_size": 0, "poll_error": 2.0, "search": 2, "aggressive": 0.5, "start": "honest",
             "lazy": 0.0, **change}
 
 
@@ -989,7 +989,7 @@ print("electorate models ok")
 # Sweep order of parameter values (analyze.param_order): numbers by value, words in their listed order
 from analyze import param_order as _po
 assert sorted(["ks", "clusters"], key=lambda v: _po("model", v)) == ["clusters", "ks"]
-assert sorted(["0", "5", "1"], key=lambda v: _po("group_size", v)) == ["1", "5", "0"]
+assert sorted(["10", "5", "1"], key=lambda v: _po("search", v)) == ["1", "5", "10"]
 assert sorted(["previous", "honest"], key=lambda v: _po("start", v)) == ["honest", "previous"]
 print("parameter order ok")
 

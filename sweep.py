@@ -9,7 +9,6 @@ Usage:
     python sweep.py --model clusters --cluster-count 20 5 --out clusters
     python sweep.py --rounds 1 2 3 4 5 --strategic 0.5 1 --elections 200 --out rounds
     python sweep.py --aggressive 0 0.5 1 --methods STAR "BTR-score" Schulze
-    python sweep.py --converge 20 --samples 10 --group-size 1 10 0 --out convergent
     python sweep.py --exclude "Random pair runoff" TRASH
 
 Conditions that differ only in --rounds come from one run (see strategy.respond).
@@ -31,7 +30,7 @@ import os
 import time
 
 from models import MODELS
-from run import (simulate, fingerprints, check_resume_fingerprints, PARAMS, run_dir, write_command, group_size_arg, check_params, run_key, valid_combination,
+from run import (simulate, fingerprints, check_resume_fingerprints, PARAMS, run_dir, write_command, check_params, run_key, valid_combination,
                  resolve_adaptive, resolve_salience,
                  resume_state, CsvSink, interrupted)
 from methods import run_selection
@@ -63,15 +62,14 @@ def main():
     ap.add_argument("--cand-shift", type=float, nargs="+", default=[0.0])
     ap.add_argument("--rounds", type=int, nargs="+", default=[3])
     ap.add_argument("--samples", type=int, nargs="+", default=[5])
-    ap.add_argument("--group-size", type=group_size_arg, nargs="+", default=[10])
     ap.add_argument("--strategic", type=float, nargs="+", default=[0.0])
     ap.add_argument("--adaptive", type=float, nargs="+", default=[None],
-                    help="default: everyone not in --strategic, per condition (with --converge: 0)")
+                    help="default: everyone not in --strategic, per condition")
     ap.add_argument("--max-score", type=int, nargs="+", default=[5])
     ap.add_argument("--exits", type=int, nargs="+", default=[0], choices=[0, 1])
     ap.add_argument("--clones", type=int, nargs="+", default=[0])
     ap.add_argument("--poll-size", type=int, nargs="+", default=[0])
-    ap.add_argument("--search", type=int, nargs="+", default=[10])
+    ap.add_argument("--search", type=int, nargs="+", default=[1])
     ap.add_argument("--start", nargs="+", default=["honest"], choices=["honest", "previous"])
     ap.add_argument("--poll-error", type=float, nargs="+", default=[2.0])
     ap.add_argument("--aggressive", type=float, nargs="+", default=[0.5])
@@ -79,7 +77,6 @@ def main():
     ap.add_argument("--campaign", type=float, nargs="+", default=[0.0])
     ap.add_argument("--risk", type=int, nargs="+", default=[0], choices=[0, 1])
     ap.add_argument("--risk-tolerance", type=float, nargs="+", default=[0.1])
-    ap.add_argument("--converge", type=int, nargs="+", default=[0])
     ap.add_argument("--seeds", type=int, nargs="+", default=[1])
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--methods", nargs="+", default=None, help="run only these methods or groups (start from none); \"all\" for every method")
@@ -100,17 +97,6 @@ def main():
     check_params(a, ap.error)
     out = run_dir(a.out, "sweep", a.overwrite, a.resume)
     write_command(out, a.resume)
-    # parameters that have no effect in the chosen strategy model give identical conditions
-    conv = set(a.converge) - {0}
-    if not conv and len(a.group_size) > 1:
-        print("note: --group-size only matters with --converge; these conditions will be identical")
-    if conv and set(a.converge) == conv:
-        idle = [f for f, k in (("--rounds", "rounds"), ("--aggressive", "aggressive"), ("--poll-size", "poll_size"),
-                               ("--poll-error", "poll_error"), ("--search", "search")) if len(getattr(a, k)) > 1]
-        if idle:
-            print(f"note: {', '.join(idle)} only matter for poll rounds, not with --converge; "
-                  "these conditions will be identical")
-
     a.salience = [None]                              # set from the exponent per condition (resolve_salience)
     values = {k: getattr(a, k if k != "seed" else "seeds") for k in PARAMS}
     if a.one_at_a_time:
@@ -123,8 +109,7 @@ def main():
     skipped = [p for p in grid if not valid_combination(p)]
     if skipped:
         grid = [p for p in grid if valid_combination(p)]
-        print(f"skipped {len(skipped)} combination(s) that cannot run (--strategic + --adaptive above 1, "
-              "or --adaptive, --campaign or --risk with --converge)")
+        print(f"skipped {len(skipped)} combination(s) that cannot run (--strategic + --adaptive above 1)")
     # Conditions that differ only in the number of poll rounds come from one run (strategy.respond):
     # merge them, keeping the order of first appearance.
     runs = {}

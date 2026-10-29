@@ -164,4 +164,3 @@ The first run of the basic version took the follower's ballot for the Inverse-\*
 8. **Plurality**: whether its loss with campaigns is a real coordination effect.
 5. **Satisfaction's reference**: the favourite (as designed) or the better leader.
 6. **κ and the threshold distribution**: uniform thresholds as for adaptive voters; whether the risk threshold should be independent of the adaptive threshold (as designed: separate draws) or the same draw.
-7. **Convergent learning**: campaigns only in poll rounds; `--converge` with `--campaign` is refused.

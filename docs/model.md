@@ -143,9 +143,9 @@ Rules that refer to the range scale with it: ARA approves ratings above the midd
 
 ## Strategy engine
 
-Two models of strategic voting (`strategy.py`); the front-runners, the groups answering around them and the attention to both sides (attack and defence) take inspiration from John Huang's votesim ([summary report](http://votesim.usa4r.org/summary-report.html), [code](https://github.com/johnh865/election_sim)), which measures one-sided strategy (only the challenger's coalition uses tactics) and two-sided strategy (the honest winner's supporters answer with a bullet vote). **Poll rounds** is the default; **convergent learning**, a long-run model kept for comparison, is available with `--converge N`.
+Strategic voting in poll rounds (`strategy.py`); the front-runners, the groups answering around them and the attention to both sides (attack and defence) take inspiration from John Huang's votesim ([summary report](http://votesim.usa4r.org/summary-report.html), [code](https://github.com/johnh865/election_sim)), which measures one-sided strategy (only the challenger's coalition uses tactics) and two-sided strategy (the honest winner's supporters answer with a bullet vote). Version 1.0.0 also had **convergent learning** (`--converge N`), a long-run model where groups take turns over many rounds; it was removed on 2026-10-29 and remains available in that version.
 
-### Poll rounds (default)
+### Poll rounds
 
 One election, with a few polls before it. Voters see only published poll results, never anyone's preferences, and answer them all at the same time.
 
@@ -170,52 +170,40 @@ One election, with a few polls before it. Voters see only published poll results
   | two-round, approval first round | approve everyone liked at least as much as A (the runoff ranking stays sincere) |
   | veto | veto B |
 
-  **Aggressive** voters take the best of these if it does not lose in the polls: exaggeration wins ties, they exaggerate when it cannot hurt, whatever the gap. **Kind** voters take it only if it strictly gains: honesty wins ties. `--aggressive` (0.5) is the share of strategic voters who are aggressive; each voter's type is drawn per election from its own random stream (the same for every method), and aggressive and kind voters form separate groups. They are only candidates: one that backfires in the polls is not taken. Then random search (at most `--search` proposals, 10; it stops after 3 in a row without gain) takes a change only if it strictly gains. A group none of whose candidates is safe and whose search finds no gain stays sincere. Without a runner-up (exact polls) there are no exaggerations, only the search.
+  **Aggressive** voters take the best of these if it does not lose in the polls: exaggeration wins ties, they exaggerate when it cannot hurt, whatever the gap. **Kind** voters take it only if it strictly gains: honesty wins ties. `--aggressive` (0.5) is the share of strategic voters who are aggressive; each voter's type is drawn per election from its own random stream (the same for every method), and aggressive and kind voters form separate groups. They are only candidates: one that backfires in the polls is not taken. Then random search (`--search` proposals, default 1, each a small change of the best ballot so far) takes a change only if it strictly gains. Since the previous answer is the first candidate, the search goes on over the rounds from where it stood: one step per round. (Until 2026-10-29: at most 10 proposals per round, stopping after 3 in a row without gain; a sweep over `--search` 0 to 5 changed the results little.) A group none of whose candidates is safe and whose search finds no gain stays sincere. Without a runner-up (exact polls) there are no exaggerations, only the search.
 - **Settled:** the last round gave the same ballots as the round before (a fixed point).
 - Condorcet-random-drop, which has no feature sums, is polled by tallying the sampled ballots, with the group's sampled members changed.
 
 ### Partial strategy
 
-`--strategic p` makes a random share p of the voters always strategic; the others are adaptive (by default, see Adaptive voters below) or, with `--adaptive 0`, always sincere. Each voter is strategic with probability p, drawn from its own random stream per election, so the same voters are strategic for every method. Groups (and their size cap) form only among the strategic voters. p = 1 gives full strategy; p = 0 with no adaptive voters (`--adaptive 0`) gives the sincere results. A share like 0.5 with `--adaptive 0` (the default until 2026-10-17) is an intermediate level, in the spirit of other simulations that report 0, 50 and 100% strategy, and comparable with them. Sincerity and the strategy types are averaged over all voters, including the sincere ones.
+`--strategic p` makes a random share p of the voters always strategic; the others are adaptive (by default, see Adaptive voters below) or, with `--adaptive 0`, always sincere. Each voter is strategic with probability p, drawn from its own random stream per election, so the same voters are strategic for every method. Groups form only among the strategic voters. p = 1 gives full strategy; p = 0 with no adaptive voters (`--adaptive 0`) gives the sincere results. A share like 0.5 with `--adaptive 0` (the default until 2026-10-17) is an intermediate level, in the spirit of other simulations that report 0, 50 and 100% strategy, and comparable with them. Sincerity and the strategy types are averaged over all voters, including the sincere ones.
 
 Run time falls less than in proportion to p: halving the strategic voters removes fewer than half of the groups, since many groups are small.
 
-**Adaptive voters** (`--adaptive a`, poll rounds only). A fixed share of strategic voters makes some of them optimise their ballot even when nothing is at stake for them, while sincere voters, lazy ones in particular, never react. Adaptive voters strategise when the race that matters matters to them.
+**Adaptive voters** (`--adaptive a`). A fixed share of strategic voters makes some of them optimise their ballot even when nothing is at stake for them, while sincere voters, lazy ones in particular, never react. Adaptive voters strategise when the race that matters matters to them.
 
 - Three groups, from the same random draw per voter: always strategic (a share p, `--strategic`), adaptive (the next share a) and always sincere (the rest; p + a ≤ 1). With `--adaptive 0` the results are exactly those of the share model.
-- **The default** (since 2026-10-17): `--strategic 0` and `--adaptive` left out, which means everyone not always strategic is adaptive (a = 1 − p; with `--converge`, a = 0, and a `--strategic` share must be given). So by default every voter is adaptive, and `--strategic 0.5` alone gives half always strategic, half adaptive; the share model needs `--adaptive 0`. Why: adaptive voters strategise when they have a reason, need no share to be chosen, and kept the method order of the share model while removing its artefacts (strategy without a stake, sincere voters who never react; [journal.md](journal.md), Adaptive voters).
+- **The default** (since 2026-10-17): `--strategic 0` and `--adaptive` left out, which means everyone not always strategic is adaptive (a = 1 − p). So by default every voter is adaptive, and `--strategic 0.5` alone gives half always strategic, half adaptive; the share model needs `--adaptive 0`. Why: adaptive voters strategise when they have a reason, need no share to be chosen, and kept the method order of the share model while removing its artefacts (strategy without a stake, sincere voters who never react; [journal.md](journal.md), Adaptive voters).
 - **Stake.** In each round, after the poll, the two leaders A and B are known (the same for everyone; Strategy engine). A voter's stake is |u(A) − u(B)|, rescaled to 0–1 between their least and most liked candidate: how much the outcome of the leading race matters to them.
 - **Decision, every round anew.** Each adaptive voter has a personal threshold, fixed for the election: their place in the adaptive band of the draw, uniform on 0–1. In a round, the voter votes strategically if their stake exceeds it, and sincerely otherwise (lazy if `--lazy` is set). So the share strategic at a given stake equals that stake: a voter indifferent between the leaders never strategises, one with everything at stake always does. A voter can turn sincere again when the leaders change.
 - **Both sides.** In a close race the supporters of both leaders have a stake, so attack and defence come from the same rule; the leader rule of Myerson and Weber needs both. A method whose two leaders are both broadly acceptable gives fewer voters a reason to strategise.
 - The report gives the share of adaptive voters voting strategically in the reported round, per method (column `adapted` in the elections CSV).
-- Not with `--converge` (convergent learning has no leading race per round); `sweep.py` skips such combinations, and those with p + a above 1. With `--start previous`, the previous election uses the same groups.
+- `sweep.py` skips combinations with p + a above 1. With `--start previous`, the previous election uses the same groups.
 
-### Convergent learning (`--converge N`)
-
-The earlier model: over N rounds, groups take turns and each sees the others' latest strategic ballots through a fresh poll of the full electorate. It finds where an electorate ends up after long adjustment, with much more information and coordination than one election offers. That makes it resistant to strategies that only fail when many voters use them at once: mass burial under Borda, for example, which sinks Borda when everyone buries simultaneously ([journal.md](journal.md)). Kept for comparison and as a long-run view; the results up to 2026-10-08 used it with N = 20 and 10 poll samples (`--converge 20 --samples 10`).
-
-- **Groups:** strategic voters with the same sincere ranking, split at random into subgroups of at most `--group-size` voters (see Coordination, below). A group either votes sincerely (each member their own sincere ballot) or casts one shared ballot.
-- **Polls:** each round draws `--samples` bootstrap resamples of the electorate. A proposal is judged by the group's total expected utility averaged over these samples, so a group gains in proportion to how often it would be pivotal, not only when it is decisive in the exact electorate.
-- Voters start sincere. A group that has not deviated yet changes the sincere ballot of its average member (mean utilities of the group); a deviating group changes its current shared ballot, and sometimes (15% of proposals) proposes going back to sincere.
-- **Acceptance:** a proposal is kept only if it raises the group's expected utility. A return to sincere is also kept when it is not worse: voters prefer honesty when indifferent. Without this, a deviation that once paid off stays forever once it stops mattering, and sincerity keeps falling with the number of rounds instead of reflecting what strategy actually pays.
-- **Rounds:** groups in random order each round; no early stop. Each group tries only one random change per round, so a round without any accepted change does not mean learning has finished, and `settled` (no change in the last round) is a weak sign of convergence.
-
-**Coordination: what the strategic axes measure** (convergent learning only; poll rounds always use whole ranking groups, and there coordination is limited by information, one poll and simultaneous answers, instead of by a group-size cap).
+### Coordination: what the strategic axes measure
 
 How many voters move together decides which strategies pay, and the methods differ sharply in this.
 
 - **Compromise** (voting for a viable candidate instead of a hopeless favourite) pays even for a single voter. It is the main strategy in TTR (top-two runoff) and IRV, and it tends to carry the Condorcet winner into the final round.
 - **Burial** (ranking or rating a rival below a candidate one likes less, to create a cycle or to drop the rival in a runoff) only pays when many voters do it together. A single voter out of 99 is almost never pivotal for it. It is the main strategy against Condorcet methods, STAR and BTR-score, and it targets exactly the Condorcet winner.
 
-With `--group-size 0` (whole ranking groups) the strategic axes measure resistance to **organised factional strategy**: every voter with the same ranking follows one recommendation, the case most favourable to burial. With `--group-size 1` they measure resistance to **individual strategy**, where burial almost never pays. The default of 10 lies in between; results under strategy should always be read together with the group size used.
-
-Groups are formed from voters with the same full sincere ranking. With many candidates there are many possible rankings (720 for 6 candidates), so most ranking groups are small whatever the cap, and organised blocs become rare: with 6 candidates and 99 voters, the group size changes little. Coordination by favourite or by cluster would be a different model.
+In poll rounds every voter with the same sincere ranking (and the same attitude, aggressive or kind) acts as one group, so burial pays for a group in proportion to its size; coordination is limited by information instead: one poll per round, and every group answers it at once without seeing the others. With many candidates there are many possible rankings (720 for 6 candidates), so most ranking groups are small, and organised blocs across rankings arise only when groups answer the same poll alike. Coordination by favourite or by cluster would be a different model.
 
 A second, smaller asymmetry: learning is myopic. A burying group does not anticipate that the Condorcet winner's supporters may bury back, or that the cycle it creates can elect a candidate it likes even less (the chicken dilemma). This probably makes burial look somewhat more attractive than it would be to far-sighted voters.
 
-Smaller groups mean more groups, and run time grows with their number.
+Run time grows with the number of groups.
 
-### Common to both
+### Details
 
 - **Proposals** (one small change to a ballot; `strategy.mutate`):
   - one name: switch to another candidate
@@ -227,7 +215,7 @@ Smaller groups mean more groups, and run time grows with their number.
   - truncated ranking: swap two candidates, or rank one more or one fewer
   - score: set one candidate to a different value 0–max. For ranges above 0–5, half of the proposals use the six levels of the 0–5 scale stretched to the range (0, 20, … 100 for 0–100), so the chance of trying an extreme does not shrink as the range grows and learning is not slowed by the range alone
   - three grades: set one candidate to a different grade
-- **Feature sums:** every tally except Condorcet-random-drop depends on the ballots only through sums over voters of per-voter features (totals, first and last places, the pairwise matrix, grade counts, first choices among each subset of candidates, ...). Each method lists its features and decides from their sums. In both models a group's change is evaluated by updating the polled sums instead of recounting. In convergent learning all features are integers, so this gives exactly the same ballots as recounting (checked against the earlier code); poll counts are scaled from a sample and need not be integers.
+- **Feature sums:** every tally except Condorcet-random-drop depends on the ballots only through sums over voters of per-voter features (totals, first and last places, the pairwise matrix, grade counts, first choices among each subset of candidates, ...). Each method lists its features and decides from their sums. A group's change is evaluated by updating the polled sums instead of recounting. All features are integers; poll counts are scaled from a sample and need not be integers.
 - **Random streams:** every method learns with a fresh copy of the same random stream per election (common random numbers: the same polls for every method as long as they draw alike), and the candidates' order of moves in strategic nomination is likewise the same for every method. So results do not change when methods are added or reordered, methods that agree on every ballot set agree in the results (IRV and ER-IRV on honest ballots), and paired differences are not blurred by different poll draws.
 
 ## Starting information

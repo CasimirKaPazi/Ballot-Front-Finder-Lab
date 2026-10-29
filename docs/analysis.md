@@ -43,7 +43,7 @@ A method's distance to the curve is what it loses to having only ballots, not ut
 
 **Low** (and Low\* with learned ballots), reported alongside but not an axis: the share of elections whose winner lies below the median candidate by total utility (for a lottery, its expected total utility below the median of the candidates' totals). VSE and WME are averages over elections, ratios of sums, so a method that is usually excellent and sometimes disastrous can match one that is always good; Low shows how often a method elects a poor candidate. After John Huang's votesim, which reports the worst 5% of elections; a share of poor outcomes is used instead because one election's VSE is unstable (its denominator can be small). Computed from the candidates' totals stored in every row (U_cands), so older runs with that column get it too.
 
-VSE, WME and CE use sincere ballots; VSE\*, WME\* and CE\* (in the CSV: VSE_learned, WME_learned, CE_learned) the strategic ballots ("learned": after the poll rounds, or after convergent learning). In all cases the preferences that count are the sincere ones.
+VSE, WME and CE use sincere ballots; VSE\*, WME\* and CE\* (in the CSV: VSE_learned, WME_learned, CE_learned) the strategic ballots ("learned": after the poll rounds). In all cases the preferences that count are the sincere ones.
 
 **Strategy types** (`strategy.strategy_types`), among voters whose learned ballot reverses at least one real preference:
 - *compromise*: the favourite is not at the top, and a top candidate is liked above the voter's mean or is one of the two poll leaders (a viable second choice, or the lesser evil of the leaders, raised);
@@ -100,7 +100,7 @@ The exaggerated score ballot and the approval ballot say the same and get the sa
 **How to interpret:**
 - The values are the result. Whether a method lies on the Pareto front is already interpretation: it depends on which axes count and on which methods are included. "Dominated by" is only a pointer to where to look.
 - The axes are kept separate on purpose. Each carries its own value judgement (utilitarian or majoritarian, honest or strategic); no weighting into a single score.
-- Read results **per condition first**. The strategic axes depend on how voters strategise: the number of poll rounds, the aggressive and strategic shares (and, with `--converge`, the group size; see [model.md](model.md), Coordination).
+- Read results **per condition first**. The strategic axes depend on how voters strategise: the number of poll rounds, the aggressive and strategic shares (see [model.md](model.md), Coordination).
 - An ordering between two methods only counts if their paired difference is not a tie.
 
 **Plots** (in the analysis folder):
