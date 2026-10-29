@@ -479,6 +479,27 @@ def _exag_score_run(Ug, A, Bo):
     return [_rank_points(order) + C * x for x in _exag_score(Ug, A, Bo)]
 
 
+def _push_fav_run(Ug, A, X):
+    """Push-over in a two-round election: mark X, so that X rather than the other leader meets A in the
+    runoff; the runoff ranking stays sincere."""
+    C = len(Ug)
+    return _rank_points(_views(Ug, A, A)[0]) + C * np.eye(C)[X]
+
+
+def _push_app_run(Ug, A, X):
+    """Approve down to A, and X as well."""
+    C = len(Ug)
+    order, up = _views(Ug, A, A)[:2]
+    return _rank_points(order) + C * (up | (np.arange(C) == X))
+
+
+def _push_score_run(Ug, A, X):
+    """The top score down to A, and to X as well, 0 for the rest."""
+    C = len(Ug)
+    order, up = _views(Ug, A, A)[:2]
+    return _rank_points(order) + C * methods.MAXS * (up | (np.arange(C) == X))
+
+
 def _exag_veto(Ug, A, Bo):
     v = np.zeros(len(Ug)); v[Bo] = -1
     return [v]
@@ -612,6 +633,8 @@ class Ballot:
     approval: bool = False      # the honest ballot uses the approval threshold (approves): sincere(u, lazy, draw)
     ordered: bool = False       # records an order of the candidates
     score_range: bool = False   # uses the score range 0..MAXS (--max-score changes it; the max-score set)
+    pushover: Callable = None   # two-round: (Ug, A, X) -> round-1 support for X as well, to bring X into the
+                                # runoff against A instead of the other leader (strategy.respond)
 
     def chosen(self, X):
         """The part of the ballots the voter chooses (marks), as sincerity and fidelity look at it."""
@@ -628,11 +651,11 @@ BALLOTS = {b.name: b for b in [
     Ballot("score", score_ballots, _mutate_score, _exag_score, _implied_score, _worst_score,
            lazy=True, ordered=True, score_range=True),
     Ballot("fav_run", fav_run_ballots, _mutate_fav_run, _exag_fav_run, _implied_marks, _worst_fav,
-           marks=_marks_run, lazy=True),                       # laziness: the runoff ranking only
+           marks=_marks_run, lazy=True, pushover=_push_fav_run),      # laziness: the runoff ranking only
     Ballot("app_run", app_run_ballots, _mutate_app_run, _exag_app_run, _implied_marks, _worst_approval,
-           marks=_marks_run, lazy=True, approval=True),
+           marks=_marks_run, lazy=True, approval=True, pushover=_push_app_run),
     Ballot("score_run", score_run_ballots, _mutate_score_run, _exag_score_run, _implied_score, _worst_score,
-           marks=_marks_score_run, lazy=True, score_range=True),
+           marks=_marks_score_run, lazy=True, score_range=True, pushover=_push_score_run),
     Ballot("veto", veto_ballots, _mutate_veto, _exag_veto, _implied_veto, _worst_veto),
     Ballot("weak", lazy_rank_ballots, _mutate_weak, _exag_weak, _implied_rank, _worst_ranking,
            lazy=True, ordered=True),                                      # honest: strict; ties only strategic

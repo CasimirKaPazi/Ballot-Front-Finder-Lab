@@ -376,6 +376,10 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
                 gain = _gain_full(method, B, mem, sincere[mem], polls, Ug[g])
             prev = shared.get(names[g])
             cands = ([prev] if prev is not None else []) + exaggerations(method.ballot, Ug[g], a, b)
+            push = BALLOTS[method.ballot].pushover
+            if push is not None and b is not None:             # two-round: bring a third candidate into the runoff
+                A = a if Ug[g][a] >= Ug[g][b] else b
+                cands += [push(Ug[g], A, x) for x in range(C) if x not in (a, b)]
             if BALLOTS[method.ballot].marks is not None:          # two-round: keep the group's own runoff part
                 cands = [np.floor_divide(x, C) * C + np.mod(ref[g], C) for x in cands]
             promises = [None] * len(cands)
