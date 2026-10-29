@@ -170,7 +170,7 @@ def one_election(job):
                 perm = np.random.default_rng([seed, e, zlib.crc32(b"relabel")]).permutation(C)
                 B0 = np.empty_like(dummy[name])
                 B0[:, perm] = dummy[name]
-            act, cst = {}, {}
+            act, cst, lead = {}, {}, {}
             camp = {"share": phi, "cand_u": cu_all[np.ix_(orig, orig)]} if phi > 0 else None
             if converge > 0:     # convergent learning does not use rounds: one result for every rounds value
                 res = [learn(m, uf, mrng, converge, samples, group_cap(group_size, len(u)), strategic)] * len(rounds)
@@ -178,7 +178,8 @@ def one_election(job):
                 act = {}
                 res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
                               poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0,
-                              adaptive=adaptive, activated=act, campaign=camp, risk=risk, cstats=cst)
+                              adaptive=adaptive, activated=act, campaign=camp, risk=risk, cstats=cst,
+                              leaders=lead)
             sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
             sincere_row.update(ties(m, m.sincere(uf), P_h))
             sincere_row.update(manip.manipulation(m, m.sincere(uf), uf, u, back) if manipulating else manip.NAN)
@@ -193,7 +194,7 @@ def one_election(job):
                             "sincerity": sin if defined else "",
                             "fidelity": float(fidelity(m, B, uf).mean()) if defined else "",
                             "settled": int(settled), "adapted": act[r] if adaptive is not None else "",
-                            **strategy_types(B, m.pref(uf)), **nstats, **check(B), **manip.NAN,
+                            **strategy_types(B, m.pref(uf), lead.get(r)), **nstats, **check(B), **manip.NAN,
                             # campaigns and risk (docs/campaigns.md): blank when off
                             "camp_follow": cs_r.get("follow", "") if camp else "",
                             "camp_top": (int(orig[cs_r["top"]]) if cs_r.get("top", -1) >= 0 else -1) if camp and cs_r else "",

@@ -131,19 +131,26 @@ def fidelity(method, B, u):
     return 1 - np.abs(du - dv).sum(axis=(1, 2)) / np.where(den > 1e-12, den, 1)
 
 
-def strategy_types(B, u):
+def strategy_types(B, u, leaders=None):
     """Shares of voters whose ballot reverses at least one real preference, by kind:
-      compromise - the favourite is not at the top, and the best-liked top candidate is liked
-                   above the voter's mean (a viable second choice raised)
+      compromise - the favourite is not at the top, and a top candidate is liked above the voter's
+                   mean or is one of the poll leaders (a viable second choice, or the lesser evil
+                   of the two leaders, raised)
       push-over  - the favourite is not at the top, and every top candidate is liked below the
-                   mean (a weak candidate raised, to steer eliminations or runoffs)
+                   mean and is no poll leader (a weak candidate raised, to steer eliminations or
+                   runoffs)
       burial     - the favourite stays at the top, but a preference further down is reversed
-    The three are exclusive; sincere voters count in none."""
+    The three are exclusive; sincere voters count in none. leaders: the last poll round's two
+    leaders (since 2026-10-28; None: by the mean alone, as before, e.g. for convergent learning)."""
     rev = ((B[:, :, None] > B[:, None, :]) & (u[:, :, None] < u[:, None, :])).any(axis=(1, 2))
     top = B >= B.max(axis=1, keepdims=True)
     fav_top = top[np.arange(len(B)), u.argmax(axis=1)]
     best_top = np.where(top, u, -np.inf).max(axis=1)
     above_mean = best_top >= u.mean(axis=1)
+    if leaders is not None:
+        for c in leaders:
+            if c is not None:
+                above_mean = above_mean | top[:, c]
     return {"compromise": float(np.mean(rev & ~fav_top & above_mean)),
             "pushover": float(np.mean(rev & ~fav_top & ~above_mean)),
             "burial": float(np.mean(rev & fav_top))}
@@ -237,7 +244,7 @@ def default_poll_size(n):
 
 def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=10, strategic=None, poll_error=2.0,
             report=None, aggressive=None, start=None, adaptive=None, activated=None, campaign=None, risk=None,
-            cstats=None):
+            cstats=None, leaders=None):
     """Poll rounds (see the module docstring). Returns ballots of the last round, whether it
     settled (same as the round before), and mean sincerity (all voters).
     report: a list of round numbers; then `rounds` is ignored, the rounds run up to the highest,
@@ -255,7 +262,8 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=10, strate
     {"threshold": one per voter, 0..1, "kappa": tolerance factor}: each voter is careful or bold by their
     satisfaction with the polls. cstats: a dict, filled with {round: {"follow": share of all voters
     following a recommendation, "top": candidate whose recommendation has the most followers (-1:
-    none), "bold": share of the strategic voters who are bold}}."""
+    none), "bold": share of the strategic voters who are bold}}. leaders: a dict, filled with {round: the
+    round's two poll leaders (a, b)}, as the polls the voters answered showed them."""
     if report is not None:
         want = sorted(set(int(r) for r in report))
         if want[0] < 0:
@@ -263,14 +271,16 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=10, strate
         snaps = {}
         _respond(method, u, rng, max(want), samples, poll_size, search, strategic, poll_error, aggressive,
                  lambda r, res: snaps.__setitem__(r, res) if r in want else None, start, adaptive, activated,
-                 campaign, risk, cstats)
+                 campaign, risk, cstats, leaders)
         return [snaps[int(r)] for r in report]
     return _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive,
-                    start=start, adaptive=adaptive, activated=activated, campaign=campaign, risk=risk, cstats=cstats)
+                    start=start, adaptive=adaptive, activated=activated, campaign=campaign, risk=risk, cstats=cstats,
+                    leaders=leaders)
 
 
 def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive=None,
-             snapshot=None, start=None, adaptive=None, activated=None, campaign=None, risk=None, cstats=None):
+             snapshot=None, start=None, adaptive=None, activated=None, campaign=None, risk=None, cstats=None,
+             leaders=None):
     n, C = u.shape
     sincere = method.sincere(u)
     B = sincere.copy()
@@ -335,6 +345,7 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
         B = np.array(start, dtype=float)
     inc = method.full is None
     settled = False
+    places = 3 if BALLOTS[method.ballot].pushover is not None else 2   # the third is the push-over target
     for r in range(1, rounds + 1):
         polls = np.stack([rng.choice(n, m if inc else m_full, replace=False) for _ in range(samples)])
         if inc:
@@ -343,9 +354,12 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
             W[np.arange(samples)[:, None], polls] = n / m
             tot = F.sum(axis=0)
             dev = poll_error * (W @ F - tot)       # poll deviations from the true count, poll_error x sampling error
-            a, b = _leaders(lambda j: method.decide_many(_widened(tot, dev, j), C), C)
+            a, b, *rest = _leaders(lambda j: method.decide_many(_widened(tot, dev, j), C), C, places)
         else:
-            a, b = _leaders(lambda j: poll_tallies(method.tally, B, _smaller(polls, j, rng, n)), C)
+            a, b, *rest = _leaders(lambda j: poll_tallies(method.tally, B, _smaller(polls, j, rng, n)), C, places)
+        third = rest[0] if rest else None          # push-over target: the next place after the two leaders
+        if leaders is not None:
+            leaders[r] = (a, b)
         P_now = None                               # winner lotteries of the polls as they are (campaigns, risk)
         if camp or risky:
             P_now = method.decide_many(tot + dev, C) if inc else poll_tallies(method.tally, B, polls)
@@ -377,9 +391,9 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
             prev = shared.get(names[g])
             cands = ([prev] if prev is not None else []) + exaggerations(method.ballot, Ug[g], a, b)
             push = BALLOTS[method.ballot].pushover
-            if push is not None and b is not None:             # two-round: bring a third candidate into the runoff
-                A = a if Ug[g][a] >= Ug[g][b] else b
-                cands += [push(Ug[g], A, x) for x in range(C) if x not in (a, b)]
+            if push is not None and third is not None:         # push-over: support the next place too
+                A, Bo = (a, b) if Ug[g][a] >= Ug[g][b] else (b, a)
+                cands.append(push(Ug[g], A, Bo, third))
             if BALLOTS[method.ballot].marks is not None:          # two-round: keep the group's own runoff part
                 cands = [np.floor_divide(x, C) * C + np.mod(ref[g], C) for x in cands]
             promises = [None] * len(cands)
@@ -434,22 +448,25 @@ def _smaller(polls, j, rng, n):
     return np.stack([rng.choice(n, k, replace=False) for _ in range(len(polls))])
 
 
-def _leaders(winners_at, C):
-    """The two leading candidates of a poll round: the two that win most often over the polls
-    (winners_at(0): winner probabilities per poll). If one candidate wins every poll, the polls
-    are widened (winners_at(j): deviations x 2**j) until another one wins somewhere: the race that
-    would matter first. Returns (leader, runner-up); the runner-up is None if none appears."""
-    P = winners_at(0).mean(axis=0)
-    order = np.argsort(-P, kind="stable")
-    a = int(order[0])
-    if P[order[1]] > 0:
-        return a, int(order[1])
-    for j in range(1, WIDEN + 1):
-        Q = winners_at(j).mean(axis=0)
-        Q[a] = 0
-        if Q.max() > 0:
-            return a, int(Q.argmax())
-    return a, None
+def _leaders(winners_at, C, k=2):
+    """The k leading candidates of a poll round (winners_at(j): winner probabilities per poll, with the
+    deviations of the polls x 2**j). One after the other, the next is the candidate that wins most often
+    among the rest at the smallest widening at which any of the rest wins somewhere: first the poll
+    leader, then the runner-up of the race that would matter first, then the next place. Each widening is
+    computed once. Returns a list of k candidates, None where none appears."""
+    found, at = [], {}
+    for j in range(0, WIDEN + 1):
+        while len(found) < k:
+            if j not in at:
+                at[j] = winners_at(j).mean(axis=0)
+            Q = at[j].copy()
+            Q[found] = 0
+            if Q.max() <= 0:
+                break
+            found.append(int(np.argsort(-Q, kind="stable")[0]))
+        if len(found) == k:
+            break
+    return found + [None] * (k - len(found))
 
 
 def _gain(method, T, F_old, sincere_rows, size, C, Ug):

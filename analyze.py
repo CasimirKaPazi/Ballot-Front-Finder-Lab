@@ -1055,9 +1055,10 @@ def main():
           "(the method's counts only) and answer them all at once (docs/model.md, Strategy engine). Under convergent learning "
           "(--converge) they describe a long-run state instead and depend on the group size.",
           "- **Compromise, burial, push-over** are shares of voters whose learned ballot reverses a real preference, "
-          "by kind (see strategy.strategy_types): compromise raises a liked second choice above the favourite, "
-          "push-over raises a disliked candidate to the top, burial keeps the favourite on top and reverses a "
-          "preference below it.", ""]
+          "by kind (see strategy.strategy_types): compromise raises a liked second choice, or the lesser evil of the "
+          "two poll leaders, above the favourite; push-over raises a disliked candidate who is no poll leader to the "
+          "top (to steer a runoff or an elimination); burial keeps the favourite on top and reverses a preference "
+          "below it.", ""]
     if len(results) > 1:
         L += ["## Across conditions", "", f"![axes](axes-heatmap.{plots.ext()})", ""]
         if chains:

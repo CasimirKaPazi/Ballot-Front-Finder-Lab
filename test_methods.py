@@ -783,9 +783,11 @@ assert _Rz[0, 2] == _Rz[0, 3]                                       # C and D ti
 # push-over for two-round ballots: support X in round 1 too, the runoff ranking sincere
 from ballots import BALLOTS as _BLp
 _ug = np.array([1.0, 0.6, 0.3, 0.0])
-_pf = _BLp["fav_run"].pushover(_ug, 0, 3)
+_pf = _BLp["fav_run"].pushover(_ug, 0, 1, 3)
 assert (_pf >= 4).tolist() == [False, False, False, True] and np.mod(_pf, 4).tolist() == [3, 2, 1, 0]
-assert (_BLp["app_run"].pushover(_ug, 1, 3) >= 4).tolist() == [True, True, False, True]
+assert (_BLp["app_run"].pushover(_ug, 1, 0, 3) >= 4).tolist() == [True, True, False, True]
+assert _BLp["rank"].pushover(_ug, 1, 0, 3).tolist() == [0, 2, 1, 3]                 # X first, A second, Bo last
+assert all(_b.pushover is not None for _n, _b in _BLp.items() if _n != "veto")      # every format but veto
 print("lazy runoff ok")
 
 # Maximal lottery (metrics.maximal_lottery): the Condorcet winner when there is one; in a cycle
@@ -1202,9 +1204,9 @@ with open(os.path.join(_tmp, "a", "elections.csv")) as _f:
     _rows_a = list(_csv.DictReader(_f))
 for _r in _rows_a:
     _r["_file"] = "a"
-_d1 = _an.analyse_condition(_rows_a, 50, 0)["dominated_by"]
-_d2 = _an.analyse_condition(_rows_a[::-1], 50, 0)["dominated_by"]
-assert sorted(map(str, _d1)) == sorted(map(str, _d2))
+_dom = lambda rows: (lambda res: {m: sorted(map(str, d)) for m, d in zip(res["methods"], res["dominated_by"])})(
+    _an.analyse_condition(rows, 50, 0))
+assert _dom(_rows_a) == _dom(_rows_a[::-1])
 # beatpath: arrows where A dominates B in at least the share, more often than the reverse; arrows implied
 # by a chain are kept in the list but left out of the plot
 import compare as _cp

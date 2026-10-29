@@ -479,22 +479,69 @@ def _exag_score_run(Ug, A, Bo):
     return [_rank_points(order) + C * x for x in _exag_score(Ug, A, Bo)]
 
 
-def _push_fav_run(Ug, A, X):
-    """Push-over in a two-round election: mark X, so that X rather than the other leader meets A in the
-    runoff; the runoff ranking stays sincere."""
+# ---------- push-over: support a third candidate X too, so that X rather than the other leader faces A ----------
+# One per ballot type (Ballot.pushover), all the same idea: the voter's ballot for A against Bo (the
+# most complete naive exaggeration), with X raised to the top as well. Whether it pays depends on the
+# method (a runoff, an elimination order); voters judge it by its gain in the polls like any other ballot.
+def _push_order(Ug, A, Bo, X):
+    """The ranking X, A, the rest in the voter's order, Bo last."""
+    order = _views(Ug, A, Bo)[0]
+    rest = [c for c in order if c not in (X, A, Bo)]
+    return [X, A] + rest + ([Bo] if Bo not in (X, A) else [])
+
+
+def _push_fav(Ug, A, Bo, X):
+    return np.eye(len(Ug))[X]
+
+
+def _push_approval(Ug, A, Bo, X):
+    up = _views(Ug, A, Bo)[1]
+    return (up | (np.arange(len(Ug)) == X)).astype(float)
+
+
+def _push_levels(S):
+    def push(Ug, A, Bo, X):
+        up = _views(Ug, A, Bo)[1]
+        return S() * (up | (np.arange(len(Ug)) == X)).astype(float)
+    return push
+
+
+def _push_rank(Ug, A, Bo, X):
+    return _rank_points(_push_order(Ug, A, Bo, X))
+
+
+def _push_trunc(Ug, A, Bo, X):
+    """Rank X first, then down to A, the rest unranked."""
+    order, up = _views(Ug, A, Bo)[:2]
+    ranked = [X] + [c for c in order if up[c] and c != X]
+    t = np.zeros(len(Ug))
+    t[ranked] = np.arange(len(ranked), 0, -1)
+    return t
+
+
+def _push_trunc3(Ug, A, Bo, X):
+    K = min(methods.TRUNC3, len(Ug))
+    ranked = _push_order(Ug, A, Bo, X)[:K]
+    t = np.zeros(len(Ug))
+    t[ranked] = np.arange(len(ranked), 0, -1)
+    return t
+
+
+def _push_fav_run(Ug, A, Bo, X):
+    """Two-round: mark X; the runoff ranking stays sincere."""
     C = len(Ug)
     return _rank_points(_views(Ug, A, A)[0]) + C * np.eye(C)[X]
 
 
-def _push_app_run(Ug, A, X):
-    """Approve down to A, and X as well."""
+def _push_app_run(Ug, A, Bo, X):
+    """Two-round: approve down to A, and X as well."""
     C = len(Ug)
     order, up = _views(Ug, A, A)[:2]
     return _rank_points(order) + C * (up | (np.arange(C) == X))
 
 
-def _push_score_run(Ug, A, X):
-    """The top score down to A, and to X as well, 0 for the rest."""
+def _push_score_run(Ug, A, Bo, X):
+    """Two-round: the top score down to A, and to X as well, 0 for the rest."""
     C = len(Ug)
     order, up = _views(Ug, A, A)[:2]
     return _rank_points(order) + C * methods.MAXS * (up | (np.arange(C) == X))
@@ -633,8 +680,9 @@ class Ballot:
     approval: bool = False      # the honest ballot uses the approval threshold (approves): sincere(u, lazy, draw)
     ordered: bool = False       # records an order of the candidates
     score_range: bool = False   # uses the score range 0..MAXS (--max-score changes it; the max-score set)
-    pushover: Callable = None   # two-round: (Ug, A, X) -> round-1 support for X as well, to bring X into the
-                                # runoff against A instead of the other leader (strategy.respond)
+    pushover: Callable = None   # (Ug, A, Bo, X) -> the ballot for A against Bo that also supports a third
+                                # candidate X, so that X rather than Bo faces A (a runoff, an elimination;
+                                # strategy.respond); None: the format has no such move
 
     def chosen(self, X):
         """The part of the ballots the voter chooses (marks), as sincerity and fidelity look at it."""
@@ -642,14 +690,15 @@ class Ballot:
 
 
 BALLOTS = {b.name: b for b in [
-    Ballot("fav", fav_ballots, _mutate_fav, _exag_fav, _implied_marks, _worst_fav),
+    Ballot("fav", fav_ballots, _mutate_fav, _exag_fav, _implied_marks, _worst_fav, pushover=_push_fav),
     Ballot("rank", lazy_rank_ballots, _mutate_rank, _exag_rank, _implied_rank, _worst_ranking,
-           lazy=True, ordered=True),
-    Ballot("strict", rank_ballots, _mutate_strict, _exag_strict, _implied_rank, _worst_ranking, ordered=True),
+           lazy=True, ordered=True, pushover=_push_rank),
+    Ballot("strict", rank_ballots, _mutate_strict, _exag_strict, _implied_rank, _worst_ranking, ordered=True,
+           pushover=_push_rank),
     Ballot("approval", approval_ballots, _mutate_approval, _exag_approval, _implied_marks, _worst_approval,
-           lazy=True, approval=True),
+           lazy=True, approval=True, pushover=_push_approval),
     Ballot("score", score_ballots, _mutate_score, _exag_score, _implied_score, _worst_score,
-           lazy=True, ordered=True, score_range=True),
+           lazy=True, ordered=True, score_range=True, pushover=_push_levels(lambda: methods.MAXS)),
     Ballot("fav_run", fav_run_ballots, _mutate_fav_run, _exag_fav_run, _implied_marks, _worst_fav,
            marks=_marks_run, lazy=True, pushover=_push_fav_run),      # laziness: the runoff ranking only
     Ballot("app_run", app_run_ballots, _mutate_app_run, _exag_app_run, _implied_marks, _worst_approval,
@@ -658,13 +707,13 @@ BALLOTS = {b.name: b for b in [
            marks=_marks_score_run, lazy=True, score_range=True, pushover=_push_score_run),
     Ballot("veto", veto_ballots, _mutate_veto, _exag_veto, _implied_veto, _worst_veto),
     Ballot("weak", lazy_rank_ballots, _mutate_weak, _exag_weak, _implied_rank, _worst_ranking,
-           lazy=True, ordered=True),                                      # honest: strict; ties only strategic
+           lazy=True, ordered=True, pushover=_push_rank),                 # honest: strict; ties only strategic
     Ballot("trunc", trunc_ballots, _mutate_trunc, _exag_trunc, _implied_trunc, _worst_ranking,
-           lazy=True, ordered=True, approval=True),
+           lazy=True, ordered=True, approval=True, pushover=_push_trunc),
     Ballot("trunc3", trunc3_ballots, _mutate_trunc3, _exag_trunc3, _implied_trunc, _worst_trunc3,
-           lazy=True, ordered=True),
+           lazy=True, ordered=True, pushover=_push_trunc3),
     Ballot("grade3", grade3_ballots, _mutate_grade3, _exag_grade3, _implied_grade3,
-           _worst_grade3, lazy=True, ordered=True),
+           _worst_grade3, lazy=True, ordered=True, pushover=_push_levels(lambda: 2)),
 ]}
 
 

@@ -46,8 +46,8 @@ A method's distance to the curve is what it loses to having only ballots, not ut
 VSE, WME and CE use sincere ballots; VSE\*, WME\* and CE\* (in the CSV: VSE_learned, WME_learned, CE_learned) the strategic ballots ("learned": after the poll rounds, or after convergent learning). In all cases the preferences that count are the sincere ones.
 
 **Strategy types** (`strategy.strategy_types`), among voters whose learned ballot reverses at least one real preference:
-- *compromise*: the favourite is not at the top, and the best-liked top candidate is liked above the voter's mean (a viable second choice raised);
-- *push-over*: the favourite is not at the top, and every top candidate is liked below the mean (a weak candidate raised, to steer eliminations or runoffs);
+- *compromise*: the favourite is not at the top, and a top candidate is liked above the voter's mean or is one of the two poll leaders (a viable second choice, or the lesser evil of the leaders, raised);
+- *push-over*: the favourite is not at the top, and every top candidate is liked below the mean and is no poll leader (a weak candidate raised, to steer eliminations or runoffs). Until 2026-10-28 the leaders were not considered, so a vote for the lesser of two disliked leaders counted as push-over; with convergent learning (no poll leaders) that is still so;
 - *burial*: the favourite stays at the top, but a preference further down is reversed.
 
 The three are exclusive. For score ballots, "burial" includes small reversals among lower-rated candidates, so a high burial share can go with high sincerity.
