@@ -276,6 +276,7 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
         import individual as _ind
         thr = np.where(fixed, 0.0, np.where(adapt, q_adapt, np.inf))
         fol = np.ones(n) if individual is True else np.asarray(individual, float)   # followers each voter expects
+        ind_memory = {"last": {}, "trust": {}}  # what each voter's move promised, and their trust in moves
     for r in range(1, rounds + 1):
         polls = np.stack([rng.choice(n, m if inc else m_full, replace=False) for _ in range(samples)])
         if individual is not None:
@@ -288,7 +289,8 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
             if leaders is not None:
                 leaders[r] = (reading.A, reading.B)
             B_prev = B
-            B, active = _ind.answer(method, pm, u, B, sincere, reading, threshold=thr, followers=fol)
+            B, active = _ind.answer(method, pm, u, B, sincere, reading, threshold=thr, followers=fol,
+                                    memory=ind_memory)
             record(r)
             settled = np.array_equal(B, B_prev)
             if snapshot:

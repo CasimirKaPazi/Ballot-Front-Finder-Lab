@@ -857,6 +857,14 @@ for _n, _m in METHODS.items():
     _r2 = respond(_m, _ui, np.random.default_rng(1), rounds=2, search=1, individual=True)[0]
     assert np.array_equal(_r1, _r2), _n
     respond(_m, _ui[:, :2], np.random.default_rng(1), rounds=2, search=1, individual=True)
+# feedback (individual.judge): a move that backfired loses trust in what it aims at, a kept promise keeps it
+class _Rd:
+    P = np.array([0.2, 0.8, 0.0])
+_mem = {"last": {0: ((("top", 0),), 0.1, 0.5), 1: ((("top", 1),), 0.1, 0.5)}, "trust": {}}
+_uj = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])            # voter 0: worse off (0.2 < 0.5), voter 1: better
+_ind.judge(_uj, _Rd(), _mem)
+assert _ind.trust(_mem, 0, (("top", 0), ("bottom", 1))) < 0 < _ind.trust(_mem, 1, (("top", 1),)) == 1.0
+assert _mem["last"] == {} and _ind.trust(_mem, 0, (("bottom", 2),)) == 1.0     # other aims untouched
 print("individual voters ok")
 # Laziness in the runoff of two-round ballots: a lazy voter who cares only about A and B ranks just
 # them in the runoff part, so a runoff between C and D gets no vote from them

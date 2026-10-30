@@ -213,7 +213,45 @@ def burial(ballot, A, Bo):
     return (("downfrom", Bo),)
 
 
-def answer(method, count, u, B, sincere, reading, *, threshold, followers):
+RATIO_LOW = -3.0     # judge: a move can backfire up to three times as badly as it promised
+
+
+def aims(move):
+    """What a move aims at: ("up", c) for each candidate it raises, ("down", c) for each it lowers. Trust
+    attaches to these, not to the exact ballot, so that a distrusted aim is not simply tried again in
+    another form."""
+    out = set()
+    for st in move:
+        if st[0] in ("top", "upto", "above"):
+            out.add(("up", st[1]))
+        elif st[0] in ("bottom", "downfrom", "below"):
+            out.add(("down", st[1]))
+    return tuple(sorted(out))
+
+
+def judge(u, reading, memory):
+    """Feedback: each voter who made a move in the last round compares what it promised (the gain in
+    their expected outcome over keeping their ballot) with what the new poll shows (their expected
+    outcome now against before). The ratio, from RATIO_LOW (backfired three times as badly as
+    promised) to 1 (kept its promise), updates their trust in each aim of the move like a running
+    average with a prior of one kept promise: trust = (trust * n + ratio) / (n + 1). Trust below 0
+    turns the promise into a threat: the voter expects the move to hurt."""
+    eu_now = u @ reading.P
+    for v, (key, promised, before) in list(memory["last"].items()):
+        if promised > 0:
+            ratio = float(np.clip((eu_now[v] - before) / promised, RATIO_LOW, 1.0))
+            for a in aims(key):
+                rho, k = memory["trust"].get((v, a), (1.0, 1))
+                memory["trust"][(v, a)] = ((rho * k + ratio) / (k + 1), k + 1)
+    memory["last"] = {}
+
+
+def trust(memory, v, move):
+    """A voter's trust in a move: the least trust in any of its aims (1 if never tried)."""
+    return min([memory["trust"].get((v, a), (1.0, 1))[0] for a in aims(move)] or [1.0])
+
+
+def answer(method, count, u, B, sincere, reading, *, threshold, followers, memory=None):
     """One round. threshold: per voter (0 = always strategic, inf = never); followers: per voter, how
     many voters they expect to vote as they do (1 = only themselves). Returns the new ballots and the
     voters strategic this round (bool).
@@ -223,9 +261,12 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers):
     round) is worth w_c = (change . delta_c) / |delta_c|^2 switching voters in the race between the poll
     winner A and c (delta_c: one voter switching from A to c), for the runner-up B and the next place T;
     with f voters making it, c needs k_c - f w_c switching voters, and the chances follow (_chances).
-    The voter takes the ballot with the best expected outcome for them."""
+    The voter takes the ballot with the best expected outcome for them, a move's promise weighted by
+    their trust in it (judge; memory: {"last": ..., "trust": ...}, kept across the rounds)."""
     n, C = u.shape
     r = reading
+    if memory is not None:
+        judge(u, r, memory)
     newB = sincere.copy()
     if r.B is None:
         return newB, np.zeros(n, bool)
@@ -277,8 +318,20 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers):
         if r.T is not None:
             P[:, r.T] += pT
         eu.append((P * u[V]).sum(axis=1))
-    best = np.argmax(np.stack(eu), axis=0)                         # ties: the first (sincere first)
+    EU = np.stack(eu)
+    before = u[V] @ r.P                                            # expected outcome keeping one's ballot
+    if memory is not None:                                         # promises weighted by trust in the move
+        keys = [None] + uniq
+        for j in range(1, len(options)):
+            rho = np.array([trust(memory, int(v), keys[j]) for v in V])
+            gain = EU[j] - before
+            EU[j] = before + np.where(gain > 0, rho * gain, gain)  # trust discounts promises, never makes
+                                                                   # a harmful move look good
+    best = np.argmax(EU, axis=0)                                   # ties: the first (sincere first)
     for j, X in enumerate(options):
         sel = best == j
         newB[V[sel]] = X[sel]
+        if memory is not None and j > 0:
+            for i in np.flatnonzero(sel):
+                memory["last"][int(V[i])] = (uniq[j - 1], float(eu[j][i] - before[i]), float(before[i]))
     return newB, active
