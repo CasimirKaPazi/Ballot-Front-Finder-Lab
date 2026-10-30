@@ -251,6 +251,30 @@ def trust(memory, v, move):
     return min([memory["trust"].get((v, a), (1.0, 1))[0] for a in aims(move)] or [1.0])
 
 
+def _eu(r, U, kB, kT, C):
+    """Expected outcome for each row of utilities U, with closeness kB and kT."""
+    pA, pB, pT = _chances(np.maximum(kB, 0), np.maximum(kT, 0), r.sigma)
+    P = np.zeros((len(U), C))
+    P[:, r.A] = pA
+    P[:, r.B] += pB
+    if r.T is not None:
+        P[:, r.T] += pT
+    return (P * U).sum(axis=1)
+
+
+def _noise(r, U, C):
+    """How much a voter's expected outcome could be off because the poll is: the change if it were off by
+    its standard error (sigma voters) in the race with B and in the race with T, half the spread of
+    plus and minus, the two races combined as independent errors."""
+    k = len(U)
+    kB = np.full(k, min(r.k[r.B], float(r.n)))
+    kT = np.full(k, min(r.k[r.T], float(r.n)) if r.T is not None else np.inf)
+    eB = np.abs(_eu(r, U, kB + r.sigma, kT, C) - _eu(r, U, kB - r.sigma, kT, C)) / 2
+    eT = (np.abs(_eu(r, U, kB, kT + r.sigma, C) - _eu(r, U, kB, kT - r.sigma, C)) / 2
+          if r.T is not None else np.zeros(k))
+    return np.sqrt(eB ** 2 + eT ** 2)
+
+
 def answer(method, count, u, B, sincere, reading, *, threshold, followers, memory=None):
     """One round. threshold: per voter (0 = always strategic, inf = never); followers: per voter, how
     many voters they expect to vote as they do (1 = only themselves). Returns the new ballots and the
@@ -262,7 +286,8 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
     winner A and c (delta_c: one voter switching from A to c), for the runner-up B and the next place T;
     with f voters making it, c needs k_c - f w_c switching voters, and the chances follow (_chances).
     The voter takes the ballot with the best expected outcome for them, a move's promise weighted by
-    their trust in it (judge; memory: {"last": ..., "trust": ...}, kept across the rounds)."""
+    their trust in it (judge; memory: {"last": ..., "trust": ...}, kept across the rounds), if its gain
+    over the sincere ballot is more than the poll's own uncertainty could account for (_noise)."""
     n, C = u.shape
     r = reading
     if memory is not None:
@@ -327,6 +352,11 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
             gain = EU[j] - before
             EU[j] = before + np.where(gain > 0, rho * gain, gain)  # trust discounts promises, never makes
                                                                    # a harmful move look good
+    # Worth acting on: a move's gain over the sincere ballot must exceed what the poll's own uncertainty
+    # could account for: the change in the voter's expected outcome if the poll were off by its standard
+    # error (sigma voters) in the race with B, and in the race with T (combined as independent errors).
+    noise = _noise(r, u[V], C)
+    EU[1:] = np.where(EU[1:] - EU[0][None] > noise[None], EU[1:], -np.inf)
     best = np.argmax(EU, axis=0)                                   # ties: the first (sincere first)
     for j, X in enumerate(options):
         sel = best == j
