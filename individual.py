@@ -1,0 +1,284 @@
+"""Individual voters reading the polls (run.py --individual 1; experimental). Called by strategy.respond
+once per round instead of the ranking groups.
+
+- The polls of a round, averaged (a poll of polls): the totals of `samples` samples of the voters (as
+  voters count them, Method.poll_view), scaled up to the electorate; read as one poll of their
+  combined size.
+- How close each candidate is to winning, in voters: the smallest number of voters switching from the
+  poll winner A to candidate c that makes c the winner (closeness). A switching voter changes one
+  ballot that supports A over c into the same ballot supporting c over A (switch_pair), so only A and
+  c change on it; the count of the poll with k such switches is the count of its totals plus k times
+  that change. The runner-up B is the closest candidate, the next place T the next closest.
+- The chance of a candidate c behind: Phi(-k_c / sigma), sigma = poll_error x the sampling error of a
+  two-way split, in voters (n x 0.5 / sqrt(poll size)); A has the rest (B and T only).
+- The stake: |u(A) - u(B)| rescaled to the voter's range, times 4 P(A) P(B) (1 for a 50/50 race, 0 for
+  a sure one). A voter strategises in a round if their stake exceeds their personal threshold (always
+  strategic voters: threshold 0; sincere voters never).
+- A strategising voter compares their sincere ballot with compromise for one of the poll's places
+  (A, B, T; supporting it as far as the format allows: obvious), burial of one (it and everyone liked
+  no more to the bottom, where the format allows; strict rankings: it last: burial) and both
+  (compromise for one, burial of another; for a voter preferring A, compromise for T with burial of B
+  is the push-over), by simple arithmetic on the poll: the change of their own ballot (from what they voted in
+  the last round) is worth so many voters switching from A to c (its projection on one switching
+  voter's change of the totals), for the runner-up and the next place, and how each of these races
+  moves with the other (Reading.cross, a scenario table read from the poll: a runoff method can put B
+  out when T passes it, which makes a push-over pay; under a Condorcet method T beating A can make a
+  cycle that B wins, which makes burial of A pay); with f voters doing the same
+  (their boldness: 1 = only themselves, up to --coordination of the electorate), c needs that many
+  times fewer (or more) voters, and the chances follow. They take the ballot with the best expected
+  outcome for them. Nobody recounts the poll with their ballot changed: what a move does under a
+  method is for the results to show, not for voters to foresee.
+"""
+from math import erf, sqrt
+
+import numpy as np
+
+import methods
+import moves as mv
+from ballots import BALLOTS
+
+STEPS_FULL = 14      # bisection steps for the closeness of a candidate, over 0 .. n voters
+GRID = (-24, -12, -6, -2, 0, 2, 6, 12, 24)   # scenario table: voters switching between A and another
+STEPS_TABLE = 10     # bisection steps in the table (0.1 voter)
+
+
+def _Phi(x):
+    return 0.5 * (1 + erf(x / sqrt(2)))
+
+
+def switch_pair(ballot, C, A, c):
+    """Two ballots of the format: one supporting A over c, the other the same with A and c swapped.
+    Rankings: A first, c second, the rest in candidate order; one name: A; approval: A alone; scores
+    and grades: the top for A, 0 for the rest; two-round ballots: round 1 as above, runoff ranking as
+    for rankings; veto: against c. Formats of add-ons: the sincere ballot of utilities with A at the
+    top, c at the bottom, the rest in between."""
+    rest = [x for x in range(C) if x not in (A, c)]
+
+    def rank_points(order, k=None):
+        b = np.zeros(C)
+        k = len(order) if k is None else k
+        for pos, x in enumerate(order[:k]):
+            b[x] = C - 1 - pos
+        return b
+
+    def swap(b):
+        b = b.copy()
+        b[[A, c]] = b[[c, A]]
+        return b
+
+    S = methods.MAXS
+    if ballot in ("fav",):
+        b = np.eye(C)[A]
+    elif ballot == "approval":
+        b = np.eye(C)[A]
+    elif ballot == "score":
+        b = S * np.eye(C)[A]
+    elif ballot == "grade3":
+        b = 2 * np.eye(C)[A]
+    elif ballot in ("rank", "strict", "weak"):
+        b = rank_points([A, c] + rest)
+    elif ballot in ("trunc", "trunc3"):
+        b = np.zeros(C)
+        b[A], b[c] = 2, 1
+    elif ballot == "veto":
+        b = -np.eye(C)[c]
+    elif ballot in ("fav_run", "app_run"):
+        b = rank_points([A, c] + rest) + C * np.eye(C)[A]
+    elif ballot == "score_run":
+        b = rank_points([A, c] + rest) + C * S * np.eye(C)[A]
+    else:
+        u = np.full((1, C), 0.5)
+        u[0, A], u[0, c] = 1.0, 0.0
+        b1 = BALLOTS[ballot].sincere(u, 0.0)[0] if not BALLOTS[ballot].approval else BALLOTS[ballot].sincere(u, 0.0, 0.5)[0]
+        u2 = u.copy()
+        u2[0, [A, c]] = u2[0, [c, A]]
+        b2 = BALLOTS[ballot].sincere(u2, 0.0)[0] if not BALLOTS[ballot].approval else BALLOTS[ballot].sincere(u2, 0.0, 0.5)[0]
+        return b1, b2
+    if ballot == "veto":
+        return b, -np.eye(C)[A]
+    if ballot in ("fav_run", "app_run", "score_run"):
+        mark = np.floor_divide(b, C)
+        runoff = np.mod(b, C)
+        return b, swap(mark) * C + swap(runoff)
+    return b, swap(b)
+
+
+def _wins(count, rows, c, C):
+    """Does c win the counts in rows (k x d)? (at least half of the winner lottery)"""
+    return count.decide_many(rows, C)[:, c] >= 0.5 - 1e-9
+
+
+def _closeness(count, T, c, C, delta, lo, hi, steps):
+    """Bisection for one candidate c over rows of totals T (k x d), between lo and hi (arrays)."""
+    k = len(T)
+    win_lo = _wins(count, T + lo[:, None] * delta[None], c, C)
+    win_hi = _wins(count, T + hi[:, None] * delta[None], c, C)
+    a, b = lo.copy(), hi.copy()
+    for _ in range(steps):
+        mid = (a + b) / 2
+        w = _wins(count, T + mid[:, None] * delta[None], c, C)
+        b = np.where(w, mid, b)
+        a = np.where(w, a, mid)
+    out = (a + b) / 2
+    out = np.where(win_lo, lo, out)
+    return np.where(win_hi | win_lo, out, np.inf)
+
+
+def _chances(kB, kT, sigma):
+    pB = np.array([_Phi(-x / sigma) if np.isfinite(x) else 0.0 for x in np.atleast_1d(kB)])
+    pT = np.array([_Phi(-x / sigma) if np.isfinite(x) else 0.0 for x in np.atleast_1d(kT)])
+    tot = pB + pT
+    scale = np.where(tot > 1, 1 / np.maximum(tot, 1e-12), 1.0)
+    pB, pT = pB * scale, pT * scale
+    return 1 - pB - pT, pB, pT
+
+
+class Reading:
+    """What one poll says: the winner A, the runner-up B and next place T (by closeness), their
+    closeness in voters, and the chances."""
+
+    def __init__(self, count, ballot, T, C, n, m, poll_error):
+        self.count, self.C, self.n = count, C, n
+        self.sigma = max(poll_error, 1e-9) * n * 0.5 / sqrt(m)
+        P = count.decide_many(T[None], C)[0]
+        self.A = A = int(np.argmax(P))
+        self.T0 = T
+        self.delta = {}
+        ks = {}
+        for c in range(C):
+            if c == A:
+                continue
+            b1, b2 = switch_pair(ballot, C, A, c)
+            d = count.features(b2[None])[0] - count.features(b1[None])[0]
+            self.delta[c] = d
+            ks[c] = _closeness(count, T[None], c, C, d, np.zeros(1), np.full(1, float(n)), STEPS_FULL)[0]
+        order = sorted(ks, key=lambda c: (ks[c], c))
+        self.B = order[0] if order and np.isfinite(ks[order[0]]) else None
+        self.T = order[1] if len(order) > 1 and np.isfinite(ks[order[1]]) else None
+        self.k = ks
+        kB = ks[self.B] if self.B is not None else np.inf
+        kT = ks[self.T] if self.T is not None else np.inf
+        pA, pB, pT = _chances(kB, kT, self.sigma)
+        self.P = np.zeros(C)
+        self.P[A] = pA[0]
+        if self.B is not None:
+            self.P[self.B] = pB[0]
+        if self.T is not None:
+            self.P[self.T] = pT[0]
+        # How each race moves with the other (the cross-effects): a scenario table read from the poll, for
+        # x voters switching from A to d (x < 0: from d to A), the closeness of c again (c, d = B, T and T,
+        # B). Plurality: voters leaving A for T bring B closer as well; a runoff method: T passing B in the
+        # first round can put B out of the runoff (push-over); a Condorcet method: T beating A can make a
+        # cycle that B wins (burial of A under T). The table covers the scale of the moves voters imagine.
+        self.grid = np.array([x for x in GRID if abs(x) <= n], float)
+        self.curve = {}
+        if self.B is not None and self.T is not None:
+            for c, d in ((self.B, self.T), (self.T, self.B)):
+                rows = T[None] + self.grid[:, None] * self.delta[d][None]
+                kc = _closeness(count, rows, c, C, self.delta[c], np.zeros(len(rows)),
+                                np.full(len(rows), float(n)), STEPS_TABLE)
+                kc[self.grid == 0] = ks[c]
+                self.curve[(c, d)] = np.minimum(kc, float(n))
+
+    def cross(self, c, d, x):
+        """c's closeness with x voters switching from A to d (per voter, interpolated in the table)."""
+        k = self.curve.get((c, d))
+        if k is None:
+            return np.full(np.shape(x), min(self.k[c], float(self.n)))
+        return np.interp(x, self.grid, k)
+
+
+def obvious(ballot, A, Bo):
+    """The obvious move for the leader A against the other leader Bo: compromise (see the module
+    docstring), as a move of moves.py."""
+    if ballot == "veto":
+        return (("bottom", Bo),)
+    if ballot in ("approval", "app_run"):
+        return (("upto", A), ("below", A))
+    if ballot in ("score", "grade3", "score_run") or BALLOTS[ballot].score_range:
+        return (("upto", A),)
+    return (("top", A),)
+
+
+def burial(ballot, A, Bo):
+    """Burial of the other leader Bo, as far as the format allows without putting Bo below anyone the
+    voter likes less where it can: Bo and everyone liked no more than Bo to the bottom (scores and
+    grades: the lowest score; approval: not approved; rankings that can be truncated or tied: unranked
+    or tied last). Strict rankings can only put Bo last, below candidates liked less (a reversal: burial
+    proper). None where the format has no burial (one name, two-round marks, veto)."""
+    if ballot in ("fav", "fav_run", "veto"):
+        return None
+    if ballot == "strict":
+        return (("bottom", Bo),)
+    return (("downfrom", Bo),)
+
+
+def answer(method, count, u, B, sincere, reading, *, threshold, followers):
+    """One round. threshold: per voter (0 = always strategic, inf = never); followers: per voter, how
+    many voters they expect to vote as they do (1 = only themselves). Returns the new ballots and the
+    voters strategic this round (bool).
+
+    A strategic voter compares their sincere ballot with compromise for one of the poll's places (A, B,
+    T), burial of one, and both (different places): for each ballot X, the change of their own ballot (from what they voted in the last
+    round) is worth w_c = (change . delta_c) / |delta_c|^2 switching voters in the race between the poll
+    winner A and c (delta_c: one voter switching from A to c), for the runner-up B and the next place T;
+    with f voters making it, c needs k_c - f w_c switching voters, and the chances follow (_chances).
+    The voter takes the ballot with the best expected outcome for them."""
+    n, C = u.shape
+    r = reading
+    newB = sincere.copy()
+    if r.B is None:
+        return newB, np.zeros(n, bool)
+    lo_u, hi_u = u.min(axis=1), u.max(axis=1)
+    span = np.where(hi_u > lo_u, hi_u - lo_u, 1.0)
+    stake = np.abs(u[:, r.A] - u[:, r.B]) / span * 4 * r.P[r.A] * r.P[r.B]
+    active = stake > threshold
+    races = [c for c in (r.B, r.T) if c is not None]
+    places = [c for c in (r.A, r.B, r.T) if c is not None]
+    F_cur = count.features(B)
+    V = np.flatnonzero(active)
+    if not len(V):
+        return newB, active
+    lazy, appr = mv.own_params(V)
+    lazy = np.atleast_1d(lazy) if np.ndim(lazy) else lazy
+    appr = np.atleast_1d(appr) if np.ndim(appr) else appr
+    # the strategies: compromise for one of the places, burial of one, or both (different places)
+    strategies = []
+    for c in places:
+        strategies.append(obvious(method.ballot, c, next(x for x in places if x != c)))
+    for c in places:
+        b = burial(method.ballot, None, c)
+        if b is not None:
+            strategies.append(b)
+            for d in places:
+                if d != c:
+                    strategies.append(obvious(method.ballot, d, c) + b)
+    seen, uniq = set(), []
+    for m in strategies:
+        if m not in seen:
+            seen.add(m)
+            uniq.append(m)
+    options = [sincere[V]] + [mv.render(method, u[V], m, sincere[V], lazy, appr) for m in uniq]
+    f = followers[V]
+    eu = []
+    for X in options:
+        D = count.features(X) - F_cur[V]                           # the change of each voter's own ballot
+        s = {c: f * (D @ r.delta[c]) / max(float(r.delta[c] @ r.delta[c]), 1e-12) for c in races}
+        k = {}                                                     # worth, in voters switching from A to c,
+        for c in races:                                            # and its effect on the other race
+            others = [d for d in races if d != c]
+            base = r.cross(c, others[0], s[others[0]]) if others else np.full(len(V), r.k[c])
+            k[c] = np.where(np.isfinite(r.k[c]) | (base < r.n), base, np.inf) - s[c]
+        kT = k[r.T] if r.T is not None else np.full(len(V), np.inf)
+        pA, pB, pT = _chances(np.maximum(k[r.B], 0), np.maximum(kT, 0), r.sigma)
+        P = np.zeros((len(V), C))
+        P[:, r.A] = pA
+        P[:, r.B] += pB
+        if r.T is not None:
+            P[:, r.T] += pT
+        eu.append((P * u[V]).sum(axis=1))
+    best = np.argmax(np.stack(eu), axis=0)                         # ties: the first (sincere first)
+    for j, X in enumerate(options):
+        sel = best == j
+        newB[V[sel]] = X[sel]
+    return newB, active

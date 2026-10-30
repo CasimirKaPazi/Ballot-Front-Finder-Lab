@@ -6,7 +6,9 @@
     from: first preferences for Plurality, approvals for Approval, the pairwise matrix for
     Condorcet methods, ...), from a random sample of `poll_size` voters (without replacement),
     scaled up to the electorate. `samples` independent polls (5) stand for the uncertainty.
-    Nobody sees anyone's preferences or individual ballots.
+    Nobody sees anyone's preferences or individual ballots. Only totals a real poll could show are
+    published (per candidate, per pair, per grade): methods counted from totals over every subset of
+    candidates are counted by the voters with a stand-in (Method.poll_view, POLL in methods.py).
   - Uncertainty: voters treat a poll as `poll_error` times less precise than its sampling error
     (default 2: real polls miss results by about twice their stated sampling error, Shirani-Mehr,
     Rothschild, Goel & Gelman 2018). The polls are spread around the true count by that factor.
@@ -157,7 +159,7 @@ def default_poll_size(n):
 
 def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strategic=None, poll_error=2.0,
             report=None, aggressive=None, start=None, adaptive=None, activated=None, campaign=None, risk=None,
-            cstats=None, leaders=None):
+            cstats=None, leaders=None, moves=None, individual=False):
     """Poll rounds (see the module docstring). Returns ballots of the last round, whether it
     settled (same as the round before), and mean sincerity (all voters).
     report: a list of round numbers; then `rounds` is ignored, the rounds run up to the highest,
@@ -176,7 +178,11 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strateg
     satisfaction with the polls. cstats: a dict, filled with {round: {"follow": share of all voters
     following a recommendation, "top": candidate whose recommendation has the most followers (-1:
     none), "bold": share of the strategic voters who are bold}}. leaders: a dict, filled with {round: the
-    round's two poll leaders (a, b)}, as the polls the voters answered showed them."""
+    round's two poll leaders (a, b)}, as the polls the voters answered showed them. moves: None (the
+    ranking groups) or the share s: shared moves instead (experimental; moves.py). individual: voters
+    read the averaged polls and each decides alone (experimental; individual.py): None/False (off), True
+    (each voter expects only themselves to vote as they do), or per voter the number of voters they
+    expect to (their boldness)."""
     if report is not None:
         want = sorted(set(int(r) for r in report))
         if want[0] < 0:
@@ -184,16 +190,16 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strateg
         snaps = {}
         _respond(method, u, rng, max(want), samples, poll_size, search, strategic, poll_error, aggressive,
                  lambda r, res: snaps.__setitem__(r, res) if r in want else None, start, adaptive, activated,
-                 campaign, risk, cstats, leaders)
+                 campaign, risk, cstats, leaders, moves, individual)
         return [snaps[int(r)] for r in report]
     return _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive,
                     start=start, adaptive=adaptive, activated=activated, campaign=campaign, risk=risk, cstats=cstats,
-                    leaders=leaders)
+                    leaders=leaders, moves=moves, individual=individual)
 
 
 def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive=None,
              snapshot=None, start=None, adaptive=None, activated=None, campaign=None, risk=None, cstats=None,
-             leaders=None):
+             leaders=None, moves=None, individual=False):
     n, C = u.shape
     sincere = method.sincere(u)
     B = sincere.copy()
@@ -256,26 +262,53 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
     shared = {}                                # each group's answer in the last round (absent = sincere)
     if start is not None:                      # the first poll shows these ballots (a previous result)
         B = np.array(start, dtype=float)
-    inc = method.full is None
+    pm = method.poll_view()                    # how voters count a poll (docs/model.md, What a poll shows)
+    inc = pm.full is None
     settled = False
     places = 3 if BALLOTS[method.ballot].pushover is not None else 2   # the third is the push-over target
+    if moves is not None:                      # shared moves (moves.py): the three places are the audiences
+        import moves as _mv
+        places = 3
+        F_sin = pm.features(sincere) if inc else None
+        last = {}                              # each voter's move in the last round
+    individual = None if individual is False else individual
+    if individual is not None:                 # the average of the polls, each voter alone (individual.py)
+        import individual as _ind
+        thr = np.where(fixed, 0.0, np.where(adapt, q_adapt, np.inf))
+        fol = np.ones(n) if individual is True else np.asarray(individual, float)   # followers each voter expects
     for r in range(1, rounds + 1):
         polls = np.stack([rng.choice(n, m if inc else m_full, replace=False) for _ in range(samples)])
+        if individual is not None:
+            F = pm.features(B)
+            W = np.zeros((samples, n))
+            W[np.arange(samples)[:, None], polls] = n / m
+            tot = F.sum(axis=0)
+            T0 = tot + poll_error * ((W @ F).mean(axis=0) - tot)      # the average of the polls
+            reading = _ind.Reading(pm, method.ballot, T0, C, n, m * samples, poll_error)
+            if leaders is not None:
+                leaders[r] = (reading.A, reading.B)
+            B_prev = B
+            B, active = _ind.answer(method, pm, u, B, sincere, reading, threshold=thr, followers=fol)
+            record(r)
+            settled = np.array_equal(B, B_prev)
+            if snapshot:
+                snapshot(r, (B, settled, float(sincerity(method, B, u).mean())))
+            continue
         if inc:
-            F = method.features(B)
+            F = pm.features(B)
             W = np.zeros((samples, n))
             W[np.arange(samples)[:, None], polls] = n / m
             tot = F.sum(axis=0)
             dev = poll_error * (W @ F - tot)       # poll deviations from the true count, poll_error x sampling error
-            a, b, *rest = _leaders(lambda j: method.decide_many(_widened(tot, dev, j), C), C, places)
+            a, b, *rest = _leaders(lambda j: pm.decide_many(_widened(tot, dev, j), C), C, places)
         else:
-            a, b, *rest = _leaders(lambda j: poll_tallies(method.tally, B, _smaller(polls, j, rng, n)), C, places)
+            a, b, *rest = _leaders(lambda j: poll_tallies(pm.tally, B, _smaller(polls, j, rng, n)), C, places)
         third = rest[0] if rest else None          # push-over target: the next place after the two leaders
         if leaders is not None:
             leaders[r] = (a, b)
         P_now = None                               # winner lotteries of the polls as they are (campaigns, risk)
         if camp or risky:
-            P_now = method.decide_many(tot + dev, C) if inc else poll_tallies(method.tally, B, polls)
+            P_now = pm.decide_many(tot + dev, C) if inc else poll_tallies(pm.tally, B, polls)
         rebuild = False
         if n_adaptive:                             # adaptive voters: strategic this round if the race matters to them
             stake = np.abs(u[:, a] - u[:, b]) / span if b is not None else np.zeros(n)
@@ -293,14 +326,25 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
             names, groups, eager, ref, Ug = setup(build())
         recs = []
         if camp:                                   # every candidate's recommendation (docs/campaigns.md)
-            recs = _campaigns(method, u, B, F if inc else None, tot + dev if inc else None, polls, P_now, a, b,
+            recs = _campaigns(method, pm, u, B, F if inc else None, tot + dev if inc else None, polls, P_now, a, b,
                               campaign["share"], campaign["cand_u"])
+        if moves is not None:
+            eager_v = (bold if risky else (np.ones(n, bool) if aggressive is None else np.asarray(aggressive, bool)))
+            B_prev = B
+            B, last, follow = _mv.answer(method, pm, u, B, sincere, F_sin, polls, tot + dev if inc else None,
+                                         F if inc else None, rng, active=active, eager=eager_v, tol_v=tol_v,
+                                         places=[a, b] + rest, recs=recs, share=moves, search=search, last=last)
+            record(r, float(follow.sum()) / n, int(np.argmax(follow)) if follow.sum() > 0 else -1)
+            settled = np.array_equal(B, B_prev)
+            if snapshot:
+                snapshot(r, (B, settled, float(sincerity(method, B, u).mean())))
+            continue
         answers, follow = [], np.zeros(C)
         for g, mem in enumerate(groups):
             if inc:
-                gain = _gain(method, tot + dev, F[mem].sum(axis=0), sincere[mem], len(mem), C, Ug[g])
+                gain = _gain(pm, tot + dev, F[mem].sum(axis=0), sincere[mem], len(mem), C, Ug[g])
             else:
-                gain = _gain_full(method, B, mem, sincere[mem], polls, Ug[g])
+                gain = _gain_full(pm, B, mem, sincere[mem], polls, Ug[g])
             prev = shared.get(names[g])
             cands = ([prev] if prev is not None else []) + exaggerations(method.ballot, Ug[g], a, b)
             push = BALLOTS[method.ballot].pushover
@@ -310,7 +354,7 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
             if BALLOTS[method.ballot].marks is not None:          # two-round: keep the group's own runoff part
                 cands = [np.floor_divide(x, C) * C + np.mod(ref[g], C) for x in cands]
             promises = [None] * len(cands)
-            moves = []
+            camp_moves = []
             if recs and eager[g]:                  # recommendations are for bold (aggressive) voters
                 now_v = float(np.mean(value(P_now, Ug[g])))
                 # a group listens to one campaign: that of the candidate it likes most among those campaigning
@@ -321,13 +365,13 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
                                           methods.lazy_of(mem), methods.approval_of(mem))[0]
                         cands.append(x)
                         promises.append(g_star)
-                        moves.append((c, x))
+                        camp_moves.append((c, x))
             x = _answer(gain, method.ballot, ref[g], cands, search, rng, eager[g],
                         tol=float(tol_v[mem].sum()) if risky and eager[g] else 0.0,
-                        promises=promises if moves else None)
+                        promises=promises if camp_moves else None)
             answers.append(x)
             if x is not None:
-                for c, y in moves:
+                for c, y in camp_moves:
                     if np.array_equal(x, y):
                         follow[c] += len(mem)
                         break
@@ -442,7 +486,7 @@ def _move_ballots(method, U, X, Y, lazy=None, approval=None):
     return M
 
 
-def _campaigns(method, u, B, F, T, polls, P_now, a, b, share, cand_u):
+def _campaigns(method, pm, u, B, F, T, polls, P_now, a, b, share, cand_u):
     """Every candidate's recommendation for this round (docs/campaigns.md, The candidate's plan).
     The moves: "X above Y" for every pair with the poll winner a (_move_ballots).
     A candidate's audience: the voters who prefer it to its strongest rival (a, or for a the runner-up
@@ -450,6 +494,7 @@ def _campaigns(method, u, B, F, T, polls, P_now, a, b, share, cand_u):
     its features F; T: the poll counts), and the candidate's expected utility over the polls (cand_u:
     candidates' utilities, one row per candidate) is compared with P_now (the polls as they are). Each
     candidate recommends its best move if that gains it something.
+    pm: the method as voters count a poll (Method.poll_view); the ballots are the method's.
     Returns [(candidate, (X, Y), winner lotteries per poll with the campaign)]."""
     n, C = u.shape
     if b is None:
@@ -467,9 +512,9 @@ def _campaigns(method, u, B, F, T, polls, P_now, a, b, share, cand_u):
     for X, Y in pairs:
         M = _move_ballots(method, u, X, Y)
         if F is not None:
-            D = method.features(M) - F                    # per voter: the change in their features
+            D = pm.features(M) - F                    # per voter: the change in their features
             rows = T[None, :, :] + share * (AUD[cs] @ D)[:, None, :]
-            P = method.decide_many(rows.reshape(-1, T.shape[1]), C).reshape(len(cs), S, C)
+            P = pm.decide_many(rows.reshape(-1, T.shape[1]), C).reshape(len(cs), S, C)
         else:                                             # no feature sums: the first share of the audience
             P = np.empty((len(cs), S, C))
             for i, c in enumerate(cs):
@@ -477,7 +522,7 @@ def _campaigns(method, u, B, F, T, polls, P_now, a, b, share, cand_u):
                 take = aud[:int(np.ceil(share * len(aud)))]
                 B2 = B.copy()
                 B2[take] = M[take]
-                P[i] = poll_tallies(method.tally, B2, polls)
+                P[i] = poll_tallies(pm.tally, B2, polls)
         val = np.einsum("isj,ij->i", P, cand_u[cs]) / S - now
         for i in np.flatnonzero(val > TOL):
             c = int(cs[i])

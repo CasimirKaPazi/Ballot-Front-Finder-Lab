@@ -1,6 +1,6 @@
 # Campaigns and risk: a design
 
-Status: implemented as an experiment (2026-10-27): `--campaign` and `--risk` in run.py and sweep.py, both off by default; first results under First trials, below. Changes from the design as first written, after the first trials: only bold voters follow recommendations, a campaign's move is one simple move (no exaggerations), and a voter listens to one campaign only, that of the candidate they like most among those campaigning (see The moves and The voter's choice). It extends the poll-rounds strategy model ([model.md](model.md), Strategy engine) by two optional parts, both off by default: campaigns, which give voters coordinated moves to choose from, and a risk attitude per voter, which replaces the fixed split into aggressive and kind voters. With both off the lab gives exactly the results it gives now.
+Status: implemented as an experiment (2026-10-27): `--campaign` and `--risk` in run.py and sweep.py, both off by default. Since 2026-10-29 `--campaign` is 0 or 1 and φ is `--coordination` (default 0.25), the share also used by the experimental shared moves (`--moves 1`); until then `--campaign φ` set both at once, and the analysis reads such runs as `--campaign 1 --coordination φ`; first results under First trials, below. Changes from the design as first written, after the first trials: only bold voters follow recommendations, a campaign's move is one simple move (no exaggerations), and a voter listens to one campaign only, that of the candidate they like most among those campaigning (see The moves and The voter's choice). It extends the poll-rounds strategy model ([model.md](model.md), Strategy engine) by two optional parts, both off by default: campaigns, which give voters coordinated moves to choose from, and a risk attitude per voter, which replaces the fixed split into aggressive and kind voters. With both off the lab gives exactly the results it gives now.
 
 ## The problem
 
@@ -47,7 +47,7 @@ Each candidate c, in each round, for each move o:
 
 c recommends the move with the highest value, if that value is positive.
 
-**φ, the safety margin.** The candidate plans with φ of its audience, not all of it, so that the move still works if part of the audience does not follow. The candidate does not know who is strategic: non-strategic voters never follow, and strategic ones only if it pays them (part 2). So φ is the candidate's expectation, and when it is wrong, the campaign fails. One parameter, `--campaign-share` (default 0.5: the safer assumption, a campaign that works with half its audience; a sweep shows how much it matters).
+**φ, the safety margin.** The candidate plans with φ of its audience, not all of it, so that the move still works if part of the audience does not follow. The candidate does not know who is strategic: non-strategic voters never follow, and strategic ones only if it pays them (part 2). So φ is the candidate's expectation, and when it is wrong, the campaign fails. One parameter, `--coordination` (default 0.25 since 2026-10-29; 0.5 suggested before, the safer assumption, a campaign that works with half its audience; a sweep shows how much it matters).
 
 ### The voter's choice
 

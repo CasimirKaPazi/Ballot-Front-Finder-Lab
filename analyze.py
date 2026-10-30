@@ -159,6 +159,10 @@ ADDED_COLUMNS = {
     "Ur_cands": (None, "2026-10-27, the line of rounded ballots"),
     **{f"{a}_{k}": (None, "2026-10-27, further reference points") for k in REF_POINTS for a in ("U", "WM")},
     "campaign": ("0.0", "2026-10-27, campaigns: older runs had none"),
+    "moves": ("0", "2026-10-29, shared moves: older runs used ranking groups"),
+    "individual": ("0", "2026-10-30, individual voters reading one poll: older runs used ranking groups"),
+    "coordination": ("0.25", "2026-10-29, coordination share: older runs had campaigns planned with the "
+                             "--campaign value"),
     "risk": ("0", "2026-10-27, risk by satisfaction: older runs used the fixed aggressive share"),
     "risk_tolerance": ("0.1", "2026-10-27, risk by satisfaction (not used by older runs)"),
     "camp_follow": (None, "2026-10-27, campaigns"),
@@ -191,6 +195,8 @@ def load(paths):
                     raise SystemExit(f"{p} holds results of convergent learning (--converge), which was removed "
                                      "after version 1.0.0; analyse it with that version")
                 r.update(fill)                   # columns added later (ADDED_COLUMNS)
+                if "coordination" in fill and r["campaign"] not in ("", "0", "0.0"):
+                    r["coordination"], r["campaign"] = r["campaign"], "1.0"   # until 2026-10-29 --campaign was the share
                 new = current_name(r["method"])  # methods renamed since (methods.RENAMED)
                 if new != r["method"]:
                     RENAMED_SEEN[r["method"]] = new
@@ -733,7 +739,7 @@ def label(key, varying, first):
 
 
 POINT_KEYS = {"rb": "random ballot", "rc": "random candidate", "ml": "maximal lottery", **REF_POINTS}   # --points
-PARAM_NAMES = {"campaign": "campaigns (share planned with)", "risk": "risk by satisfaction",
+PARAM_NAMES = {"campaign": "campaigns", "moves": "shared moves", "coordination": "coordination share", "individual": "individual voters", "risk": "risk by satisfaction",
                "risk_tolerance": "risk tolerance", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error",
                "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion",
@@ -744,7 +750,7 @@ PARAM_NAMES = {"campaign": "campaigns (share planned with)", "risk": "risk by sa
                "field_kappa": "field saturation", "field_salience": "salience field",
                "noise_strength": "noise strength", "adaptive": "adaptive share", "utility": "utility"}
 LEARNING_ONLY = {"rounds", "samples", "strategic", "adaptive", "poll_size", "poll_error", "search",
-                 "aggressive", "start", "campaign", "risk", "risk_tolerance"}   # same electorates
+                 "aggressive", "start", "campaign", "risk", "risk_tolerance", "moves", "coordination", "individual"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)
 
 

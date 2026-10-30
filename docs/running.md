@@ -70,7 +70,10 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--samples` | 5 | polls per round (they stand for the uncertainty; 10 until 2026-10-26) |
 | `--poll-error` | 2 | voters treat polls as this many times less precise than their sampling error |
 | `--aggressive` | 0.5 | share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) only when the polls show a gain |
-| `--campaign` | 0 (off) | experimental: above 0, every candidate recommends a move each round, planned with this share of its audience following (0.5 suggested); bold (aggressive) voters may follow ([campaigns.md](campaigns.md)) |
+| `--campaign` | 0 (off) | experimental: 1 = every candidate recommends a move each round, planned with `--coordination` of its audience following; bold (aggressive) voters may follow ([campaigns.md](campaigns.md)). Until 2026-10-29 the value was the share itself; such runs are read as `--campaign 1 --coordination` that value |
+| `--moves` | 0 (off) | experimental: 1 = shared moves instead of ranking groups: voters share moves within audiences (the leaders and the next place in the polls, two per voter; with campaigns also the campaign they listen to), apply them to their own preferences and each decide for themselves (moves.py) |
+| `--individual` | 0 (off) | experimental: 1 = the average of the round's `--samples` polls, read for how close each candidate is to winning (in voters switching from the poll winner); each voter decides alone, by their stake in the race between the leaders, and if it is high enough picks compromise for one of the poll's three places, burial of one, both, or the sincere ballot by what the poll totals promise if 1 to `--coordination` of the electorate (their boldness) vote as they do (individual.py). `--aggressive` and `--search` do not apply; not with `--moves`, `--campaign`, `--risk` or `--start previous` |
+| `--coordination` | 0.25 | with `--moves` or `--campaign`: the share of an audience a voter or a candidate assumes to make the same move; 0 = one voter's own impact (with `--moves` only; an average member of the audience, as a stand-in for the voter) |
 | `--risk` | 0 | experimental: 1 = each voter is careful or bold by their satisfaction with the polls and a personal threshold, instead of the fixed `--aggressive` split ([campaigns.md](campaigns.md)) |
 | `--risk-tolerance` | 0.1 | with `--risk 1`: how much loss bold voters accept, per unit of their shortfall below their threshold |
 | `--lazy` | 0 | laziness of honest ballots, 0–1: each voter's cut is drawn between 0 and this (see [model.md](model.md), Truncation and laziness) |
@@ -91,7 +94,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--overwrite` | off | replace an existing run in `--out` |
 | `--resume` | off | continue an interrupted run in `--out` with the same command (see Progress, saving and resuming) |
 
-`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--cluster-zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--strategic`, `--adaptive`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid, one run after another, and writes one elections CSV per run into `output/<out>/runs/`. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
+`sweep.py` takes the same flags, but every condition flag (`--voters` … `--width`, `--cluster-zipf`, `--rounds`, `--samples`, `--poll-size`, `--poll-error`, `--aggressive`, `--search`, `--campaign`, `--moves`, `--coordination`, `--individual`, `--strategic`, `--adaptive`, `--max-score`, `--exits`, `--clones`) accepts several values, and `--seeds` several seeds; it runs the full grid, one run after another, and writes one elections CSV per run into `output/<out>/runs/`. With `--one-at-a-time`, the first value of every flag is the base, and each other value is run with everything else at the base, instead of the full grid. Conditions that differ only in `--rounds` come from one run: the poll rounds up to the highest are computed once and each requested round is written as its own condition (round r of a longer run is exactly what `--rounds r` gives), so `--rounds 1 2 3 4 5` costs as much as `--rounds 5`.
 
 `analyze.py`:
 
@@ -220,6 +223,8 @@ python compare.py output/falloff --pairs "ESR:Score" "Score runoff:Minimax"
 | `methods.py` | Exact tallies on ballot matrices (ties shared), method groups, renamed methods, add-on loader |
 | `addons/` | Methods in separate files, loaded at start (see [methods.md](methods.md), Add-ons); `_template.py` to start from |
 | `strategy.py` | Learning engine, sincerity and strategy types |
+| `individual.py` | Individual voters reading one poll (`--individual 1`, experimental): closeness, chances, stake, one round of answers |
+| `moves.py` | Shared moves (`--moves 1`, experimental): the moves, how a voter's ballot follows from a move, one round of answers |
 | `nomination.py` | Strategic nomination: exits, re-entry and clones from the initial field |
 | `participation.py` | Participation check (no-show paradox) |
 | `manipulation.py` | Manipulation test: coalitions for each candidate against the honest winner, one- and two-sided |

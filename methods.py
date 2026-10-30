@@ -50,6 +50,7 @@ import math
 from contextlib import contextmanager
 import os
 import sys
+import dataclasses
 from dataclasses import dataclass
 from itertools import permutations, product
 from typing import Callable
@@ -474,6 +475,149 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "ge2": (lambda B: B >= 2, lambda C: (C,)),
     "eq0": (lambda B: B == 0, lambda C: (C,)),
 }
+
+
+# ---------- what a poll shows (docs/model.md, What a poll shows) ----------
+# A poll publishes totals per candidate, per pair of candidates or per grade. Methods counted from totals
+# over every subset of candidates (the IRV family, ...) are counted by voters from such totals with a
+# stand-in (Method.poll, POLL): first preferences and a transfer table (who comes next on those ballots).
+def _levels_down(B):
+    """Per ballot: the top level (bool), and the next level below it among the ranked candidates
+    (bool; empty when the rest is unranked, i.e. tied at 0 on a truncated ranking)."""
+    unr = _unranked(B)
+    mx = B.max(axis=1, keepdims=True)
+    L0 = B >= mx
+    below = np.where((B < mx) & ~unr, B, -np.inf)
+    m1 = below.max(axis=1, keepdims=True)
+    L1 = (B == m1) & np.isfinite(m1)
+    return L0, L1
+
+
+def _levels_up(B):
+    """Per ballot: the bottom level (bool; unranked candidates share it), and the next level above."""
+    mn = B.min(axis=1, keepdims=True)
+    Lb = B <= mn
+    above = np.where(B > mn, B, np.inf)
+    m1 = above.min(axis=1, keepdims=True)
+    Lu = (B == m1) & np.isfinite(m1)
+    return Lb, Lu
+
+
+def _transfer(L0, L1, whole=False):
+    """Per ballot, C x C: how its vote for x (x on its first level L0) passes on when x is out: to the
+    others on the same level if there are any, else to the next level L1 (shared equally; whole: a
+    whole vote to each, and only from a ballot with x alone on its level)."""
+    k0 = L0.sum(axis=1)[:, None, None]
+    k1 = np.maximum(L1.sum(axis=1), 1)[:, None, None]
+    C = L0.shape[1]
+    same = L0[:, :, None] & L0[:, None, :] & ~np.eye(C, dtype=bool)[None]
+    nxt = L0[:, :, None] & L1[:, None, :]
+    if whole:
+        T = np.where(k0 == 1, nxt, False).astype(float)
+    else:
+        T = np.where(k0 > 1, same / (k0 * np.maximum(k0 - 1, 1)), nxt / (k0 * k1))
+    return T.reshape(len(L0), -1)
+
+
+FEATURES.update({
+    "first_split": (lambda B: (lambda L: L / L.sum(axis=1, keepdims=True))(_levels_down(B)[0]), lambda C: (C,)),
+    "transfer": (lambda B: _transfer(*_levels_down(B)), lambda C: (C, C)),
+    "transfer_whole": (lambda B: _transfer(*_levels_down(B), whole=True), lambda C: (C, C)),
+    "lasttransfer": (lambda B: _transfer(*_levels_up(B)), lambda C: (C, C)),
+    "favscore": (lambda B: ((lambda L: L / L.sum(axis=1, keepdims=True))(B >= B.max(axis=1, keepdims=True))[:, :, None]
+                            * B[:, None, :]).reshape(len(B), -1), lambda C: (C, C)),
+})
+
+
+def poll_like(f, C=6):
+    """Is feature f a total a poll could show: per candidate, per pair or per grade, not over every
+    subset of candidates (no dimension of size 2^C)?"""
+    shape = FEATURES[f][1](C)
+    return 2 ** C not in tuple(shape)
+
+
+class _Among:
+    """among_subsets, computed only for the subsets a count asks for (first_among), cached."""
+    def __init__(self, first, T, whole=False):
+        self.first, self.T = [float(x) for x in first], T.tolist()     # plain lists: small and fast
+        self.cont = [sum(r) for r in self.T]
+        self.whole, self.cache, self.C = whole, {}, len(first)
+        self.shape = (2 ** self.C, self.C)
+
+    def __getitem__(self, mask):
+        out = self.cache.get(mask)
+        if out is None:
+            C = self.C
+            ins = [c for c in range(C) if mask >> c & 1]
+            v = [self.first[c] if mask >> c & 1 else 0.0 for c in range(C)]
+            for x in range(C):
+                if mask >> x & 1:
+                    continue
+                row = self.T[x]
+                if self.whole:
+                    for y in ins:
+                        v[y] += row[y]
+                else:
+                    den = sum(row[y] for y in ins)
+                    if den > 0:
+                        f = self.cont[x] / den
+                        for y in ins:
+                            v[y] += row[y] * f
+            out = np.array(v)
+            self.cache[mask] = out
+        return out
+
+
+def among_subsets(first, T, whole=False):
+    """Estimated first-choice votes among every subset of candidates (2^C x C, as _firsts), from the
+    first preferences and the transfer table: in a subset S, a candidate keeps its own first preferences
+    and receives the votes of every candidate outside S by that candidate's transfers to S, spread over
+    those in S in proportion (the votes of ballots whose next choice is also out follow the others);
+    a candidate with no transfers to S loses its votes (exhausted). whole: each transfer is a whole
+    vote, not spread (rankings with equal ranks, ER-IRV)."""
+    C = len(first)
+    M = masks(C).astype(float)                                   # (2^C, C)
+    out = first[None, :] * M
+    TS = T[None, :, :] * M[:, None, :]                           # transfers into S, per (S, x, y)
+    if whole:
+        recv = TS
+    else:
+        den = TS.sum(axis=2, keepdims=True)
+        recv = np.where(den > 0, TS / np.where(den > 0, den, 1) * T.sum(axis=1)[None, :, None], 0.0)
+    out += ((1 - M)[:, :, None] * recv).sum(axis=1)
+    return out
+
+
+def _poll_irv(key="firsts", whole=False, then=None):
+    """Stand-in for a method counted from first choices among subsets (key): the same rule, with those
+    estimated from the first preferences and transfers (among_subsets)."""
+    def decide(s):
+        s2 = dict(s)
+        if whole:
+            s2[key] = _Among(s["top"].astype(float), s["transfer_whole"], whole=True)
+        else:
+            s2[key] = _Among(s["first_split"], s["transfer"])
+        return then(s2)
+    return decide
+
+
+def _poll_coombs(s):
+    """Coombs from first preferences, last places and their transfer tables."""
+    s2 = dict(s)
+    s2["firsts"] = _Among(s["first_split"], s["transfer"])
+    s2["lasts"] = _Among(s["last"], s["lasttransfer"])
+    return d_coombs(s2)
+
+
+def _poll_reciprocal(s):
+    """Reciprocal score with factions by single favourite (tied favourites split)."""
+    C = len(s["first_split"])
+    fset = np.zeros(2 ** C)
+    fsetB = np.zeros((2 ** C, C))
+    ids = 1 << np.arange(C)
+    fset[ids] = s["first_split"]
+    fsetB[ids] = s["favscore"]
+    return d_reciprocal_score({"fset": fset, "fsetB": fsetB})
 
 
 def margins_of(s):
@@ -1453,11 +1597,32 @@ class Method:
     full: Callable = None            # tally on the full ballot matrix, for methods without features
     inverse: bool = False            # Inverse-* test methods: the sincere ballot is that of reversed preferences
     settings: dict = None            # settings this method fixes for itself (SETTINGS), e.g. {"max_score": 10}
+    poll: tuple = None               # (features, decision): how voters count a poll, if not as the method does
+                                     # (poll_view; set in POLL below)
 
     def applied(self):
         """Context in which this method's own settings are in force (none: the run's settings).
         run.py runs all of a method's work in it; tally and sincere also use it, for direct calls."""
         return applied(self.settings)
+
+    def poll_view(self):
+        """The method as voters count a poll (docs/model.md, What a poll shows): a poll publishes totals per
+        candidate, per pair or per grade, never over every subset of candidates. A method counted from
+        such totals is its own poll view; the others use their stand-in (POLL), or without one the
+        score totals (score ballots) or the first preferences (other ballots)."""
+        cache = self.__dict__.setdefault("_poll_view", {})
+        if "v" not in cache:
+            if self.poll is not None:
+                feats, dec = self.poll
+            elif self.full is None and all(poll_like(f) for f in self.feats):
+                cache["v"] = self
+                return self
+            elif BALLOTS[self.ballot].score_range or self.ballot == "grade3":
+                feats, dec = ("sum",), d_sum
+            else:
+                feats, dec = ("first_split",), lambda s: uniform_max(s["first_split"])
+            cache["v"] = dataclasses.replace(self, decide=dec, feats=tuple(feats), full=None, poll=None)
+        return cache["v"]
 
     def features(self, B):
         """Per-voter features, concatenated: (n, d)."""
@@ -1620,6 +1785,33 @@ METHODS = {
     "Inverse-Borda": M_("strict", d_sum, ("sum",), inverse=True),
     "Inverse-Score": M_("score", d_sum, ("sum",), inverse=True),
 }
+
+# How voters count a poll where the method is not counted from poll-like totals (docs/model.md, What a poll shows;
+# Method.poll_view). The election itself is always decided by the method.
+_IRV_POLL = ("first_split", "transfer")
+POLL = {
+    "IRV": (_IRV_POLL, _poll_irv(then=d_irv)),
+    "Inverse-IRV": (_IRV_POLL, _poll_irv(then=d_irv)),
+    "IRV-3": (_IRV_POLL, _poll_irv("firsts_ex", then=lambda s: d_irv(s, "firsts_ex"))),
+    "ER-IRV": (("top", "transfer_whole"), _poll_irv("firsts_eq", whole=True, then=d_er_irv)),
+    "Inverse-ER-IRV": (("top", "transfer_whole"), _poll_irv("firsts_eq", whole=True, then=d_er_irv)),
+    "BTR-IRV": (_IRV_POLL + ("gt",), _poll_irv(then=d_btr_irv)),
+    "Benham": (_IRV_POLL + ("gt",), _poll_irv(then=d_benham)),
+    "Coombs": (_IRV_POLL + ("last", "lasttransfer"), _poll_coombs),
+    "DSC": (("first_split",), lambda s: uniform_max(s["first_split"])),           # as Plurality
+    "DAC": (("top",), lambda s: uniform_max(s["top"].astype(float))),                # as Approval
+    "Reciprocal score": (("first_split", "favscore"), _poll_reciprocal),
+    "Score+": (("sum",), d_sum),                                                    # as Score
+    "INS": (("sum",), d_sum),       # score elimination without renormalising elects the Score winner
+    "ESR": (("sum",), d_sum),       # the Score winner is always in ESR's set, and without renormalising it wins
+    "MARS-T": (("sum", "gt"), d_mars),                                              # as MARS
+    "Soft Minimax-L": (("soft20",), soft_minimax("soft20")),                        # as Soft Minimax
+    "Soft Minimax-D": (("soft20",), soft_minimax("soft20")),
+    "Condorcet-random-drop": (("gt",), d_minimax),   # the Condorcet winner, else the nearest reading (Minimax)
+    "Geometric median": (("sum",), d_sum),           # the mean, as the nearest reading of the totals
+}
+for _n, _pv in POLL.items():
+    METHODS[_n] = dataclasses.replace(METHODS[_n], poll=_pv)
 
 
 # Method groups: every method belongs to exactly one (checked below). They are the panels of the

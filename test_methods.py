@@ -758,7 +758,7 @@ check("CL else Score winner, toy profile: the loser D wins", _mc.tally(_Bc), [0,
 _Fc = _mc.features(_Bc)
 _Tc = np.repeat(_Fc.sum(axis=0)[None], 5, axis=0)
 _cu = np.array([[1, .5, .3, .1], [.5, 1, .4, .1], [.3, .4, 1, .1], [.1, .1, .1, 1]])
-_rc = {c: (mv, P) for c, mv, P in _stc._campaigns(_mc, _uc, _Bc, _Fc, _Tc, np.zeros((5, 9), int),
+_rc = {c: (mv, P) for c, mv, P in _stc._campaigns(_mc, _mc.poll_view(), _uc, _Bc, _Fc, _Tc, np.zeros((5, 9), int),
                                                      _mc.decide_many(_Tc, 4), 3, 0, 0.5, _cu)}
 assert 0 in _rc and np.allclose(_rc[0][1].mean(axis=0), [1, 0, 0, 0]), _rc
 # the choice: careful voters ignore promises; bold voters take a costless recommendation over an
@@ -772,6 +772,92 @@ assert _stc._answer(_gain, "fav", np.array([9.0]), _c3, 0, _rng0, eager=True, pr
 assert _stc._answer(_gain, "fav", np.array([9.0]), _c3[2:], 0, _rng0, eager=True, promises=[0.5]) is None
 assert _stc._answer(_gain, "fav", np.array([9.0]), _c3[2:], 0, _rng0, eager=True, tol=0.1, promises=[0.5])[0] == 2
 print("campaigns ok")
+# Shared moves (moves.py, --moves 1): the naive exaggerations and push-over of today's model, written as
+# moves, render to today's ballots (for the leader the voter prefers; one voter, no laziness, 5 candidates)
+import moves as _mvm
+from ballots import BALLOTS as _BL
+_rep = {}
+for _n, _m in METHODS.items():
+    if not _m.inverse and _m.ballot in ("fav", "fav_run", "approval", "app_run", "score", "grade3", "score_run",
+                                         "strict", "rank", "weak", "trunc", "trunc3", "veto") and _m.ballot not in _rep:
+        _rep[_m.ballot] = _m
+_rg = np.random.default_rng(4)
+_order = lambda x: tuple(np.sign(np.subtract.outer(x, x)).ravel())
+for _t in range(60):
+    _u = _rg.random((1, 5))
+    _A, _Bo, _X = (int(x) for x in _rg.choice(5, 3, replace=False))
+    if _u[0, _A] < _u[0, _Bo]:
+        _A, _Bo = _Bo, _A
+    for _bn, _m in _rep.items():
+        _b = _BL[_bn]
+        _sin = _m.sincere(_u, 0.0, 0.5)
+        _key = _order if _bn == "weak" else (lambda x: tuple(np.round(x, 9)))
+        _fix = (lambda x: np.floor_divide(x, 5) * 5 + np.mod(_sin[0], 5)) if _b.marks is not None else (lambda x: x)
+        _today = {_key(_fix(x)) for x in _b.exaggerate(_u[0], _A, _Bo)}
+        _new = {_key(_mvm.render(_m, _u, mv, _sin, 0.0, 0.5)[0]) for mv in _mvm._naive(_bn, _A, _Bo)}
+        assert _today <= _new, (_bn, _u, _A, _Bo)
+        if _b.pushover is not None:
+            assert _key(_fix(_b.pushover(_u[0], _A, _Bo, _X))) == _key(
+                _mvm.render(_m, _u, _mvm._push(_bn, _A, _Bo, _X), _sin, 0.0, 0.5)[0]), (_bn, "push")
+# rated ballots keep the voter's own intensities: same ranking, different scores
+_us = np.array([[1.0, 0.8, 0.3, 0.0], [1.0, 0.4, 0.2, 0.0]])
+_xs = _mvm.render(METHODS["Score"], _us, (("upto", 0), ("downfrom", 3)), METHODS["Score"].sincere(_us, 0.0), 0.0, 0.5)
+assert _xs[0, 1] != _xs[1, 1] and _xs[0, 0] == _xs[1, 0] == METHODS["Score"].sincere(_us, 0.0)[0, 0]
+# approval: nothing below A; burial takes the approval away
+_ua2 = np.array([[1.0, 0.9, 0.5, 0.1]])
+_ap = METHODS["Approval"]
+assert _mvm.render(_ap, _ua2, (("upto", 2), ("below", 2)), _ap.sincere(_ua2, 0.0, 0.5), 0.0, 0.5).tolist() == [[1, 1, 1, 0]]
+assert _mvm.render(_ap, _ua2, (("bottom", 1),), _ap.sincere(_ua2, 0.0, 0.0), 0.0, 0.0)[0, 1] == 0
+# the engine runs for every method, also on 2 candidates, and gives the same ballots with the same stream
+_uv = np.random.default_rng(5).random((30, 5))
+_ag = np.random.default_rng(6).random(30) < 0.5
+for _n, _m in METHODS.items():
+    _r1 = respond(_m, _uv, np.random.default_rng(1), rounds=2, samples=2, search=1, moves=0.25, aggressive=_ag)[0]
+    _r2 = respond(_m, _uv, np.random.default_rng(1), rounds=2, samples=2, search=1, moves=0.25, aggressive=_ag)[0]
+    assert np.array_equal(_r1, _r2), _n
+    respond(_m, _uv[:, :2], np.random.default_rng(1), rounds=2, samples=2, search=1, moves=0.25)
+print("shared moves ok")
+# What a poll shows (Method.poll_view; docs/model.md, What a poll shows): methods counted from poll-like totals
+# count polls as they count elections; the IRV family uses first preferences and transfers, which give
+# exactly the method's result with three candidates
+from methods import poll_like as _pl
+assert METHODS["Schulze"].poll_view() is METHODS["Schulze"] and METHODS["Score"].poll_view() is METHODS["Score"]
+assert not _pl("firsts") and _pl("gt") and _pl("transfer")
+for _n in ("IRV", "IRV-3", "ER-IRV", "BTR-IRV", "Benham", "Coombs", "Inverse-IRV"):
+    _m = METHODS[_n]
+    _pv = _m.poll_view()
+    assert _pv is not _m and all(_pl(f) for f in _pv.feats), _n
+    for _t in range(20):
+        _u3 = np.random.default_rng([7, _t]).random((25, 3))
+        _B3 = _m.sincere(_u3, np.random.default_rng([8, _t]).random(25) * 0.6, 0.5)
+        assert np.allclose(_pv.decide_many(_pv.features(_B3).sum(axis=0)[None], 3)[0], _m.tally(_B3)), (_n, _t)
+_ud = np.array([[1.0, 0.6, 0.3, 0.0]] * 3 + [[0.0, 1.0, 0.6, 0.3]] * 2)
+assert np.allclose(METHODS["DSC"].poll_view().tally(METHODS["DSC"].sincere(_ud, 0.0)), [1, 0, 0, 0])   # first preferences
+assert METHODS["Geometric median"].poll_view().full is None
+print("poll views ok")
+# Individual voters reading one poll (individual.py, --individual 1): closeness is the number of voters
+# switching from the poll winner that makes a candidate win; for Plurality half the gap in first preferences
+import individual as _ind
+_pl = METHODS["Plurality"]
+_T = np.array([40.0, 30.0, 20.0, 9.0])
+_rd = _ind.Reading(_pl.poll_view(), "fav", _T, 4, 99, 49, 2.0)
+assert _rd.A == 0 and _rd.B == 1 and _rd.T == 2
+assert abs(_rd.k[1] - 5.0) < 0.01 and abs(_rd.k[2] - 10.0) < 0.01, _rd.k
+assert 0 < _rd.P[1] < _rd.P[0] and abs(_rd.P.sum() - 1) < 1e-9
+assert abs(_rd.cross(1, 2, 4.0) - 3.0) < 0.05  # Plurality: 4 voters leaving A for T bring B 2 closer (no push-over)
+# a switching ballot changes only the two candidates, in every format
+for _bn in ("fav", "approval", "score", "grade3", "rank", "strict", "weak", "trunc", "trunc3", "veto",
+            "fav_run", "app_run", "score_run"):
+    _b1, _b2 = _ind.switch_pair(_bn, 5, 1, 3)
+    assert not np.array_equal(_b1, _b2), _bn
+# the engine runs for every method, also on 2 candidates, and gives the same ballots with the same stream
+_ui = np.random.default_rng(9).random((30, 5))
+for _n, _m in METHODS.items():
+    _r1 = respond(_m, _ui, np.random.default_rng(1), rounds=2, search=1, individual=True)[0]
+    _r2 = respond(_m, _ui, np.random.default_rng(1), rounds=2, search=1, individual=True)[0]
+    assert np.array_equal(_r1, _r2), _n
+    respond(_m, _ui[:, :2], np.random.default_rng(1), rounds=2, search=1, individual=True)
+print("individual voters ok")
 # Laziness in the runoff of two-round ballots: a lazy voter who cares only about A and B ranks just
 # them in the runoff part, so a runoff between C and D gets no vote from them
 from ballots import fav_run_ballots as _frb
@@ -1093,6 +1179,18 @@ from methods import COMPARISONS as _CMP, run_selection as _rs
 assert all(m in METHODS for m in _CMP["standard"]) and _rs() == [m for m in METHODS if m in _CMP["standard"]]
 assert _rs(exclude=["Plurality"]) == [m for m in _rs() if m != "Plurality"] and "Kemeny-Young" in _rs(["Kemeny-Young"])
 print("renamed methods ok")
+# Runs from before 2026-10-29: --campaign was the share campaigns planned with; read as campaigns on, with
+# that share as --coordination
+with _tf.TemporaryDirectory() as _d:
+    _p = _os.path.join(_d, "elections.csv")
+    _cols = [k for k in _old_rows[0] if k not in ("coordination", "moves")]
+    with open(_p, "w", newline="") as _f:
+        _w = _csv.DictWriter(_f, _cols, extrasaction="ignore")
+        _w.writeheader()
+        _w.writerows([{**r, "campaign": "0.5"} for r in _old_rows[:2]] + [{**r, "campaign": "0.0"} for r in _old_rows[2:4]])
+    _ld = _an.load([_p])
+    assert [(r["campaign"], r["coordination"], r["moves"]) for r in _ld] == [("1.0", "0.5", "0")] * 2 + [("0.0", "0.25", "0")] * 2
+print("older campaign runs ok")
 
 # Honest approval: a personal threshold between the voter's mean and favourite (ballots.approves)
 from ballots import approves as _apv
