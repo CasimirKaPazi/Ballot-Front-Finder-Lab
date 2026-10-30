@@ -165,7 +165,7 @@ def one_election(job):
             defined = sincerity_defined(name)          # blank for TRASH and the Inverse-* methods
             sincere_row = {**election_row(u, P_h, m_cand), **estats, "sincerity": 1.0 if defined else "",
                        "fidelity": float(fidelity(m, m.sincere(uf), uf).mean()) if defined else "", "settled": 1,
-                           "adapted": "", "compromise": 0.0, "pushover": 0.0, "burial": 0.0, **nstats, **check(m.sincere(uf))}
+                           "adapted": "", "compromise": 0.0, "pushover": 0.0, "burial": 0.0, "exaggeration": 0.0, **nstats, **check(m.sincere(uf))}
             # Each method learns with a fresh copy of the same stream (common random numbers: the same
             # polls for every method as long as they draw alike), so results stay the same when methods
             # are added or reordered, and paired comparisons are not blurred by different poll draws.
@@ -198,7 +198,7 @@ def one_election(job):
                             "sincerity": sin if defined else "",
                             "fidelity": float(fidelity(m, B, uf).mean()) if defined else "",
                             "settled": int(settled), "adapted": act[r] if adaptive is not None else "",
-                            **strategy_types(B, m.pref(uf), lead.get(r)), **nstats, **check(B), **manip.NAN,
+                            **strategy_types(B, m.pref(uf), lead.get(r), m.sincere(uf)), **nstats, **check(B), **manip.NAN,
                             # campaigns and risk (docs/campaigns.md): blank when off
                             "camp_follow": cs_r.get("follow", "") if camp else "",
                             "camp_top": (int(orig[cs_r["top"]]) if cs_r.get("top", -1) >= 0 else -1) if camp and cs_r else "",

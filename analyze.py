@@ -64,7 +64,7 @@ from methods import GROUPS, METHODS, select, group_of, sincerity_defined, curren
 AXES = ["VSE", "WME", "VSE*", "WME*"]
 FRONT = ["VSE*", "WME*", "sincerity"]   # the axes dominance is judged on
 EXTRA = ["CE", "CE*", "Low", "Low*"]   # reported, not used for dominance (Low: winner below the median candidate)
-TYPES = ["compromise", "burial", "pushover"]
+TYPES = ["compromise", "burial", "pushover", "exaggeration"]
 PARAMS = [k for k in RUN_PARAMS if k != "seed"]      # condition parameters, as run.py writes them
 NOM = ["nom_changed", "nom_exits", "nom_clones", "nom_settled"]     # per method and election (sincere rows)
 PART = ["noshow", "noshow_voters", "noshow_gain"]   # participation check (run.py --participation), both ballot sets
@@ -168,6 +168,7 @@ ADDED_COLUMNS = {
     "camp_follow": (None, "2026-10-27, campaigns"),
     "camp_top": (None, "2026-10-27, campaigns"),
     "bold": (None, "2026-10-27, risk by satisfaction"),
+    "exaggeration": (None, "2026-10-30, strategy type: exaggeration without reversal"),
     "WM_ml": (None, "2026-10-26, the maximal lottery as a reference point"),
 }
 REQUIRED_COLUMNS = ["WM_best", "U_rb", "sincerity", "U_cands", "nom_changed", "noshow"]
@@ -383,7 +384,7 @@ def arrays(rows):
             else:
                 A["sin"][i, j] = np.nan
             for t in TYPES:
-                A[t][i, j] = float(r[t])
+                A[t][i, j] = float(r.get(t) or "nan")          # exaggeration: blank before 2026-10-30
             A["adapted"][i, j] = float(r.get("adapted") or "nan")   # blank without adaptive voters
             for k in PART:
                 A[k + "_l"][i, j] = float(r[k])
@@ -1063,7 +1064,9 @@ def main():
           "by kind (see strategy.strategy_types): compromise raises a liked second choice, or the lesser evil of the "
           "two poll leaders, above the favourite; push-over raises a disliked candidate who is no poll leader to the "
           "top (to steer a runoff or an elimination); burial keeps the favourite on top and reverses a preference "
-          "below it.", ""]
+          "below it. **Exaggeration** counts the voters whose ballot differs from the sincere one without reversing "
+          "any preference: candidates tied, left unranked or given the lowest or highest score together with others "
+          "(a candidate buried or raised as far as the format allows without a reversal).", ""]
     if len(results) > 1:
         L += ["## Across conditions", "", f"![axes](axes-heatmap.{plots.ext()})", ""]
         if chains:
@@ -1142,15 +1145,15 @@ def main():
               + ", ".join(r["methods"][j] for j in np.argsort(-r["VSE*"], kind="stable") if not r["dominated_by"][j])
               + ".", "",
               "| Method | Group | VSE* | WME* | Sincerity | Fidelity | (honest) | VSE | WME | CE | CE* | Low | Low* "
-              "| Compromise | Burial | Push-over | Dominated by |",
-              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+              "| Compromise | Burial | Push-over | Exaggeration | Dominated by |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for j in np.argsort(-r["VSE*"], kind="stable"):
             L.append(f"| {r['methods'][j]} | {group_of(r['methods'][j])} | "
                      + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in ["VSE*", "WME*", "sincerity"])
                      + " | " + " | ".join("—" if np.isnan(r[x][j]) else f"{r[x][j] * 100:.1f}"
                                           for x in ["fidelity", "fidelity_honest"])
                      + " | " + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in ["VSE", "WME"] + EXTRA)
-                     + " | " + " | ".join(f"{r[t][j] * 100:.1f}%" for t in TYPES)
+                     + " | " + " | ".join("—" if np.isnan(r[t][j]) else f"{r[t][j] * 100:.1f}%" for t in TYPES)
                      + f" | {dom_text(r['dominated_by'][j], limit=3)} |")
         L += [""]
         if float(p.get("adaptive") or 0) > 0:

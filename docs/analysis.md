@@ -47,8 +47,10 @@ VSE, WME and CE use sincere ballots; VSE\*, WME\* and CE\* (in the CSV: VSE_lear
 
 **Strategy types** (`strategy.strategy_types`), among voters whose learned ballot reverses at least one real preference:
 - *compromise*: the favourite is not at the top, and a top candidate is liked above the voter's mean or is one of the two poll leaders (a viable second choice, or the lesser evil of the leaders, raised);
-- *push-over*: the favourite is not at the top, and every top candidate is liked below the mean and is no poll leader (a weak candidate raised, to steer eliminations or runoffs). Until 2026-10-28 the leaders were not considered, so a vote for the lesser of two disliked leaders counted as push-over; with convergent learning (no poll leaders) that is still so;
+- *push-over*: the favourite is not at the top, and every top candidate is liked below the mean and is no poll leader (a weak candidate raised, to steer eliminations or runoffs). Until 2026-10-28 the leaders were not considered, so a vote for the lesser of two disliked leaders counted as push-over;
 - *burial*: the favourite stays at the top, but a preference further down is reversed.
+
+*Exaggeration* (since 2026-10-30) counts, separately, the voters whose ballot differs from their sincere ballot without reversing any preference: candidates tied, left unranked, or given the lowest or highest score together with others. It is how a candidate is buried or raised as far as the format allows without a reversal: on score ballots the other leader and everyone liked no more at the lowest score, on truncatable rankings left unranked (under Borda, unranked candidates get no points, so this works as burial). Results files from before have no such column; the report shows —.
 
 The three are exclusive. For score ballots, "burial" includes small reversals among lower-rated candidates, so a high burial share can go with high sincerity.
 

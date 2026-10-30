@@ -1,4 +1,4 @@
-# Ballot Front Finder Lab — Development Journal
+# Ballot Front Finder Lab — development journal
 
 How the lab developed: the experiments, what they showed and the decisions they led to, each with the settings and commands that produced it. Newest first. The software itself (model, parameters, definitions) is described in [README.md](../README.md) and the other files in this folder. Numbers are point estimates; differences only count where the paired comparison or the noise reference says so.
 
@@ -6,6 +6,7 @@ How the lab developed: the experiments, what they showed and the decisions they 
 
 | Date | Change | Earlier sections |
 |---|---|---|
+| 2026-10-30 | New strategy type *exaggeration* (column `exaggeration`, report column Exaggeration): voters whose ballot differs from their sincere one without reversing any preference (candidates tied, left unranked, or given the lowest or highest score together with others), so that burial or support as far as a format allows without a reversal is visible; until now it counted as sincere and showed only in fidelity. Example (individual voters, all strategic, 40 elections, round 3): Borda 23% exaggeration (leaving the other leader and everyone liked no more unranked, which gives them no points) besides 16% compromise, Score 21%, IRV 0.4%, Minimax 0.1%. Older results files have no such column (shown as —); fingerprints do not include it | — |
 | 2026-10-30 | Individual voters: a move is worth acting on only if its gain over the sincere ballot exceeds what the poll's uncertainty could account for (the change in the voter's expected outcome if the poll were off by σ in the race with B and with T); no parameter. Trial (standard set, 200 elections, round 6; VSE\* / WME\*, before → after): all voters strategic: cycle burial under the Condorcet methods disappears (Minimax 78.5 / 94.7 → 82.9 / 99.5, push-over 1.8% → 0.1%), Score 79.2 / 93.6 → 86.6 / 94.4 (exaggeration only by voters bold enough), Plurality 85.7 / 87.9 → 73.3 / 78.2 (compromise 39% → 10%, the rounds settle in 6% of elections), IRV 77.3 / 89.0 → 80.0 / 85.2 (compromise 41% → 8%); adaptive voters: compromise 4–6% → 1–2% under the plurality family, Plurality 81.8 / 80.3 → 72.4 / 74.7, Supplementary vote −4 / −4, the Condorcet methods +1 to +2 VSE\* (sincere), the score methods within ±1.5 | — |
 | 2026-10-30 | Individual voters: judging. Each voter compares what their move of the last round promised with what the next poll shows, and updates their trust in each of its aims (a candidate raised or lowered) by the ratio, from −3 (backfired three times as badly) to 1 (kept), as a running average with a prior of one kept promise; promises count as far as they are trusted. Trial (standard set, 200 elections; VSE\* / WME\*, without → with judging): adaptive voters within ±2.5 at rounds 3 and 6; all voters strategic (the condition where the methods had changed most) within about ±4 (IRV round 6 81.0 / 93.3 → 77.3 / 89.0, STAR 77.4 / 92.4 → 82.0 / 93.8, the Condorcet methods within ±1, Score about 80 / 93). Judging does not undo the two effects of full strategy: under score ballots everyone exaggerates for their preferred leader, which never looks like a broken promise in the poll; under the Condorcet methods the cycle burial (compromise 3–4%, push-over about 2%, WME\* about 95) does what it promised for those who make it, so it is a success for them, not a failure. Two versions were tried first: trust per exact move with ratios down to −1 changed nothing (a distrusted move was replaced by a similar one, and trust never fell below 0); negative trust that also turned harmful moves into attractive ones made every method much worse (Minimax WME\* about 81) | — |
 | 2026-10-30 | Individual voters, sixth version: the cross-effects between the races come from a scenario table read with the poll (B's closeness with −24 to +24 voters switching from A to T, and T's with voters switching to B), instead of one slope at σ voters, which missed effects that set in at larger shifts (in Minimax polls B's closeness typically drops only once 10–20 voters switch from A to T: a cycle). Trial (standard set, 200 elections, defaults; VSE\* / WME\* against the ranking groups): within about ±2.5 of the fifth version (IRV +6.1 / +6.9, IRV-3 +8.2 / +7.9, Supplementary vote +5.6 / +3.9); burial through a cycle under the Condorcet methods stays rare (compromise 0.5%, push-over 0.2–0.4%, sincerity 99.9%): while B is that far behind, few of its supporters have enough at stake to act; run time 147 s | fifth version: one slope |
@@ -99,7 +100,7 @@ Strategic score ballots exaggerate, which makes equal ratings and so pairwise ti
 
 **Decision:** BTR-score now gives a pairwise tie to the candidate higher in the score order, the order it already uses. This completes its definition, which left ties open, and makes the claim above hold in practice. BTR-Borda, the same procedure on Borda points, follows the same rule; with complete rankings and an odd number of voters its pairwise ties are rare, but laziness (truncated rankings) makes them possible. The change alters the results of both methods, so the version is now 1.1.0 (README, Versions); results of 1.0.0 for these two methods are not comparable with later ones. BTR-score's fingerprint changes with the rule; BTR-Borda's does not, since the fingerprint's six test elections contain no pairwise tie for it, so for BTR-Borda only the version number tells old and new runs apart. Later the same day the fingerprints gained a second test condition made for ties, in which both rule changes show (and every fingerprint changed with it). The regression check showed one changed value for BTR-score and none for BTR-Borda.
 
-## ESR, Expanding Support Runoff (2026-10-22)
+## ESR, expanding support runoff (2026-10-22)
 
 Tested as the add-on BSR-S, a variant of the Buck-set runoff (BSR) of the previous section: at every depth k (the top k score levels) the candidates with the most score points from those levels form the set, instead of the most voters; then the stretched score runoff among them. At the full depth the points are the score totals, so the Score winner is always in the set. Built in as ESR; the voter-counting BSR stays a test add-on.
 
@@ -118,7 +119,7 @@ Runs (defaults otherwise; VSE\* / WME\*):
 - **Across utility shapes** it stays near the top under linear and quadratic utility as well, where the pure sums (Score, DMS, Geometric median) lose WME\*: one of the robust methods, with the Soft Minimax family, MARS, BTR-score and Score runoff.
 - The name: "expanding" for the depths (Bucklin's expanding approval), "support" for the points counted at each.
 
-## Depth Maximin; how far Score Ballots Can Go (2026-10-20)
+## Depth maximin; how far score ballots can go (2026-10-20)
 
 Settings: the defaults (adaptive voters, 0–5), single runs of 300 to 3000 elections and one sweep over poll rounds 1–5 and max score 5, 9, 19, 99 (600 elections each, the same electorates in all 20 conditions). The methods were tried as test add-ons first.
 
@@ -138,7 +139,7 @@ Settings: the defaults (adaptive voters, 0–5), single runs of 300 to 3000 elec
 - **Why the rated methods stop near VSE 90.** A scratch check on 200 default elections, honest ballots: the lab's frontier rule (each candidate's total utility against their worst margin, every weighting) fed with ballots instead of utilities, and judged on the true utilities. Ballots stretched to each voter's range but not rounded reach at most VSE 89.8 (at WME 91.5); rounded to 0–100, 0–10 and 0–5 the best VSE is 89.8, 89.9 and 89.2. The best WME falls with rounding: 100, 99.9, 99.4, 95.3 (equal scores carry no pairwise preference). So the VSE loss of score ballots is the stretching (a ballot cannot show how much one voter cares compared with another), not the rounding; the WME loss at 0–5 is the rounding. Honest Score is the VSE end of the 0–5 curve by construction, Smith//Score sits at its WME end, and the curve passes about one point outside both. The strategic VSE\* of Score, DMS and Geometric median is within a point of their honest VSE, which is already at that limit: on VSE there is little left to gain for any count of score ballots.
 - **Kept:** DMS, as a built-in rated method (not in the standard set). Added with it: Score runoff, the two highest score totals in a separate runoff election decided by sincere preferences, in the standard set as the reference between Score and STAR.
 
-## Laziness and Approval against Real Ballots (2026-10-17)
+## Laziness and approval against real ballots (2026-10-17)
 
 **Question:** which `--lazy` to use as a default, and does the model's honest ballot resemble real ones? IRV ballots were set aside: their truncation is partly strategic (lower preferences rarely count), and the strategic voters already model that. Data: PrefLib ([preflib.org](https://preflib.org)) sets 00001 (Irish STV, 2002: Dublin North, Dublin West, Meath), 00002 (Debian, Condorcet/Schulze: leader elections 2002–2012 with "None of the above", logo vote) and 00007 (ERS: 87 elections of organisations, mostly STV, 3–29 candidates); and a collection of approval elections and experiments (St. Louis 2021, Fargo 2022, the French presidential experiments 2002–2017, the US 2012 and 2016 experiments, Mesel 2008, Konstanz 2009). Model: defaults (noise model, 99 voters), sincere ballots, 40–200 electorates per candidate count.
 
@@ -226,7 +227,7 @@ The first dimension explains 3–8 points less in every model, a step toward the
 - The honest score ballot is somewhat more generous than real grades (8 points), far less than the earlier approval rule was; not changed.
 - The larger difference is the field: in the data three serious candidates are graded low by about half the voters and the other eight by 75–97%, a cliff; the model's candidates spread evenly. This is the selection of candidates (a few likely winners, many who hardly matter), a property of the candidate model, not of the ballots. Open for a later version; one town, one non-binding experiment.
 
-## Manipulation and Tails with Adaptive Voters; the Defence Fixed (2026-10-17)
+## Manipulation and tails with adaptive voters; the defence fixed (2026-10-17)
 
 **Run**: defaults (noise model, 99 voters, 6 candidates, 3 poll rounds, 10 polls, aggressive share 0.5), standard set, 600 elections, seed 1, adaptive voters only:
 
@@ -248,32 +249,32 @@ Condorcet winner in 97.8% of the electorates (587 of 600).
 - Every Condorcet method, now including Ranked Robin, MMWV and MMPO (before 20–28%), is manipulable in 2.2% of the elections, only those without a Condorcet winner; VSE 82.2–83.5, about their honest VSE (83.8–84.3).
 - Then Approval runoff 8.3% (one-sided 39.7%; VSE 81.8), BTR-score 11.0%, Smith//Score 11.7%, Soft Minimax-D 12.3%, STAR 12.8%, MARS 13.0%, Borda 14.5% (first run 52.3%), ARA 14.7%, IRV and ER-IRV 16.3% (ER-IRV first run 27.0%), Score 17.7%, IRV-3 18.5%, TTR 18.7%.
 - Most exposed: MJ 21.3%, 321 21.7%, MAV 24.2%, Approval cond. runoff 25.8%, Approval 26.5%, Supplementary vote 27.2%, Plurality 37.2% (VSE 55.7).
-- Oneand two-sided rank the methods differently. TTR resists best one-sided (23.2%) but the defence hardly helps (18.7%): plurality ballots give T's supporters little to answer with. The Condorcet methods are average one-sided (58%) but a defended Condorcet winner cannot be beaten. Score falls from 87.7% to 17.7% and from VSE 6.3 to 80.6: its worst cases rely on T's supporters staying sincere.
+- One- and two-sided rank the methods differently. TTR resists best one-sided (23.2%) but the defence hardly helps (18.7%): plurality ballots give T's supporters little to answer with. The Condorcet methods are average one-sided (58%) but a defended Condorcet winner cannot be beaten. Score falls from 87.7% to 17.7% and from VSE 6.3 to 80.6: its worst cases rely on T's supporters staying sincere.
 - Changed by the fix beyond the check: 321 23.2% → 21.7%, Score 18.3% → 17.7%; the other shares unchanged (some two-sided VSE moved by up to 0.8, e.g. IRV 74.3 → 73.5).
 
-## Tails: how Often the Winner is Poor (2026-10-17)
+## Tails: how often the winner is poor (2026-10-17)
 
 Huang's votesim also reports the worst 5% of elections; the lab's efficiencies are ratios of sums and hide how often a method elects a poor candidate. Added to the report and summary.csv: **Low** and **Low\*** ([analysis.md](analysis.md), Axes and other measures), the share of elections whose winner lies below the median candidate by total utility, with honest and with learned ballots. A share of poor outcomes instead of a percentile of per-election VSE, because one election's VSE is unstable (small denominators). Computed in analyze.py from the stored candidate totals, so it needs no rerun and works for older runs too; not used for dominance.
 
-## Manipulation Test (2026-10-17)
+## Manipulation test (2026-10-17)
 
-John Huang's votesim ([summary report](http://votesim.usa4r.org/summary-report.html), 5 February 2021; [code](https://github.com/johnh865/election_sim)) measures strategy as a worst case: for each candidate X other than the honest winner T, the voters preferring X to T use a fixed tactic (bury, compromise, truncate, bullet, …) with perfect information; one-sided, the successful tactic worst for the electorate is recorded; two-sided, T's supporters answer with a bullet vote. His results (average of honest, oneand two-sided VSE): Smith//Score 0.870, STAR 0.858, Smith-minimax 0.850, Ranked pairs 0.849, MJ 0.812, Approval 0.772, Score 0.762, IRV 0.725, top-two 0.683, Plurality 0.515, broadly the order found here. The lab's poll rounds already have front-runners, blocs and both sides; what was missing is the worst case, which Huang argues matters because successful strategy invites more strategy.
+John Huang's votesim ([summary report](http://votesim.usa4r.org/summary-report.html), 5 February 2021; [code](https://github.com/johnh865/election_sim)) measures strategy as a worst case: for each candidate X other than the honest winner T, the voters preferring X to T use a fixed tactic (bury, compromise, truncate, bullet, …) with perfect information; one-sided, the successful tactic worst for the electorate is recorded; two-sided, T's supporters answer with a bullet vote. His results (average of honest, one- and two-sided VSE): Smith//Score 0.870, STAR 0.858, Smith-minimax 0.850, Ranked pairs 0.849, MJ 0.812, Approval 0.772, Score 0.762, IRV 0.725, top-two 0.683, Plurality 0.515, broadly the order found here. The lab's poll rounds already have front-runners, blocs and both sides; what was missing is the worst case, which Huang argues matters because successful strategy invites more strategy.
 
 **Built** ([model.md](model.md), Manipulation test): `--manipulation`, a diagnostic beside the poll rounds. Coalitions for each X against T, the naive exaggerations of each ballot type as tactics; one-sided: share of elections with a successful coalition and the VSE of the worst successful manipulations; two-sided: the same when T's supporters answer (in this first version with their ballot type's first exaggeration for T; see the section above), counting only manipulations that still pay (votesim keeps backfires too and uses a bullet vote). Regression now runs it in every condition. A first look (20 elections, standard set, defaults; indicative only): Score and Plurality fall furthest one-sided (VSE 2.6 and −10.5), Condorcet methods are manipulable one-sided in about half the elections but almost never against the defence.
 
-## Standard Set and MAV (2026-10-17)
+## Standard set and MAV (2026-10-17)
 
 **Standard set** ([methods.md](methods.md), Groups): a selection across the groups, now the default of run.py and sweep.py, so a standard run concentrates on the methods that matter most and the others stay available by name (`--methods all` for every one). The selection: the methods in Quinn's vse-sim (Plurality, IRV, Borda, Approval, Score, STAR, MJ, MAV, 321, Ranked pairs, Schulze), common proposals (TTR, ER-IRV, IRV-3, Approval runoff, Approval cond. runoff, Ranked Robin, Minimax, MMWV, MMPO) and the strongest found here (MARS, ARA, BTR-score, Smith//Score, Soft Minimax-D; of the Soft Minimax variants the one undominated most often in the recent runs), plus Copeland (the simplest Condorcet method), Kemeny-Young (the textbook reference), Supplementary vote (in real use) and BTR-IRV (an IRV–Condorcet hybrid): 29 methods. Geometric median and Condorcet-random-drop are left out as idealised reference cases rather than practical methods. Default runs before this change ran every method except the references and the inverse methods.
 
 **MAV**, Majority Approval Voting (graded Bucklin), new in the group rated, on score ballots (0..`--max-score`): counted grade by grade from the top; at the first grade where some candidate has a majority, the one with a majority and the most votes at the grade above wins. Rules from electowiki; vse-sim's version uses five grades and a fractional median score instead (its `candScore`), which is close but not identical.
 
-## Hang with 11 or More Candidates Fixed (2026-10-17)
+## Hang with 11 or more candidates fixed (2026-10-17)
 
 A sweep over 3 to 12 candidates got stuck from 11 candidates on. The cause was an integer overflow in Ranked pairs: equal margins are locked in every order (averaged), up to 240 orders, and the number of orders was counted with `np.prod`, which overflows from 21 tied pairs and can turn negative; a negative count passed the limit, and the method then tried to list every order of 21 or more pairs. With 11 candidates there are 55 pairs, and small polls give few distinct margins, so such groups occur. Now counted with exact integers. Same kind of limit added to the tie orders of the BTR methods and 321 (`orders_by`): beyond 720 orders (from 7 tied candidates), 720 fixed random orders instead of all. Regression unchanged (at most 5 candidates there). Run time per election with all methods, one measurement: 9 candidates 50 s, 10: 70 s, 11: 130 s, 12: 180 s.
 
 The part of that sweep that finished (3 to 10 candidates, 200 elections each) was too noisy to be useful; a candidate sweep needs more elections per condition, which is affordable with fewer methods (`--methods`).
 
-## Laziness per Voter (2026-10-16)
+## Laziness per voter (2026-10-16)
 
 **Why:** with one cut for everyone (next section, Adaptive voters: With laziness), laziness is either negligible or makes every ballot format equivalent; real ballots are heterogeneous (some voters bullet-vote, many rank fully, some stop after a few).
 
@@ -299,7 +300,7 @@ The part of that sweep that finished (3 to 10 candidates, 200 elections each) wa
 - **At 1** (the average voter cuts at the middle of their range) the formats come close to each other again: honest WME of almost every ranked and rated method 86–90; rank correlation VSE\* 0.18, WME\* 0.62, sincerity 0.95. The effect of a uniform cut, now only at the extreme end.
 - Undominated: no laziness Score, MD-MARS, Smith//Score, Baldwin-ER; 0.5 Score, Soft Minimax-40, MARS-T, MARS, MMWVxScore, ARA; 1 MARS, Score, Soft Minimax-D. Score is undominated in all three, MARS in both lazy conditions.
 
-## Adaptive Voters (2026-10-16)
+## Adaptive voters (2026-10-16)
 
 **Why.** In the reruns for a new base, a fixed strategic share combined badly with laziness: lazy sincere voters do not separate the front-runners, while the strategic share optimises its ballots to the limit over the rounds. This is starkest for approval and score, whose ballots leave the most room. A fixed share is a useful first approximation (cheap, and comparable with vse-sim), but realistically voters strategise when they have a reason.
 
@@ -328,7 +329,7 @@ python run.py --strategic 0 --adaptive 1 --out adaptive-test-0-100-0
 - At 0.5 the methods collapsed already with honest ballots: honest VSE 85–90 for almost every method (Plurality 69.2, DSC 75.2), the Condorcet methods' honest WME 100 → about 86 and their VSE 82.8 → 88.7; rank correlation with the base for honest VSE 0.24 and WME 0.25 (noise references 0.89 and 0.97). With everyone cutting at the middle of their range, every format says roughly "these candidates are acceptable", so the methods behave like approval with a cut at the midpoint. A property of the laziness model, not of the adaptive voters.
 - At 0.1 only ranked ballots changed (rated and approval results identical to no laziness, honest and strategic): the Condorcet methods' honest WME 100 → 97.2, VSE 82.8 → 84.5, strategic WME\* 98.3 (without laziness 99.0). Order close to the base: VSE\* 0.80 (0.68), WME\* 0.85 (0.94), sincerity 0.96 (0.98).
 
-## Electorate Models, and the New Defaults (2026-10-14 to 2026-10-16)
+## Electorate models, and the new defaults (2026-10-14 to 2026-10-16)
 
 **Outcome.** Four electorate models were compared; the fractal-noise model (`noise`) became the default, at strength 5, 6 dimensions and width 0.7 ([model.md](model.md), Electorates: Defaults, and why). It needs the fewest assumptions and gives electorates between the extremes of the others: `clusters` is clumpy (with 5 clusters, islands), `ks` uniform and low-dimensional, `field` a featureless blob. At the defaults a Condorcet winner exists in about 97% of elections, matching real ranked elections (96–98% in Myers' CIVS data with 50 to 100 or more voters), and electing them loses about 15% of VSE, so the methods separate. The `clusters` model's own defaults became its best variant below (20 clusters, no Zipf, fixed total variance, salience per cluster with exponent 0.5).
 
@@ -349,7 +350,7 @@ python show_electorates.py --model clusters noise ks field --noise-strength 4 --
 
 Real approval data with 6 candidates (Konstanz, Alós-Ferrer & Granić 2015): 54 / 91 / 98 / 100. With more parties or candidates the real maps are flatter (Messel, 9 parties: 37 / 54 / 66 / 76; Konstanz, 11 parties: 24 / 45 / 57 / 67); no model has been compared at those sizes with method runs.
 
-### The Noise Model (2026-10-15/16)
+### The noise model (2026-10-15/16)
 
 Voters are dense where a fractal noise is high ([model.md](model.md), Electorates). Two sweeps over its strength, otherwise at the defaults of the time (3 poll rounds, 10 polls of 49 voters, poll error 2, search 10, aggressive share 0.5, strategic share 0.5, scores 0..5, 99 voters, 6 candidates, seed 1):
 
@@ -394,7 +395,7 @@ Selected methods at strength 5 (6 dimensions, width 0.7, 600 elections; each val
 
 **A sampling artefact, found and fixed before the runs.** The first prototype drew voters by weighting a fixed pool of Gaussian points by exp(strength × noise). Above strength 2 the weights concentrate on a few dozen points, so about half the voters were copies of each other, and the costly electorates it showed were mostly that. The model samples by raising the strength in steps with resampling and local moves instead ([model.md](model.md), Electorates), so all people are distinct. Prototype numbers from before this fix are not valid above strength 2.
 
-### Variants of the Clusters Model (2026-10-15)
+### Variants of the clusters model (2026-10-15)
 
 | Run | settings | CW | CW = utility winner | VSE lost electing CW | fav ÷ least | reachable corner | undominated |
 |---|---|---|---|---|---|---|---|
@@ -407,19 +408,19 @@ Selected methods at strength 5 (6 dimensions, width 0.7, 600 elections; each val
 - **Equal dimensions are sensitive to their number.** new-defaults against clust-20 (10 dims with Zipf, width 1.0) changed the VSE\* order (0.31; noise reference 0.60), not WME\* (0.86; 0.82) or sincerity (0.95; 0.98). In electorate-only probes, without Zipf the cost of electing the Condorcet winner grew with the number of dimensions even at fixed total variance. Global Zipf scaling roughly doubled the variance decay that clustering alone already produces (the principal components of clustered electorates fall off steeply even with equal dimensions), so the decay does not need to be imposed. Choosing dims and width to hit one target looked like over-fitting, which led to the salience option.
 - **Salience per cluster** (each cluster weighs the issues in its own order) made the cost of electing the Condorcet winner stable against the number of dimensions, but made Condorcet winners rarer: 87.8% with exponent 1 and 10 dimensions in an electorate probe, 93.5% with exponent 0.5 (sal-05). sal-05 looked reasonable, with a balanced front; it is now the default of `clusters`.
 
-### What Did not Work (2026-10-15)
+### What did not work (2026-10-15)
 
 - **The field model** (opinions as scale-free fields over a social space, saturation 1.5, 10 issues, width 0.7, 600 elections, run field-07): CW 95.8%, CW = utility winner 85.4%, electing it loses 3.9%, fav ÷ least 3.0, reachable corner 95.5–95.8 / 95.5; undominated IC-MARS, Soft Minimax-40, MMWVxScore, Soft Minimax, Smith//Score, Score. It hardly separates the methods. The issues are independent fields, so no ideology (issues that go together) forms: a featureless blob. It stays in the lab as an experimental model.
 - **Dynamic opinion models, as prototypes outside the lab** (a 40 × 40 grid of agents with 10 issues, elections as snapshots of 99 voters and 6 candidates, width 0.7, 60 snapshots each after 2000–3000 burn-in sweeps; not in the code). Bounded confidence with noise (Deffuant with noise, Pineda, Toral & Hernández-García 2009): agents closer than ε move toward each other on one issue, and with probability m an issue is reset at random. It switches sharply from disorder (ε ≤ 0.15: no groups, Condorcet winner in 96–100%, cost 2–3%) to one consensus group with a halo of reset agents (ε ≥ 0.2), with no lasting structure of several groups; electorates are easy (cost 0–3%). Adding repulsion between distant agents (Jager & Amblard) pushed 82–100% of opinions to the edges of the issue space, with independent issues: random corners of a cube, Condorcet winner in only 52–82%, cost 9–62%. Moving on all issues at once instead of one did not couple the issues. Both versions end at one of two poles, consensus or independent yes/no issues; real electorates lie between.
 
-### Open Idea: Recombination for the Field Model
+### Open idea: recombination for the field model
 
 A static way to let structure emerge from merging and diverging, without agents (proposed 2026-10-16, not tried): split top-down for about ten levels, as now, but give each new faction two parents instead of one (their average plus a fresh deviation scaled to its level). Then repeatedly drop the oldest level and add a new one at the bottom, so lower levels move up and the structure turns over completely two or three times, which removes the initial conditions. Two points decide the outcome:
 
 - The balance of averaging and deviation (averaging two parents halves the spread, the deviation adds it back) is the temperature between uniformity and noise.
 - Which parents merge. With random pairs the turnover mixes everything into a Gaussian blob, the field model's present state. Structure can only survive if merges mostly join nearby factions (as assortative mating in population genetics); how strongly nearby factions are preferred would be the knob between blob and islands.
 
-### Clusters Vs Quinn's Hierarchical Model (2026-10-14)
+### Clusters vs Quinn's hierarchical model (2026-10-14)
 
 **Settings.** Two runs at the defaults, differing only in the electorate model: 200 elections, seed 1, 99 voters, 6 candidates, width 1.0, 3 poll rounds, 10 polls of 49 voters, poll error 2, search 10, aggressive share 0.5, strategic share 0.5, scores 0..5, default methods. `clusters`: 10 dimensions (Zipf), 5 clusters, spread 0.5. `ks`: faction alpha 1.5, cut 0.2 ([model.md](model.md), Electorates). Analysed together (settings as the report states them; the commands were of the form):
 
@@ -502,7 +503,7 @@ WME\* and sincerity agree between all four runs (0.89–0.98). On VSE\*, every p
 
 **A lead, not yet a finding: strategy moves the Condorcet methods' VSE in opposite directions under the two models.** VSE\* − VSE (learned minus honest), averaged over twelve ranked Condorcet methods (Ranked pairs, Schulze, Kemeny-Young, Copeland, Minimax, Black, Baldwin, Nanson, BTR-Borda, Benham, Ranked Robin-SR, BTR-IRV): ks +0.3 (width 1) and +1.0 (width 0.5); clusters −0.5 at both widths. Thirteen rated and hybrid methods lose under both (−0.6 to −2.5). The effects are about a point, at the edge of what 200 elections resolve.
 
-## Sincerity, Fidelity and the Condorcet Winner in the Ballots (2026-10-12)
+## Sincerity, fidelity and the Condorcet winner in the ballots (2026-10-12)
 
 Runs: `python run.py --elections 600` at the defaults (99 voters, 6 candidates, 3 poll rounds, 10 polls, strategic share 0.5, aggressive share 0.5, seed 1), in two parts with `--methods` / `--exclude` by group: `run-20261012-191423` (condorcet, condorcet-based, minimax-family, hybrid, plurality-based, positional) and `run-20261012-195852` (the rest), analysed together (`python analyze.py run-20261012-191423 run-20261012-195852 --out …`; same seed, so the same elections). All 72 methods. 580 elections have a real Condorcet winner, 20 do not. First run with the current sincerity measure, fidelity and the ballot Condorcet winner ([analysis.md](analysis.md), Sincerity and fidelity; Condorcet winner in the cast ballots). Point estimates; the ballot Condorcet table has no intervals.
 
@@ -564,7 +565,7 @@ Same / False / None: shares of the 580 elections with a real Condorcet winner; S
 - **Where strategy is weak, the ballots stay right:** Random pair runoff's ballots show the real Condorcet winner in 97.8%. In TRASH and the Inverse-\* methods, where leaving the honest ballot pays most, the ballots show the real one in only 37–65%.
 - **Not a model of real IRV data.** In these electorates (6 candidates, 10 dimensions) IRV's honest Condorcet efficiency is only 67%, far below what real ranked-choice elections show. The model says that strategy pushes ballot data towards Condorcet consistency, not how large the effect is in real elections.
 
-## First Look: Soft Minimax (2026-10-10)
+## First look: Soft Minimax (2026-10-10)
 
 Small run: 100 elections, defaults, poll rounds 1 and 3; Soft Minimax with the clip at 20%, 40% and 60% of the score range, against Score, STAR, IC-MARS, INS, Minimax and MMPO. Point estimates; most differences are ties at this size. VSE\* / WME\* / sincerity at round 3:
 
@@ -584,7 +585,7 @@ Small run: 100 elections, defaults, poll rounds 1 and 3; Soft Minimax with the c
 - **On the default 0–5 scale it is Minimax on score ballots:** a 1-point clip turns every integer score difference into a whole vote. So most of its advantage over ranked Minimax (VSE\* 89 against 82, sincerity 99.8 against 97.0) comes from the ballot, not the rule: sincere score ballots leave close candidates level, and strategic voters reverse far fewer preferences on scores (burial 2.9% against 12.1%, compromise 0.3% against 7.6%). With a wider score range the 20% clip makes it a genuinely soft rule.
 - Kept: Soft Minimax (20%) and Soft Minimax-40. Needs a full-size run.
 
-## New Methods: DSC, DAC, STLR, INS, MAMPO, COWPEA Lottery (2026-10-10)
+## New methods: DSC, DAC, STLR, INS, MAMPO, COWPEA Lottery (2026-10-10)
 
 Run: `sweep.py --one-at-a-time --strategic 0.5 1 --aggressive 0.5 0 1`, 400 elections, one poll round, defaults otherwise; the new methods with STAR, Score, Approval, MDDA, MMPO, Plurality and Random pair runoff for reference. INS was then still called "Iterated normalized score". Base condition, VSE\* / WME\* / sincerity, and paired differences:
 
@@ -610,7 +611,7 @@ Run: `sweep.py --one-at-a-time --strategic 0.5 1 --aggressive 0.5 0 1`, 400 elec
 - **COWPEA Lottery is a weak lottery reference** (VSE\* 27, below Random pair runoff's 54), and strategy lowers it further (honest VSE 36).
 - The front (dominated by none on VSE\*, WME\*, sincerity) is Score and MMPO in three conditions, plus STAR with only kind voters.
 
-## Candidates unlike the Electorate (2026-10-10)
+## Candidates unlike the electorate (2026-10-10)
 
 Run: `sweep.py --one-at-a-time --cand-dispersion 1 0.25 0.5 0.75 1.5 --cand-shift 0 0.5 1`, 200 elections, one poll round, defaults otherwise (strategic share 0.5, aggressive share 0.5), most methods. Voters are the same in every condition; only the candidates are moved ([model.md](model.md), Electorates). Condorcet efficiency with honest ballots, which keeps its meaning across conditions (Condorcet methods: 100 by construction):
 
@@ -647,7 +648,7 @@ With strategy (VSE\* / WME\*), selected:
 - **Spread-out candidates (1.5) make every method better,** and the differences between methods shrink (CE 84–99 except plurality).
 - **A shift of 0.5–1 voter SD makes elections slightly easier** (a Condorcet winner more often, and more often also the utilitarian best) and changes the order little; plurality-type methods gain. Approval loses at shift 1 (CE 78 → 67, VSE\* 90 → 87), where many voters approve the same nearest candidates and ties split the win; Borda loses too (89 → 76), for a reason not yet clear.
 
-## First Look: Candidates unlike the Electorate (2026-10-10)
+## First look: candidates unlike the electorate (2026-10-10)
 
 Small run: `sweep.py --one-at-a-time --elections 40 --cand-dispersion 1 0.25 0.5 1.5 --cand-shift 0 0.5 1 2`, ten methods, defaults otherwise (one poll round). 40 elections: point estimates, noisy. Condorcet efficiency with honest ballots (CE), which keeps its meaning across conditions:
 
@@ -666,7 +667,7 @@ Small run: `sweep.py --one-at-a-time --elections 40 --cand-dispersion 1 0.25 0.5
 - **A shifted field makes elections easier,** not harder: there is always a Condorcet winner, and the candidate nearest the electorate is most voters' favourite, so plurality-type methods find it (CE 91–98 at shift 2). Approval is the exception: nearly everyone approves the same two nearest candidates, and the resulting ties split the win.
 - **Caution with VSE and WME across shift values:** when one candidate is nearly everyone's favourite, the random ballot is almost as good as the best candidate, the efficiencies' denominators become small, and every miss looks large (Approval's honest VSE falls to 0 at shift 2 from ties alone). Within one condition the order of methods stays meaningful; across conditions, CE and the raw rates are safer.
 
-## Lock-in: Starting from a Previous Election's Result, Full Strategy (2026-10-10)
+## Lock-in: starting from a previous election's result, full strategy (2026-10-10)
 
 Run: `--start honest previous --rounds 1 2 3 4 5 6 7 8 --strategic 1 --aggressive 1`, 200 elections, defaults otherwise; Score, Approval, IC-MARS, Minimax, IRV, IRV-3, ER-IRV, TTR, Borda. The first poll shows either the honest ballots or the final ballots of one previous (dummy) election under the same method, its candidates relabelled at random ([model.md](model.md), Starting information). Same elections in both; VSE\* / WME\*:
 
@@ -721,7 +722,7 @@ Second run, same settings, more methods; VSE\* / WME\*:
 - **Borda** is unstable under all-aggressive voters whatever the start (honest 50–75 VSE\* across rounds), so this test says little about it.
 - **The honest start flatters the plurality-based methods.** With honest first polls the popular candidates lead, and TTR and IRV look as good as the rated methods (VSE\* about 89). Start them from a different picture and they keep it: their good results depend on the starting information being right. In an electorate whose opinions have moved since the last election, or in which the media picture is wrong, that is the case that matters.
 
-## First Look: Starting from a Previous Election's Result (2026-10-10)
+## First look: starting from a previous election's result (2026-10-10)
 
 Small run: `sweep.py --start honest previous --rounds 1 3 8 --elections 30 --methods Plurality IRV ER-IRV TTR Approval Score STAR Minimax Borda`, defaults otherwise (strategic share 0.5, aggressive share 0.5). 30 elections: point estimates only, a few points are noise. VSE\* / WME\*:
 
@@ -741,7 +742,7 @@ Small run: `sweep.py --start honest previous --rounds 1 3 8 --elections 30 --met
 - **By round 3–8 most methods are back,** within the noise of this run; Plurality possibly stays lower (round 8: 66 / 59 against 74 / 62).
 - The lock-in is much weaker than with the Inverse-\* methods. Two reasons: the relabelled front-runners are random candidates, not the most disliked ones, and kind voters start from their sincere ballots and keep them unless the polls show a gain, which pulls the polls toward the real electorate. A run at full size, and with `--aggressive 1` and `--strategic 1`, would show whether a lasting lock-in remains for the plurality-based methods.
 
-## Model Test: Inverse-\* Methods (2026-10-10)
+## Model test: Inverse-\* methods (2026-10-10)
 
 Small run: `sweep.py --strategic 1 --rounds 1 3 8 15 --methods inverse Plurality Approval Minimax --elections 40`, with `--aggressive 0.5` (default) and `--aggressive 1`; defaults otherwise. 40 elections: point estimates only, differences of a few points are noise.
 
@@ -772,7 +773,7 @@ Second small run (20 elections, `--strategic 1 --aggressive 1 --rounds 1 3 8`), 
 - **ER-IRV escapes where IRV does not.** Inverse-ER-IRV is back at ER-IRV's level by round 3 (92 / 84), while Inverse-IRV is still at 26 / −11 in round 8. Same count, but equal rankings let a voter put many candidates first at once: the naive exaggeration ties everyone liked at least as much as the preferred front-runner at the top, which hands first-choice support to all of them together, so no coordination on one new front-runner is needed.
 - **IRV and TTR lock in too, less completely.** Both decide by first choices first, so the same trap holds: the disliked front-runners of the honest Inverse ballots keep the first-choice votes. TTR's separate runoff, decided by real preferences, picks the less bad of two bad finalists; IRV's eliminations reshuffle a little more. The split is by how the first stage counts: methods that count every candidate on every ballot (scores, approvals, pairwise counts) let voters move many candidates at once and recover; methods that count first choices need coordination on a new front-runner, which poll responses do not produce.
 
-## Current Picture: All Methods, Poll Rounds 5, with Nomination (2026-10-09)
+## Current picture: all methods, poll rounds 5, with nomination (2026-10-09)
 
 Run: all 59 methods, 400 elections, 99 voters, 6 candidates, defaults (strategic share 0.5, aggressive share 0.5, poll error 2.0x, max score 5), `--rounds 5 --exits 1 --clones 2`. First run with separate runoffs and shared random streams (section below). Replaces the picture of 2026-10-06 further down, which used convergent learning and other axes. Only one round count, so differences between methods not in the "Dominated by" column are point estimates; the frontier's most balanced point is VSE 95.3 / WME 96.7.
 
@@ -804,7 +805,7 @@ Undominated on all four axes (VSE, WME, VSE\*, WME\*; the analysis since judges 
 - **Nomination** changes the honest result most under plurality-based methods (Plurality 35%, Supplementary vote 32%, TTR and contingent variants 30%, IRV 22%) and approval methods (21%), less under the rated and hybrid methods (8–13%, except MCA, MJ, 321, MDDA, ARA-Top and Reciprocal score at 17–23%) and least under the Condorcet methods (2.5–6%, except Baldwin-Dowdall 7.5% and Nanson-Dowdall 12%). Borda and Approval attract clones (0.65 and 0.81 per election).
 - **Sincerity:** rated, approval and hybrid ballots stay at 99.4–99.9 (Reciprocal score 98.7); Condorcet methods at 96–98; Borda is the least sincere serious method (94.3).
 
-## Equal Ranking and Two-round Elections, Poll Rounds 1–6 (2026-10-09)
+## Equal ranking and two-round elections, poll rounds 1–6 (2026-10-09)
 
 Run: `--rounds 1 2 3 4 5 6`, 400 elections, nomination on (`--exits 1 --clones 2`), defaults otherwise; the ER pairs plus IRV-3, TTR, Supplementary vote and the three approval methods. Paired differences per round.
 
@@ -813,12 +814,12 @@ Run: `--rounds 1 2 3 4 5 6`, 400 elections, nomination on (`--exits 1 --clones 2
 - **Always holding the runoff is better still:** Approval runoff beats Approval cond. runoff on WME\* in every round (+3.4 to +6.4), on honest WME (+4.2) and on CE\* (+8 to +12); VSE and VSE\* are ties. Ending the election at a majority of approvals gives away most of what the runoff adds, since that candidate often is not the head-to-head winner.
 - **Borda is the only method that loses clearly from honest to round 1** (86.0 / 94.7 → 83.3 / 88.6; Borda-ER 81.6 / 86.5). The others stay put or gain; TTR gains WME\* now that burial is gone (88.5 → 89–92). Borda recovers partly with more rounds (87.2 / 93.9 in round 6).
 
-## Model Changes: Separate Runoffs, Shared Random Streams (2026-10-09)
+## Model changes: separate runoffs, shared random streams (2026-10-09)
 
 - **Two-round elections have a separate runoff.** TTR, Approval runoff and Approval cond. runoff used to read the runoff from the same ballot as the first round, so strategic voters could also misrank the finalists, which a real separate runoff gives no reason to do. Now the runoff is decided by sincere preferences and strategy changes only the round-1 marks; TTR also ends in round 1 when a candidate has a majority of the marks ([model.md](model.md), Two-round elections). **Every section below this one used the old versions:** what they call TTR is now **Contingent vote** (results unchanged), and the old Approval runoff and Approval cond. runoff no longer exist. The old TTR-ER, which is not an equal-ranking version of a two-round election, is now **Contingent-ER**.
 - **Shared random streams.** Strategic nomination and the poll rounds used a random stream per method name; now every method uses the same one ([model.md](model.md), Random streams). Pairs that agree on honest ballots used to differ in nomination (e.g. TTR 85.9 / 88.9 vs TTR-ER 85.8 / 87.9, honest, with nomination); they now agree exactly. Results from before differ by sampling noise.
 
-## Strategy Model Changed: Poll Rounds (2026-10-08)
+## Strategy model changed: poll rounds (2026-10-08)
 
 **All strategic results above this line (and in the older sections below) used convergent learning:** over 20 rounds, groups of up to 10 voters with the same ranking took turns, each seeing the others' latest strategic ballots, and kept changes that paid. That describes where an electorate ends up after long adjustment, with far more information and coordination than one election offers. It protects methods whose strategy fails only when many use it at once.
 
@@ -855,7 +856,7 @@ Full strategy, one round, 40 elections (honest VSE / WME → VSE\* / WME\*, buri
 
 The burial artefact is gone for rated ballots. Ranked ballots show about 40% burial by design: burying the other leader is the naive exaggeration and is taken whenever it cannot hurt in the polls. That sinks Borda (linear points: the dark horse wins) but not Dowdall (harmonic points: the bottom places hardly differ, and compromise, which helps, dominates); Condorcet methods lose some WME but keep 91. This is the naive first response; how it develops over more rounds is open.
 
-## Aggressive Share 0–1 × Poll Rounds 1–5, Full Strategy (2026-10-09)
+## Aggressive share 0–1 × poll rounds 1–5, full strategy (2026-10-09)
 
 Run: `--aggressive 0 0.25 0.5 0.75 1 --rounds 1 2 3 4 5 --strategic 1`, 200 elections per condition, defaults otherwise.
 
@@ -882,7 +883,7 @@ WME\* in round 1 by aggressive share (share of strategic voters who exaggerate w
 - **Borda collapses at every share**, all-kind included: its burial pays in the polls, it is not only naive.
 - Reading: each extreme is a stress test for one weakness, blind mass burial (all aggressive) or unprotected leads (all kind). Real electorates are mixed, and the conclusions do not hinge on the exact share in between; 0.5 stays the default.
 
-## Poll Rounds 1–5, Full Strategy; Aggressive and Kind Voters (2026-10-09)
+## Poll rounds 1–5, full strategy; aggressive and kind voters (2026-10-09)
 
 Run: `--rounds 1 2 3 4 5 --strategic 1`, 200 elections, defaults otherwise (all strategic voters aggressive, the only behaviour at the time).
 
@@ -903,14 +904,14 @@ Run: `--rounds 1 2 3 4 5 --strategic 1`, 200 elections, defaults otherwise (all 
 
 What remains with only kind voters is burial that pays in the polls. Kind voters also lose the leader rule's protective half (a leader's supporters see no gain in dropping the runner-up unless a poll shows danger), so under Approval the share mainly decides how strongly leads are protected.
 
-## Defaults Changed: Width 1.0, 5 Clusters (2026-10-08)
+## Defaults changed: width 1.0, 5 clusters (2026-10-08)
 
 Earlier sections used width 1.5 and 3 clusters; from now on the defaults are width 1.0 and 5 clusters (spread stays 0.5). Based on two one-at-a-time sweeps, 400 elections each, seed 1, with exits 1 and clones 2:
 
 - **Width** (0.25–2.0, 5 clusters, 6 candidates). Width only changes how utility falls with distance, not who prefers whom: the Condorcet winner share (96.8%) and the honest WME of ranked methods do not move (MMPO 99.6, IRV 86.0 at both 1.0 and 1.5). It acts on VSE, on rated and approval ballots, and on what strategy is worth. A wide width makes utility nearly linear in distance, so total utility and the majority mostly agree and the VSE axis is compressed: electing the Condorcet winner loses 12.9% of VSE at 1.0 and 8.5% at 1.5, the best-WME end of the frontier is at VSE 86.5 and 91.0, and the honest VSE gap between Score and MMPO is 6.7 and 4.3 points. Favourite ÷ least liked (median voter) is 4.4 at 1.0 and 2.7 at 1.5; very small widths are extreme (378 at 0.25, where electing the Condorcet winner loses 47% of VSE).
 - **Clusters** (1, 2, 3, 4, 5, 10; 8 candidates, width 1.5). One cluster leaves little to separate the methods (electing the Condorcet winner loses 1.6% of VSE, frontier best-WME end at VSE 98.3); the tension grows up to 5 clusters (8.2%, VSE 91.4) and eases again at 10 (7.1%, VSE 92.7), where many small clusters blur into a more even electorate. No even/odd pattern beyond noise: the more stable electorate measures move steadily from 3 to 5 clusters (VSE lost 6.6, 7.1, 8.2%; frontier VSE 93.5, 92.3, 91.4), and only the share of Condorcet winners with the highest total utility zigzags (72.7, 75.5, 67.7%), by about the size of its sampling error.
 
-## Score Range 0–5, 0–10, 0–100 (2026-10-07)
+## Score range 0–5, 0–10, 0–100 (2026-10-07)
 
 Settings: the defaults (99 voters, 6 candidates, 10 Zipf dimensions, 3 clusters, spread 0.5, width 1.5, group size 10, 20 rounds), strategic share 0.5, 400 elections per condition, seed 1; `--max-score 5 10 100`. Methods: Score, MJ, STAR, BTR-score, MARS, ARA, ARA-Top, Score+, Reciprocal score, Smith//Score, and as fixed references 321 and MCA (three grades, unchanged across conditions, as they should be). The electorates are the same in all three conditions.
 
@@ -937,7 +938,7 @@ Frontier (the same in all conditions): best WME 100 at VSE 92.6, best VSE 100 at
 - **Score+ gains a little** (WME 92.6 → 94.2), consistent with its re-stretching losing less information on a finer range.
 - **Methods that suffer from a finer range:** Reciprocal score (honest WME 85.5 → 80.2), MJ (WME\* 88.6 → 84.0) and ARA-Top (VSE 91.4 → 89.1). For ARA-Top this is by construction: on 0–100 practically only the favourite gets the top score, so it approaches a plurality-based approval count. Reciprocal score works with factions of top-rated candidates, which shrink to single favourites as well.
 
-## Number of Candidates, 3 to 9 (2026-10-07)
+## Number of candidates, 3 to 9 (2026-10-07)
 
 Settings: the defaults (99 voters, 10 Zipf dimensions, 3 clusters, spread 0.5, width 1.5, group size 10, 20 rounds), strategic share 0.5, 400 elections per condition, seed 1; base 3 candidates, swept over 3–9 (`--cands`).
 
@@ -966,7 +967,7 @@ Honest VSE / WME → learned VSE\* / WME\*:
 - **ER-IRV against IRV:** ER-IRV is more sincere at every count (e.g. 98.1 against 96.4 with 6 candidates, 98.5 against 96.6 with 9). The strategic axes are mixed: VSE\* higher with 9 candidates (93.0 against 91.3), lower with 6 (91.4 against 92.1), and WME\* often lower at high counts (85.9 against 89.8 with 8). Equal rankings let voters support a compromise without dropping their favourite, which shows in sincerity; it is not a clear gain in outcomes.
 - **Rank stability** against 3 candidates: sincerity stays at the noise reference (0.80–0.92 against 0.81). WME and WME\* stay high (0.67–0.94) but mostly below their references (0.95, 0.93), so the order shifts a little, in line with the plurality-based methods falling back. With 3 candidates the methods are so close on VSE and VSE\* that the noise reference is low (0.29 and −0.01), so the order there is mostly noise.
 
-## MMPO Family under Full Strategy (2026-10-07)
+## MMPO family under full strategy (2026-10-07)
 
 Settings: 200 voters, 6 candidates, otherwise the defaults; strategic share 1.0, 800 elections, seed 1. Methods MMPO, MMWV, Minimax product, MMPOWV.
 
@@ -974,7 +975,7 @@ Settings: 200 voters, 6 candidates, otherwise the defaults; strategic share 1.0,
 - Learned: VSE\* 91.9–92.2, WME\* 99.1 (MMPOWV) to 99.5 (Minimax product), CE\* 98.2–98.4, sincerity 99.8 for all; burial 1.7–1.9% of voters, compromise 0.5–0.6%, push-over 0.
 - **Every paired difference is a tie** (MMPOWV's WME\* is 0.2–0.4 below the others, within noise). The slight tendency for MMPOWV seen in an earlier run did not hold up. MMPOWV replaces Minimax product because it is the simpler form (two factors instead of three) with no measurable loss, not because it is better.
 
-## Reachable Frontier and Combination Methods (2026-10-07)
+## Reachable frontier and combination methods (2026-10-07)
 
 Settings for both runs: the defaults (99 voters, 6 candidates, 10 Zipf dimensions, 3 clusters, spread 0.5, width 1.5, group size 10, 20 rounds), strategic share 0.5 and 1.0, seeds 1 and 2.
 
@@ -1003,7 +1004,7 @@ The margin-based Condorcet methods sit at the WME end (about 92.9 / 100 with hon
 - **Minimax+Approval** (approvals + worst margin) and **Approval product** (winning votes × opposition × approvals, on ARA ballots): undominated, but inside the hybrid cluster. Minimax+Approval ties STAR on everything except WME\* at full strategy (+1.8); Approval product trades 0.7 VSE for 0.8 WME against STAR. Neither moves toward the balanced point of the frontier; both were removed.
 - **Under full strategy** the Condorcet methods that measure opposition (MMPO, MMWV, Minimax product) are the most honest of all (sincerity 99.6–99.7 against 98.0–98.5 for the hybrids, burial about 3% of voters against 15–22%).
 
-## Margin Band, a Negative Result (2026-10-07)
+## Margin band, a negative result (2026-10-07)
 
 Margin band (proposed in this lab, removed again): every candidate whose worst margin is within 5% of the voters of the best worst margin is in a band; the band member with the highest score total wins. Same settings as above, 1200 elections per condition, compared with Score, STAR, BTR-score, Smith//Score, MARS, Minimax, Schulze, Ranked pairs and IRV.
 
@@ -1012,7 +1013,7 @@ Margin band (proposed in this lab, removed again): every candidate whose worst m
 - **Under full strategy the margin-based Condorcet methods weakly dominate the hybrids:** the hybrids' VSE advantage holds only with honest or partly strategic voters. At full strategy all hybrids drop to VSE\* 92.2–92.8, level with Schulze, Ranked pairs and Minimax (92.5–93.1), while the Condorcet methods keep the clearly higher WME\* (97–98 against 93–95).
 - **Rated ballots cap WME** (on 0–5; with 0–100 the cap disappears, see "Score range"): every method taking pairwise preferences from 0–5 ratings (Smith//Score, BTR-score, STAR, Margin band) reached only about 95 WME with honest ballots. Equal ratings hide preferences, so even a Condorcet rule on ratings misses some sincere Condorcet winners.
 
-## Current Picture (6 Candidates, Zipf, 2026-10-06)
+## Current picture (6 candidates, Zipf, 2026-10-06)
 
 ```
 python sweep.py --one-at-a-time --zipf 1 --dims 10 --clusters 3 5 --spread 0.5 0.75 \
@@ -1041,7 +1042,7 @@ Methods that no other method clearly beats on PE, WM, PE\* and WM\* (out of 6 co
 
 The same kind of sweep with 4 candidates (width 1.0 1.5 2.0, spread 0.5 0.75 1.0, clusters 3 2 5, strategic share 0.5, 800 elections per condition) gave a similar but wider set: Schulze (undominated in 6 of 7 conditions), STAR, MARS, BTR-Borda (5), Minimax (4), BTR-score, SICT, Baldwin, Approval runoff (2), ARA, Score (1). Width hardly changed the order there; spread and 2 clusters did, mainly under strategy.
 
-## Voter Model (2026-10-05/06)
+## Voter model (2026-10-05/06)
 
 **Plain dimensions, one parameter at a time** (99 voters, 4 candidates, group size 10, strategic share 0.5, 15 rounds, 200 elections per condition): most apparent reordering was within sampling noise, especially on PE\*. The electorates themselves (1500–2000 generated per setting) explained most of the rest:
 
@@ -1065,7 +1066,7 @@ The same kind of sweep with 4 candidates (width 1.0 1.5 2.0, spread 0.5 0.75 1.0
 
 In a direct comparison (200 elections each), Zipf kept the method order on WM and on PE at width 1, widened the PE gap between rated and Condorcet methods by 1–2 points, and hit Plurality hardest (PE 81 → 71). With Zipf the methods cluster more clearly by type.
 
-## Approval with Conditional Runoff (2026-10-05)
+## Approval with conditional runoff (2026-10-05)
 
 In Germany a winner is expected to have more than half the votes. The tempting chain "use approval instead of TTR, and add a runoff only when nobody has a majority" does not work in the model.
 
@@ -1086,7 +1087,7 @@ Settings: 600 elections, 200 voters, 6 candidates, plain 2 dimensions, 3 cluster
 - Approval with an obligatory runoff is better than TTR on three of four axes, ties on CE\*, and has less dissonance. If a 50%-winner is required, that is the version to use.
 - Conditional TTR needs no separate test: in the model it is identical to TTR ([model.md](model.md), Strategy engine).
 
-## Coordination: Burial against Condorcet Methods (2026-10-03)
+## Coordination: burial against Condorcet methods (2026-10-03)
 
 Plain 2 dimensions, 99 voters, 4 candidates, full strategy, 60 elections; CE with learned ballots:
 
@@ -1102,7 +1103,7 @@ Plain 2 dimensions, 99 voters, 4 candidates, full strategy, 60 elections; CE wit
 
 Burial needs blocs; compromise works for individuals. With organised factions, Condorcet methods and score runoffs lose much of their Condorcet efficiency to burial, while TTR and IRV are carried toward the Condorcet winner by compromise. With individual voters the picture reverses. This is why every strategic result must be read with its group size.
 
-## Strategy Engine Checks (2026-10-03/04)
+## Strategy engine checks (2026-10-03/04)
 
 - **Rounds:** with 50 voters and 6 candidates, PE\*, CE\* and sincerity changed only within noise between 20 and 40 rounds; at 10 rounds they were still moving. 20 rounds is the default.
 - **No early stop:** stopping once a round passes without any accepted change was tested (200 elections, 99 voters, 4 candidates, plain 2 dimensions, whole ranking groups, full strategy). It saves most of the run time, but quiet rounds are common long before learning has finished. Stopping after one quiet round changed 55 of 99 method × axis values clearly (sincerity higher for almost every method, CE\* up to 9 points higher for Condorcet methods); after two quiet rounds still 50.

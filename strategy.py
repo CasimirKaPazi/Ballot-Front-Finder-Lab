@@ -117,7 +117,7 @@ def fidelity(method, B, u):
     return 1 - np.abs(du - dv).sum(axis=(1, 2)) / np.where(den > 1e-12, den, 1)
 
 
-def strategy_types(B, u, leaders=None):
+def strategy_types(B, u, leaders=None, sincere=None):
     """Shares of voters whose ballot reverses at least one real preference, by kind:
       compromise - the favourite is not at the top, and a top candidate is liked above the voter's
                    mean or is one of the poll leaders (a viable second choice, or the lesser evil
@@ -126,7 +126,11 @@ def strategy_types(B, u, leaders=None):
                    mean and is no poll leader (a weak candidate raised, to steer eliminations or
                    runoffs)
       burial     - the favourite stays at the top, but a preference further down is reversed
-    The three are exclusive; sincere voters count in none. leaders: the last poll round's two
+      exaggeration - the ballot differs from the sincere one but reverses no preference: candidates
+                   tied, left unranked or given the lowest or highest score together with others
+                   (a candidate buried or raised as far as the format allows without a reversal);
+                   only with `sincere`, the voters' sincere ballots (since 2026-10-30)
+    The four are exclusive; sincere voters count in none. leaders: the last poll round's two
     leaders (since 2026-10-28; None: by the mean alone, as before)."""
     rev = ((B[:, :, None] > B[:, None, :]) & (u[:, :, None] < u[:, None, :])).any(axis=(1, 2))
     top = B >= B.max(axis=1, keepdims=True)
@@ -137,9 +141,12 @@ def strategy_types(B, u, leaders=None):
         for c in leaders:
             if c is not None:
                 above_mean = above_mean | top[:, c]
-    return {"compromise": float(np.mean(rev & ~fav_top & above_mean)),
-            "pushover": float(np.mean(rev & ~fav_top & ~above_mean)),
-            "burial": float(np.mean(rev & fav_top))}
+    out = {"compromise": float(np.mean(rev & ~fav_top & above_mean)),
+           "pushover": float(np.mean(rev & ~fav_top & ~above_mean)),
+           "burial": float(np.mean(rev & fav_top))}
+    if sincere is not None:
+        out["exaggeration"] = float(np.mean(~rev & (B != sincere).any(axis=1)))
+    return out
 
 
 def poll_tallies(tally, B, polls):
