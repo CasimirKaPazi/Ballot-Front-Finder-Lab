@@ -43,7 +43,7 @@ import zlib
 from multiprocessing import Pool
 import numpy as np
 
-from scenario import Scenario, electorate_positions
+from scenario import Scenario
 from models import draw_electorate, model_text, MODELS
 from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined
@@ -408,7 +408,7 @@ def previous_election(args):
     set_max_score(p["max_score"])
     set_lazy(p.get("lazy", 0.0))
     rng = np.random.default_rng([p["seed"], zlib.crc32(b"previous")])
-    ele = draw_electorate(sc, rng)                  # the same draws as electorate_positions
+    ele = draw_electorate(sc, rng)                  # the same draws as scenario.electorate_positions
     u = ele.u
     phi = float(p.get("coordination", 0.25))
     individual = bool(int(p.get("individual", 0)))

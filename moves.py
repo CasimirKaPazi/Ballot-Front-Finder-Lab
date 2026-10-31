@@ -69,7 +69,6 @@ def apply(U, move):
     downfrom or below, and not raised again since); whether a step levelled anything (upto, downfrom,
     below); and per row the utility of the top level an upto made (-inf without one)."""
     U = np.array(U, dtype=float)
-    k = np.arange(len(U))
     span = U.max(axis=1) - U.min(axis=1)
     span = np.where(span > 0, span, 1.0)
     low = np.zeros(U.shape, bool)

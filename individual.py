@@ -110,7 +110,6 @@ def _wins(count, rows, c, C):
 
 def _closeness(count, T, c, C, delta, lo, hi, steps):
     """Bisection for one candidate c over rows of totals T (k x d), between lo and hi (arrays)."""
-    k = len(T)
     win_lo = _wins(count, T + lo[:, None] * delta[None], c, C)
     win_hi = _wins(count, T + hi[:, None] * delta[None], c, C)
     a, b = lo.copy(), hi.copy()
@@ -404,7 +403,6 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
     if memory is not None:                                         # voters who sit this round out vote
         for v in [v for v in memory.get("held", {}) if not active[v]]:   # sincerely: their move is let go
             memory["held"].pop(v)
-    races = [c for c in (r.B, r.T) if c is not None]
     places = [c for c in (r.A, r.B, r.T) if c is not None]
     F_cur = count.features(B)
     V = np.flatnonzero(active)
