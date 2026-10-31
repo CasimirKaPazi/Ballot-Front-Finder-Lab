@@ -31,7 +31,7 @@ import time
 
 from models import MODELS
 from run import (simulate, fingerprints, check_resume_fingerprints, PARAMS, run_dir, write_command, check_params, run_key, valid_combination,
-                 resolve_adaptive, resolve_salience,
+                 resolve_adaptive, resolve_salience, resolve_search,
                  resume_state, CsvSink, interrupted)
 from methods import run_selection
 
@@ -69,7 +69,8 @@ def main():
     ap.add_argument("--exits", type=int, nargs="+", default=[0], choices=[0, 1])
     ap.add_argument("--clones", type=int, nargs="+", default=[0])
     ap.add_argument("--poll-size", type=int, nargs="+", default=[0])
-    ap.add_argument("--search", type=int, nargs="+", default=[1])
+    ap.add_argument("--search", type=int, nargs="+", default=[None],
+                    help="default: 1 for the ranking groups, 0 with --individual 1, per condition")
     ap.add_argument("--start", nargs="+", default=["honest"], choices=["honest", "previous"])
     ap.add_argument("--poll-error", type=float, nargs="+", default=[2.0])
     ap.add_argument("--aggressive", type=float, nargs="+", default=[0.5])
@@ -107,7 +108,7 @@ def main():
         grid = [{**c, "seed": sd} for c in conds for sd in values["seed"]]
     else:
         grid = [dict(zip(PARAMS, combo)) for combo in itertools.product(*values.values())]
-    grid = [resolve_salience(resolve_adaptive(p)) for p in grid]   # --adaptive left out: the rest of the voters
+    grid = [resolve_salience(resolve_search(resolve_adaptive(p))) for p in grid]   # --adaptive left out: the rest of the voters
     skipped = [p for p in grid if not valid_combination(p)]
     if skipped:
         grid = [p for p in grid if valid_combination(p)]

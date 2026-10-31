@@ -91,7 +91,6 @@ def one_election(job):
     search, aggr, start = p["search"], p["aggressive"], p["start"]
     camp_on, risky = float(p.get("campaign", 0.0)) > 0, bool(p.get("risk", 0))
     phi = float(p.get("coordination", 0.25))       # the share of an audience assumed to make a move
-    shared_moves = phi if int(p.get("moves", 0)) else None   # --moves 1: shared moves (moves.py)
     individual = bool(int(p.get("individual", 0)))  # --individual 1: each voter alone (individual.py)
     set_max_score(p["max_score"])                   # per process: workers do not share module state
     set_lazy(p.get("lazy", 0.0))                    # laziness (methods.set_lazy)
@@ -183,7 +182,7 @@ def one_election(job):
             res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
                           poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0,
                           adaptive=adaptive, activated=act, campaign=camp, risk=risk, cstats=cst,
-                          leaders=lead, moves=shared_moves, individual=followers if individual else None)
+                          leaders=lead, individual=followers if individual else None)
             sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
             sincere_row.update(ties(m, m.sincere(uf), P_h))
             sincere_row.update(manip.manipulation(m, m.sincere(uf), uf, u, back) if manipulating else manip.NAN)
@@ -288,6 +287,14 @@ def resolve_salience(p):
     return {**p, "salience": "cluster" if p.get("salience_exponent", 0) > 0 else "none"}
 
 
+def resolve_search(p):
+    """--search left out (None): 1 random ballot change per round for the ranking groups, 0 random
+    variations for individual voters (discovery is off unless asked for). Returns p with a number."""
+    if p.get("search") is None:
+        p = {**p, "search": 0 if int(p.get("individual", 0)) else 1}
+    return p
+
+
 def resolve_adaptive(p):
     """--adaptive left out (None): every voter who is not always strategic is adaptive (1 - --strategic).
     Returns p with a number."""
@@ -306,7 +313,7 @@ def check_params(a, error):
     """Reject values the simulation cannot use (a: parsed arguments; lists allowed, as in sweep.py)."""
     vals = lambda k: getattr(a, k) if isinstance(getattr(a, k), list) else [getattr(a, k)]
     for k, lo in (("rounds", 0), ("samples", 1), ("search", 0), ("poll_size", 0), ("clones", 0)):
-        if any(v < lo for v in vals(k)):
+        if any(v is not None and v < lo for v in vals(k)):
             error(f"--{k.replace('_', '-')} must be at least {lo}")
     for k in ("strategic", "adaptive", "aggressive", "lazy"):
         if any(v is not None and not 0 <= v <= 1 for v in vals(k)):
@@ -341,12 +348,11 @@ def check_params(a, error):
         error("--campaign needs a --coordination above 0 (a share of the audience to plan with)")
     if any(v < 0 for v in vals("risk_tolerance")):
         error("--risk-tolerance must be 0 or more")
-    if (max(vals("campaign")) > 0 or max(vals("risk")) > 0 or max(vals("moves")) > 0 or max(vals("individual")) > 0) \
+    if (max(vals("campaign")) > 0 or max(vals("risk")) > 0 or max(vals("individual")) > 0) \
             and "previous" in vals("start"):
-        error("--campaign, --risk, --moves and --individual are not available with --start previous yet")
-    if max(vals("individual")) > 0 and (max(vals("campaign")) > 0 or max(vals("risk")) > 0 or max(vals("moves")) > 0):
-        error("--individual replaces the ranking groups, shared moves, campaigns and risk: not together with "
-              "--moves, --campaign or --risk")
+        error("--campaign, --risk and --individual are not available with --start previous yet")
+    if max(vals("individual")) > 0 and (max(vals("campaign")) > 0 or max(vals("risk")) > 0):
+        error("--individual replaces the ranking groups, campaigns and risk: not together with --campaign or --risk")
 
 
 def cand_text(disp, shift):
@@ -377,7 +383,6 @@ def strategy_text(p, n):
             f"search {g('search')}, "
             + (f"risk by satisfaction (tolerance {g('risk_tolerance')})" if int(g("risk"))
                else f"aggressive share {g('aggressive')}")
-            + (f", shared moves (coordination {g('coordination')})" if int(g("moves")) else "")
             + ((f", campaigns (planned with {g('coordination')} of the audience)") if float(g("campaign")) > 0 else "")
             + (f", laziness {g('lazy')}" if float(g("lazy")) > 0 else "")
             + ("; first poll from a previous election" if g("start") == "previous" else ""))
@@ -386,10 +391,10 @@ def strategy_text(p, n):
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "utility", "cand_dispersion", "cand_shift", "rounds", "samples",
           "strategic", "adaptive", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search",
-          "start", "seed", "campaign", "risk", "risk_tolerance", "moves", "coordination", "individual"]
+          "start", "seed", "campaign", "risk", "risk_tolerance", "coordination", "individual"]
 # Run parameters added later, with the value that gives the earlier behaviour: filled in where a caller
 # leaves them out (simulate), so callers written before them keep working
-LATER_PARAMS = {"campaign": 0.0, "risk": 0, "risk_tolerance": 0.1, "moves": 0, "coordination": 0.25, "individual": 0}
+LATER_PARAMS = {"campaign": 0.0, "risk": 0, "risk_tolerance": 0.1, "coordination": 0.25, "individual": 0}
 
 
 def previous_election(args):
@@ -731,24 +736,26 @@ def parser():
                     help="polls per round (they stand for the uncertainty; 10 until 2026-10-26)")
     ap.add_argument("--poll-size", type=int, default=0,
                     help="voters per poll (0 = half the electorate, rounded to an odd number)")
-    ap.add_argument("--search", type=int, default=1,
+    ap.add_argument("--search", type=int, default=None,
                     help="random ballot changes a group tries per round, after the naive exaggerations, each from "
-                         "the best ballot so far (10, stopping after 3 in a row without gain, until 2026-10-29)")
+                         "the best ballot so far (default 1; 10, stopping after 3 in a row without gain, until "
+                         "2026-10-29); with --individual 1: random variations per voter and round (discovery, "
+                         "default 0)")
     ap.add_argument("--aggressive", type=float, default=0.5,
                     help="share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) "
                          "only when the polls show a gain")
     ap.add_argument("--campaign", type=float, default=0.0,
                     help="experimental: 1 = every candidate recommends a move each round, planned with --coordination "
                          "of its audience following (docs/campaigns.md); 0 = off")
-    ap.add_argument("--moves", type=int, default=0, choices=[0, 1],
-                    help="experimental: 1 = shared moves instead of ranking groups (moves.py)")
     ap.add_argument("--individual", type=int, default=0, choices=[0, 1],
                     help="experimental: 1 = the average of the round's polls, read for how close each candidate is; "
                          "each voter decides alone by their stake in the race, and picks compromise, burial or "
                          "sincere by what the poll totals promise if 1 to --coordination of the voters (their "
-                         "boldness) vote as they do (individual.py); --aggressive and --search do not apply")
+                         "boldness) vote as they do (individual.py); --aggressive does not apply, --search: random "
+                         "variations per voter and round (default 0)")
     ap.add_argument("--coordination", type=float, default=0.25,
-                    help="with --moves or --campaign: the share of an audience assumed to make the same move")
+                    help="with --individual: the largest following a bold voter expects (share of the electorate); "
+                         "with --campaign: the share of its audience a candidate plans with")
     ap.add_argument("--risk", type=int, default=0, choices=[0, 1],
                     help="1 = each voter is careful or bold by their satisfaction with the polls, "
                          "instead of the fixed --aggressive split (docs/campaigns.md)")
@@ -797,7 +804,7 @@ def default_params():
     """The run parameters of a plain `python run.py` (the defaults), as written to the results."""
     a = parser().parse_args([])
     a.salience = resolve_salience(vars(a))["salience"]
-    return resolve_salience(resolve_adaptive({k: getattr(a, k) for k in PARAMS}))
+    return resolve_salience(resolve_search(resolve_adaptive({k: getattr(a, k) for k in PARAMS})))
 
 
 def main():
@@ -808,7 +815,7 @@ def main():
     out = run_dir(a.out, "run", a.overwrite, a.resume)
     write_command(out, a.resume)
     a.salience = resolve_salience(vars(a))["salience"]   # from the exponent (resolve_salience)
-    p = resolve_salience(resolve_adaptive({k: getattr(a, k) for k in PARAMS}))
+    p = resolve_salience(resolve_search(resolve_adaptive({k: getattr(a, k) for k in PARAMS})))
     names = run_selection(a.methods, a.exclude)
     path = os.path.join(out, "elections.csv")
     key = run_key(p, PARAMS)

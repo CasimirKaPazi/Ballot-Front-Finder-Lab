@@ -166,7 +166,7 @@ def default_poll_size(n):
 
 def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strategic=None, poll_error=2.0,
             report=None, aggressive=None, start=None, adaptive=None, activated=None, campaign=None, risk=None,
-            cstats=None, leaders=None, moves=None, individual=False):
+            cstats=None, leaders=None, individual=False):
     """Poll rounds (see the module docstring). Returns ballots of the last round, whether it
     settled (same as the round before), and mean sincerity (all voters).
     report: a list of round numbers; then `rounds` is ignored, the rounds run up to the highest,
@@ -185,8 +185,7 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strateg
     satisfaction with the polls. cstats: a dict, filled with {round: {"follow": share of all voters
     following a recommendation, "top": candidate whose recommendation has the most followers (-1:
     none), "bold": share of the strategic voters who are bold}}. leaders: a dict, filled with {round: the
-    round's two poll leaders (a, b)}, as the polls the voters answered showed them. moves: None (the
-    ranking groups) or the share s: shared moves instead (experimental; moves.py). individual: voters
+    round's two poll leaders (a, b)}, as the polls the voters answered showed them. individual: voters
     read the averaged polls and each decides alone (experimental; individual.py): None/False (off), True
     (each voter expects only themselves to vote as they do), or per voter the number of voters they
     expect to (their boldness)."""
@@ -197,16 +196,16 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strateg
         snaps = {}
         _respond(method, u, rng, max(want), samples, poll_size, search, strategic, poll_error, aggressive,
                  lambda r, res: snaps.__setitem__(r, res) if r in want else None, start, adaptive, activated,
-                 campaign, risk, cstats, leaders, moves, individual)
+                 campaign, risk, cstats, leaders, individual)
         return [snaps[int(r)] for r in report]
     return _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive,
                     start=start, adaptive=adaptive, activated=activated, campaign=campaign, risk=risk, cstats=cstats,
-                    leaders=leaders, moves=moves, individual=individual)
+                    leaders=leaders, individual=individual)
 
 
 def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive=None,
              snapshot=None, start=None, adaptive=None, activated=None, campaign=None, risk=None, cstats=None,
-             leaders=None, moves=None, individual=False):
+             leaders=None, individual=False):
     n, C = u.shape
     sincere = method.sincere(u)
     B = sincere.copy()
@@ -273,17 +272,14 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
     inc = pm.full is None
     settled = False
     places = 3 if BALLOTS[method.ballot].pushover is not None else 2   # the third is the push-over target
-    if moves is not None:                      # shared moves (moves.py): the three places are the audiences
-        import moves as _mv
-        places = 3
-        F_sin = pm.features(sincere) if inc else None
-        last = {}                              # each voter's move in the last round
     individual = None if individual is False else individual
     if individual is not None:                 # the average of the polls, each voter alone (individual.py)
         import individual as _ind
         thr = np.where(fixed, 0.0, np.where(adapt, q_adapt, np.inf))
         fol = np.ones(n) if individual is True else np.asarray(individual, float)   # followers each voter expects
         ind_memory = {"last": {}, "trust": {}}  # what each voter's move promised, and their trust in moves
+        # discovery draws from its own stream (spawned, so the polls stay those of the run without it)
+        ind_rng = np.random.default_rng(rng.bit_generator.seed_seq.spawn(1)[0])
     for r in range(1, rounds + 1):
         polls = np.stack([rng.choice(n, m if inc else m_full, replace=False) for _ in range(samples)])
         if individual is not None:
@@ -297,7 +293,7 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
                 leaders[r] = (reading.A, reading.B)
             B_prev = B
             B, active = _ind.answer(method, pm, u, B, sincere, reading, threshold=thr, followers=fol,
-                                    memory=ind_memory)
+                                    memory=ind_memory, rng=ind_rng, search=search)
             record(r)
             settled = np.array_equal(B, B_prev)
             if snapshot:
@@ -337,17 +333,6 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
         if camp:                                   # every candidate's recommendation (docs/campaigns.md)
             recs = _campaigns(method, pm, u, B, F if inc else None, tot + dev if inc else None, polls, P_now, a, b,
                               campaign["share"], campaign["cand_u"])
-        if moves is not None:
-            eager_v = (bold if risky else (np.ones(n, bool) if aggressive is None else np.asarray(aggressive, bool)))
-            B_prev = B
-            B, last, follow = _mv.answer(method, pm, u, B, sincere, F_sin, polls, tot + dev if inc else None,
-                                         F if inc else None, rng, active=active, eager=eager_v, tol_v=tol_v,
-                                         places=[a, b] + rest, recs=recs, share=moves, search=search, last=last)
-            record(r, float(follow.sum()) / n, int(np.argmax(follow)) if follow.sum() > 0 else -1)
-            settled = np.array_equal(B, B_prev)
-            if snapshot:
-                snapshot(r, (B, settled, float(sincerity(method, B, u).mean())))
-            continue
         answers, follow = [], np.zeros(C)
         for g, mem in enumerate(groups):
             if inc:

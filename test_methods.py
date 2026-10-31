@@ -772,7 +772,7 @@ assert _stc._answer(_gain, "fav", np.array([9.0]), _c3, 0, _rng0, eager=True, pr
 assert _stc._answer(_gain, "fav", np.array([9.0]), _c3[2:], 0, _rng0, eager=True, promises=[0.5]) is None
 assert _stc._answer(_gain, "fav", np.array([9.0]), _c3[2:], 0, _rng0, eager=True, tol=0.1, promises=[0.5])[0] == 2
 print("campaigns ok")
-# Shared moves (moves.py, --moves 1): the naive exaggerations and push-over of today's model, written as
+# Moves (moves.py): the naive exaggerations and push-over of the ranking-group model, written as
 # moves, render to today's ballots (for the leader the voter prefers; one voter, no laziness, 5 candidates)
 import moves as _mvm
 from ballots import BALLOTS as _BL
@@ -808,15 +808,7 @@ _ua2 = np.array([[1.0, 0.9, 0.5, 0.1]])
 _ap = METHODS["Approval"]
 assert _mvm.render(_ap, _ua2, (("upto", 2), ("below", 2)), _ap.sincere(_ua2, 0.0, 0.5), 0.0, 0.5).tolist() == [[1, 1, 1, 0]]
 assert _mvm.render(_ap, _ua2, (("bottom", 1),), _ap.sincere(_ua2, 0.0, 0.0), 0.0, 0.0)[0, 1] == 0
-# the engine runs for every method, also on 2 candidates, and gives the same ballots with the same stream
-_uv = np.random.default_rng(5).random((30, 5))
-_ag = np.random.default_rng(6).random(30) < 0.5
-for _n, _m in METHODS.items():
-    _r1 = respond(_m, _uv, np.random.default_rng(1), rounds=2, samples=2, search=1, moves=0.25, aggressive=_ag)[0]
-    _r2 = respond(_m, _uv, np.random.default_rng(1), rounds=2, samples=2, search=1, moves=0.25, aggressive=_ag)[0]
-    assert np.array_equal(_r1, _r2), _n
-    respond(_m, _uv[:, :2], np.random.default_rng(1), rounds=2, samples=2, search=1, moves=0.25)
-print("shared moves ok")
+print("moves and their ballots ok")
 # What a poll shows (Method.poll_view; docs/model.md, What a poll shows): methods counted from poll-like totals
 # count polls as they count elections; the IRV family uses first preferences and transfers, which give
 # exactly the method's result with three candidates
@@ -1191,13 +1183,13 @@ print("renamed methods ok")
 # that share as --coordination
 with _tf.TemporaryDirectory() as _d:
     _p = _os.path.join(_d, "elections.csv")
-    _cols = [k for k in _old_rows[0] if k not in ("coordination", "moves")]
+    _cols = [k for k in _old_rows[0] if k != "coordination"]
     with open(_p, "w", newline="") as _f:
         _w = _csv.DictWriter(_f, _cols, extrasaction="ignore")
         _w.writeheader()
         _w.writerows([{**r, "campaign": "0.5"} for r in _old_rows[:2]] + [{**r, "campaign": "0.0"} for r in _old_rows[2:4]])
     _ld = _an.load([_p])
-    assert [(r["campaign"], r["coordination"], r["moves"]) for r in _ld] == [("1.0", "0.5", "0")] * 2 + [("0.0", "0.25", "0")] * 2
+    assert [(r["campaign"], r["coordination"]) for r in _ld] == [("1.0", "0.5")] * 2 + [("0.0", "0.25")] * 2
 print("older campaign runs ok")
 
 # Honest approval: a personal threshold between the voter's mean and favourite (ballots.approves)

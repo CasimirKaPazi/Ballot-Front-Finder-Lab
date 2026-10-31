@@ -275,7 +275,7 @@ def _noise(r, U, C):
     return np.sqrt(eB ** 2 + eT ** 2)
 
 
-def answer(method, count, u, B, sincere, reading, *, threshold, followers, memory=None):
+def answer(method, count, u, B, sincere, reading, *, threshold, followers, memory=None, rng=None, search=0):
     """One round. threshold: per voter (0 = always strategic, inf = never); followers: per voter, how
     many voters they expect to vote as they do (1 = only themselves). Returns the new ballots and the
     voters strategic this round (bool).
@@ -285,7 +285,8 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
     round) is worth w_c = (change . delta_c) / |delta_c|^2 switching voters in the race between the poll
     winner A and c (delta_c: one voter switching from A to c), for the runner-up B and the next place T;
     with f voters making it, c needs k_c - f w_c switching voters, and the chances follow (_chances).
-    The voter takes the ballot with the best expected outcome for them, a move's promise weighted by
+    With rng and search, each voter also tries `search` random variations of the move they hold
+    (discovery). The voter takes the ballot with the best expected outcome for them, a move's promise weighted by
     their trust in it (judge; memory: {"last": ..., "trust": ...}, kept across the rounds), if its gain
     over the sincere ballot is more than the poll's own uncertainty could account for (_noise)."""
     n, C = u.shape
@@ -299,6 +300,9 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
     span = np.where(hi_u > lo_u, hi_u - lo_u, 1.0)
     stake = np.abs(u[:, r.A] - u[:, r.B]) / span * 4 * r.P[r.A] * r.P[r.B]
     active = stake > threshold
+    if memory is not None:                                         # voters who sit this round out vote
+        for v in [v for v in memory.get("held", {}) if not active[v]]:   # sincerely: their move is let go
+            memory["held"].pop(v)
     races = [c for c in (r.B, r.T) if c is not None]
     places = [c for c in (r.A, r.B, r.T) if c is not None]
     F_cur = count.features(B)
@@ -325,6 +329,19 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
             seen.add(m)
             uniq.append(m)
     options = [sincere[V]] + [mv.render(method, u[V], m, sincere[V], lazy, appr) for m in uniq]
+    keys = [[None] * len(V)] + [[m] * len(V) for m in uniq]      # the move behind each option, per voter
+    # Discovery: `search` random variations per voter, each one random step after the move they hold (or
+    # after their sincere ballot), valued like every other move: taken only if the poll arithmetic
+    # promises more, and dropped again when the next poll shows it did not deliver (judge).
+    if memory is not None and rng is not None:
+        held = memory.setdefault("held", {})
+        for _ in range(search):
+            ks = [mv.random_move(held.get(int(v), ()), C, rng) for v in V]
+            rows = [mv.render(method, u[v:v + 1], ks[i], sincere[v:v + 1],
+                              np.atleast_1d(lazy[i] if np.ndim(lazy) else lazy),
+                              np.atleast_1d(appr[i] if np.ndim(appr) else appr))[0] for i, v in enumerate(V)]
+            options.append(np.array(rows))
+            keys.append(ks)
     f = followers[V]
     eu = []
     for X in options:
@@ -346,9 +363,8 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
     EU = np.stack(eu)
     before = u[V] @ r.P                                            # expected outcome keeping one's ballot
     if memory is not None:                                         # promises weighted by trust in the move
-        keys = [None] + uniq
         for j in range(1, len(options)):
-            rho = np.array([trust(memory, int(v), keys[j]) for v in V])
+            rho = np.array([trust(memory, int(v), keys[j][i]) for i, v in enumerate(V)])
             gain = EU[j] - before
             EU[j] = before + np.where(gain > 0, rho * gain, gain)  # trust discounts promises, never makes
                                                                    # a harmful move look good
@@ -361,7 +377,12 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
     for j, X in enumerate(options):
         sel = best == j
         newB[V[sel]] = X[sel]
-        if memory is not None and j > 0:
+        if memory is not None:
             for i in np.flatnonzero(sel):
-                memory["last"][int(V[i])] = (uniq[j - 1], float(eu[j][i] - before[i]), float(before[i]))
+                v = int(V[i])
+                if j > 0:
+                    memory["last"][v] = (keys[j][i], float(eu[j][i] - before[i]), float(before[i]))
+                    memory.setdefault("held", {})[v] = keys[j][i]
+                else:
+                    memory.setdefault("held", {}).pop(v, None)
     return newB, active
