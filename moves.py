@@ -112,11 +112,14 @@ def apply(U, move):
 
 def _levels(U):
     """Dense levels per row: equal utilities share a level (ranking with ties), 0 = lowest."""
-    out = np.empty_like(U)
-    for i, row in enumerate(U):
-        span = max(row.max() - row.min(), 1e-12)
-        _, inv = np.unique(np.round((row - row.min()) / span, 9), return_inverse=True)
-        out[i] = inv
+    mn = U.min(axis=1, keepdims=True)
+    span = np.maximum(U.max(axis=1, keepdims=True) - mn, 1e-12)
+    R = np.round((U - mn) / span, 9)
+    order = np.argsort(R, axis=1, kind="stable")
+    Rs = np.take_along_axis(R, order, axis=1)
+    dense = np.concatenate([np.zeros((len(R), 1)), np.cumsum(np.diff(Rs, axis=1) > 0, axis=1)], axis=1)
+    out = np.empty_like(U, dtype=float)
+    np.put_along_axis(out, order, dense, axis=1)
     return out
 
 

@@ -351,8 +351,8 @@ def check_params(a, error):
     if (max(vals("campaign")) > 0 or max(vals("risk")) > 0 or max(vals("individual")) > 0) \
             and "previous" in vals("start"):
         error("--campaign, --risk and --individual are not available with --start previous yet")
-    if max(vals("individual")) > 0 and (max(vals("campaign")) > 0 or max(vals("risk")) > 0):
-        error("--individual replaces the ranking groups, campaigns and risk: not together with --campaign or --risk")
+    if max(vals("individual")) > 0 and max(vals("risk")) > 0:
+        error("--individual replaces the ranking groups and risk: not together with --risk")
 
 
 def cand_text(disp, shift):
@@ -378,6 +378,7 @@ def strategy_text(p, n):
         return (f"{g('rounds')} poll round(s), the average of {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
                 f"individual voters (stake by closeness; compromise or burial, expecting 1 to "
                 f"{g('coordination')} of the voters to do the same)"
+                + ((f", campaigns (planned with {g('coordination')} of the audience)") if float(g("campaign")) > 0 else "")
                 + (f", laziness {g('lazy')}" if float(g("lazy")) > 0 else ""))
     return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
             f"search {g('search')}, "
@@ -746,7 +747,7 @@ def parser():
                          "only when the polls show a gain")
     ap.add_argument("--campaign", type=float, default=0.0,
                     help="experimental: 1 = every candidate recommends a move each round, planned with --coordination "
-                         "of its audience following (docs/campaigns.md); 0 = off")
+                         "of their audience following (docs/campaigns.md); 0 = off")
     ap.add_argument("--individual", type=int, default=0, choices=[0, 1],
                     help="experimental: 1 = the average of the round's polls, read for how close each candidate is; "
                          "each voter decides alone by their stake in the race, and picks compromise, burial or "
@@ -755,7 +756,7 @@ def parser():
                          "variations per voter and round (default 0)")
     ap.add_argument("--coordination", type=float, default=0.25,
                     help="with --individual: the largest following a bold voter expects (share of the electorate); "
-                         "with --campaign: the share of its audience a candidate plans with")
+                         "with --campaign: the share of their audience a candidate plans with")
     ap.add_argument("--risk", type=int, default=0, choices=[0, 1],
                     help="1 = each voter is careful or bold by their satisfaction with the polls, "
                          "instead of the fixed --aggressive split (docs/campaigns.md)")

@@ -8,18 +8,18 @@ dimension, drawn once per election, the same for every method), so voters rank t
 each other and split between them at random.
 
 Candidates' preferences. A candidate sits in the issue space like a voter and values a winner by
-the same utility, exp(-distance / width): itself 1, others by distance. A clone counts exactly as
-its original (the same platform; otherwise the clone's small random offset would make candidates
+the same utility, exp(-distance / width): themselves 1, others by distance. A clone counts exactly as
+their original (the same platform; otherwise the clone's small random offset would make candidates
 field clones of the winner just because the copy happens to sit a little closer to them). A lottery
 of winners is valued by its expected utility. These are policy preferences: a candidate gives way
-when someone close to it can win instead of someone far away.
+when someone close to them can win instead of someone far away.
 
 Moves, by any original candidate (in the race or out of it):
     exit       leave the race (exits=1); at least two originals stay in
     re-entry   come back after an exit (exits=1)
-    clone      field a clone of any original in the race, itself included (clones = most clones in
+    clone      field a clone of any original in the race, themselves included (clones = most clones in
                the race at once, 0 = none; at most one clone per original)
-    unclone    withdraw a clone it fielded
+    unclone    withdraw a clone they fielded
 A move is made only if it strictly improves the mover's expected utility, judged by the method's
 result with SINCERE ballots on the new field (candidates foresee honest voting, as in
 Green-Armytage; they do not foresee learned strategy).

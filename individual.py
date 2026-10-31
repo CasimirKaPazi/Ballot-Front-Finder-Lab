@@ -29,7 +29,7 @@ once per round instead of the ranking groups.
   outcome for them. Nobody recounts the poll with their ballot changed: what a move does under a
   method is for the results to show, not for voters to foresee.
 """
-from math import erf, sqrt
+from math import erf, isfinite, sqrt
 
 import numpy as np
 
@@ -125,8 +125,9 @@ def _closeness(count, T, c, C, delta, lo, hi, steps):
 
 
 def _chances(kB, kT, sigma):
-    pB = np.array([_Phi(-x / sigma) if np.isfinite(x) else 0.0 for x in np.atleast_1d(kB)])
-    pT = np.array([_Phi(-x / sigma) if np.isfinite(x) else 0.0 for x in np.atleast_1d(kT)])
+    sg = float(sigma)                         # plain floats: the same numbers, much faster than numpy scalars
+    pB = np.array([_Phi(-x / sg) if isfinite(x) else 0.0 for x in np.atleast_1d(kB).astype(float).tolist()])
+    pT = np.array([_Phi(-x / sg) if isfinite(x) else 0.0 for x in np.atleast_1d(kT).astype(float).tolist()])
     tot = pB + pT
     scale = np.where(tot > 1, 1 / np.maximum(tot, 1e-12), 1.0)
     pB, pT = pB * scale, pT * scale
@@ -217,8 +218,8 @@ RATIO_LOW = -3.0     # judge: a move can backfire up to three times as badly as 
 
 
 def aims(move):
-    """What a move aims at: ("up", c) for each candidate it raises, ("down", c) for each it lowers. Trust
-    attaches to these, not to the exact ballot, so that a distrusted aim is not simply tried again in
+    """What a move aims at: ("up", c) for each candidate it raises, ("down", c) for each it lowers, and
+    ("campaign", c) when it follows candidate c's recommendation. Trust attaches to these, not to the exact ballot, so that a distrusted aim is not simply tried again in
     another form."""
     out = set()
     for st in move:
@@ -226,6 +227,8 @@ def aims(move):
             out.add(("up", st[1]))
         elif st[0] in ("bottom", "downfrom", "below"):
             out.add(("down", st[1]))
+        elif st[0] == "campaign":                 # following candidate c's campaign: trust in c's campaigns
+            out.add(("campaign", st[1]))
     return tuple(sorted(out))
 
 
@@ -275,7 +278,98 @@ def _noise(r, U, C):
     return np.sqrt(eB ** 2 + eT ** 2)
 
 
-def answer(method, count, u, B, sincere, reading, *, threshold, followers, memory=None, rng=None, search=0):
+def _value(r, S, U, C):
+    """Chances and expected outcome after a change S of the poll totals (rows, one per row of U): its
+    worth in voters switching from A to each of B and T (projection on delta), with the cross-effects
+    (Reading.cross). Returns (P, EU): winner chances per row, and the expected outcome of U."""
+    races = [c for c in (r.B, r.T) if c is not None]
+    s = {c: (S @ r.delta[c]) / max(float(r.delta[c] @ r.delta[c]), 1e-12) for c in races}
+    k = {}
+    for c in races:
+        others = [d for d in races if d != c]
+        base = r.cross(c, others[0], s[others[0]]) if others else np.full(len(S), r.k[c])
+        k[c] = np.where(np.isfinite(r.k[c]) | (base < r.n), base, np.inf) - s[c]
+    kT = k[r.T] if r.T is not None else np.full(len(S), np.inf)
+    pA, pB, pT = _chances(np.maximum(k[r.B], 0), np.maximum(kT, 0), r.sigma)
+    P = np.zeros((len(S), C))
+    P[:, r.A] = pA
+    P[:, r.B] += pB
+    if r.T is not None:
+        P[:, r.T] += pT
+    return P, (P * U).sum(axis=1)
+
+
+CAMPAIGN_SEARCH = 1  # random variations of their last recommendation each candidate tries per round
+
+
+def plan(method, count, u, sincere, F_cur, r, strategies, share, cand_u, memory=None, rng=None):
+    """Every candidate's campaign for this round (docs/campaigns.md, Campaigns for individual voters).
+    A candidate's audience: the voters who prefer them to their strongest rival in the poll (A; for A,
+    the runner-up B). The moves considered: the round's strategies (the moves the voters consider),
+    "X above Y" for every pair with the poll winner A, and CAMPAIGN_SEARCH random variations of each
+    candidate's last recommendation and that recommendation again (their own search, for them alone;
+    memory["camp_held"], rng). For each move, a share `share` of the audience casting it changes the
+    totals by that share of the audience's changes (each voter's ballot following the move against
+    what they voted in the last round); the candidate values that change with the same arithmetic as
+    the voters (_value), by their own preferences (cand_u: one row per candidate), and recommends the
+    best move if it gains them anything over no campaign (campaigning costs a candidate nothing;
+    whether a recommendation is worth following is for each voter to judge, with the same test of the
+    poll's uncertainty as every move). Nobody recounts the poll (a recount per candidate, move and
+    poll more than doubled the run time).
+    Returns {c: (move, dP)}: the move and the change of the winner chances it promises if followed as
+    planned, and the ballots of every voter following each recommended move ({move: ballots})."""
+    n, C = u.shape
+    if r.B is None:
+        return {}, {}
+    rival = np.full(C, r.A)
+    rival[r.A] = r.B
+    AUD = (u > u[:, rival]).T.astype(float)                       # AUD[c, v]: v prefers c to c's rival
+    cs = np.flatnonzero(AUD.sum(axis=1) > 0)
+    held = memory.setdefault("camp_held", {}) if memory is not None else {}
+    if not len(cs):
+        held.clear()
+        return {}, {}
+    pos = {int(c): i for i, c in enumerate(cs)}
+    every = np.arange(len(cs))
+    moves = {}                                                     # move -> the candidates who consider it
+    for m in list(strategies) + [(("above", X, r.A),) for X in range(C) if X != r.A] \
+            + [(("above", r.A, Y),) for Y in range(C) if Y != r.A]:
+        moves.setdefault(m, set()).update(every.tolist())
+    for c in cs:                                                   # their own search: the last recommendation
+        own = [held[int(c)]] if int(c) in held else []             # again and random variations of it
+        if rng is not None:
+            own += [mv.random_move(held.get(int(c), ()), C, rng) for _ in range(CAMPAIGN_SEARCH)]
+        for m in own:
+            moves.setdefault(m, set()).add(pos[int(c)])
+    lazy, appr = mv.own_params(np.arange(n))
+    batch, rows, rendered = [], [], {}
+    for m, who in moves.items():
+        X = mv.render(method, u, m, sincere, lazy, appr)
+        D = count.features(X) - F_cur                              # each voter's change, following it
+        idx = cs[np.array(sorted(who))]
+        batch.append((m, idx))
+        rows.append(share * (AUD[idx] @ D))                        # one row per candidate considering it
+        rendered[m] = X
+    owner = np.concatenate([idx for _, idx in batch])
+    P, _ = _value(r, np.concatenate(rows), cand_u[owner], C)       # all moves of the round at once
+    dP = P - r.P[None]
+    gain = (dP * cand_u[owner]).sum(axis=1)
+    best, ballots, at = {}, {}, 0
+    for m, idx in batch:
+        for k in range(len(idx)):
+            c, g = int(idx[k]), gain[at + k]
+            if g > 1e-9 and (c not in best or g > best[c][0] + 1e-12):
+                best[c] = (float(g), m, dP[at + k])
+                ballots[m] = rendered[m]
+        at += len(idx)
+    held.clear()
+    held.update({c: m for c, (_, m, _) in best.items()})
+    recs = {c: (m, dP) for c, (_, m, dP) in best.items()}
+    return recs, {m: ballots[m] for m, _ in recs.values()}
+
+
+def answer(method, count, u, B, sincere, reading, *, threshold, followers, memory=None, rng=None, search=0,
+           campaign=None):
     """One round. threshold: per voter (0 = always strategic, inf = never); followers: per voter, how
     many voters they expect to vote as they do (1 = only themselves). Returns the new ballots and the
     voters strategic this round (bool).
@@ -288,12 +382,19 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
     With rng and search, each voter also tries `search` random variations of the move they hold
     (discovery). The voter takes the ballot with the best expected outcome for them, a move's promise weighted by
     their trust in it (judge; memory: {"last": ..., "trust": ...}, kept across the rounds), if its gain
-    over the sincere ballot is more than the poll's own uncertainty could account for (_noise)."""
+    over the sincere ballot is more than the poll's own uncertainty could account for (_noise).
+    campaign: None (off) or {"share": --coordination, "cand_u": candidates' utilities}: every candidate
+    may recommend a move (plan); each strategic voter considers the recommendation of the candidate they like most among
+    those campaigning, valued by what it promises if followed as planned (their expected outcome now,
+    plus the change of the winner chances the candidate worked out), provided their own part alone (with their boldness) does not cost them more
+    than the poll's uncertainty. The voters following each candidate are counted in memory["follow"]."""
     n, C = u.shape
     r = reading
     if memory is not None:
         judge(u, r, memory)
     newB = sincere.copy()
+    if memory is not None:
+        memory["follow"] = np.zeros(C)
     if r.B is None:
         return newB, np.zeros(n, bool)
     lo_u, hi_u = u.min(axis=1), u.max(axis=1)
@@ -345,21 +446,26 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
     f = followers[V]
     eu = []
     for X in options:
-        D = count.features(X) - F_cur[V]                           # the change of each voter's own ballot
-        s = {c: f * (D @ r.delta[c]) / max(float(r.delta[c] @ r.delta[c]), 1e-12) for c in races}
-        k = {}                                                     # worth, in voters switching from A to c,
-        for c in races:                                            # and its effect on the other race
-            others = [d for d in races if d != c]
-            base = r.cross(c, others[0], s[others[0]]) if others else np.full(len(V), r.k[c])
-            k[c] = np.where(np.isfinite(r.k[c]) | (base < r.n), base, np.inf) - s[c]
-        kT = k[r.T] if r.T is not None else np.full(len(V), np.inf)
-        pA, pB, pT = _chances(np.maximum(k[r.B], 0), np.maximum(kT, 0), r.sigma)
-        P = np.zeros((len(V), C))
-        P[:, r.A] = pA
-        P[:, r.B] += pB
-        if r.T is not None:
-            P[:, r.T] += pT
-        eu.append((P * u[V]).sum(axis=1))
+        D = count.features(X) - F_cur[V]                           # the change of each voter's own ballot,
+        eu.append(_value(r, f[:, None] * D, u[V], C)[1])           # made by f voters (worth and cross-effects)
+    noise = _noise(r, u[V], C)
+    # Campaigns: each voter considers the recommendation of the candidate they like most among those
+    # campaigning, valued by what it promises if followed as planned (the candidate's chances with the
+    # campaign), if their own part, made by f voters as any move, does not cost them more than the poll's
+    # uncertainty could account for.
+    camp_of = None
+    if campaign is not None:
+        recs, rec_ballots = plan(method, count, u, sincere, F_cur, r, uniq, campaign["share"], campaign["cand_u"],
+                                 memory, rng)
+        if recs:
+            cs = np.array(sorted(recs))
+            camp_of = cs[np.argmax(u[V][:, cs], axis=1)]           # ties: the first campaigning candidate
+            X = np.stack([rec_ballots[recs[int(c)][0]][v] for c, v in zip(camp_of, V)])
+            own = _value(r, f[:, None] * (count.features(X) - F_cur[V]), u[V], C)[1]
+            promise = u[V] @ r.P + np.array([float(recs[int(c)][1] @ u[v]) for c, v in zip(camp_of, V)])
+            options.append(X)
+            keys.append([recs[int(c)][0] + (("campaign", int(c)),) for c in camp_of])
+            eu.append(np.where(own >= eu[0] - noise, promise, -np.inf))
     EU = np.stack(eu)
     before = u[V] @ r.P                                            # expected outcome keeping one's ballot
     if memory is not None:                                         # promises weighted by trust in the move
@@ -371,7 +477,6 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
     # Worth acting on: a move's gain over the sincere ballot must exceed what the poll's own uncertainty
     # could account for: the change in the voter's expected outcome if the poll were off by its standard
     # error (sigma voters) in the race with B, and in the race with T (combined as independent errors).
-    noise = _noise(r, u[V], C)
     EU[1:] = np.where(EU[1:] - EU[0][None] > noise[None], EU[1:], -np.inf)
     best = np.argmax(EU, axis=0)                                   # ties: the first (sincere first)
     for j, X in enumerate(options):
@@ -382,7 +487,10 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
                 v = int(V[i])
                 if j > 0:
                     memory["last"][v] = (keys[j][i], float(eu[j][i] - before[i]), float(before[i]))
-                    memory.setdefault("held", {})[v] = keys[j][i]
+                    move = tuple(st for st in keys[j][i] if st[0] != "campaign")
+                    memory.setdefault("held", {})[v] = move
+                    if move != keys[j][i]:                         # followed a campaign
+                        memory["follow"][keys[j][i][-1][1]] += 1
                 else:
                     memory.setdefault("held", {}).pop(v, None)
     return newB, active

@@ -293,8 +293,9 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
                 leaders[r] = (reading.A, reading.B)
             B_prev = B
             B, active = _ind.answer(method, pm, u, B, sincere, reading, threshold=thr, followers=fol,
-                                    memory=ind_memory, rng=ind_rng, search=search)
-            record(r)
+                                    memory=ind_memory, rng=ind_rng, search=search, campaign=campaign)
+            fw = ind_memory["follow"]
+            record(r, float(fw.sum()) / n, int(np.argmax(fw)) if fw.sum() > 0 else -1)
             settled = np.array_equal(B, B_prev)
             if snapshot:
                 snapshot(r, (B, settled, float(sincerity(method, B, u).mean())))
@@ -483,11 +484,11 @@ def _move_ballots(method, U, X, Y, lazy=None, approval=None):
 def _campaigns(method, pm, u, B, F, T, polls, P_now, a, b, share, cand_u):
     """Every candidate's recommendation for this round (docs/campaigns.md, The candidate's plan).
     The moves: "X above Y" for every pair with the poll winner a (_move_ballots).
-    A candidate's audience: the voters who prefer it to its strongest rival (a, or for a the runner-up
+    A candidate's audience: the voters who prefer them to their strongest rival (a, or for a the runner-up
     b). For each move, a share `share` of the audience casts it instead of their current ballot (B, or
     its features F; T: the poll counts), and the candidate's expected utility over the polls (cand_u:
     candidates' utilities, one row per candidate) is compared with P_now (the polls as they are). Each
-    candidate recommends its best move if that gains it something.
+    candidate recommends their best move if that gains them something.
     pm: the method as voters count a poll (Method.poll_view); the ballots are the method's.
     Returns [(candidate, (X, Y), winner lotteries per poll with the campaign)]."""
     n, C = u.shape
@@ -544,7 +545,7 @@ def _answer(gain, ballot_type, ref, cands, search, rng, eager=True, tol=0.0, pro
     sincere one: a change is taken only if it strictly gains. The previous answer comes first, so the
     search goes on from where it stood in the round before. None = stay sincere.
     tol: --risk, bold voters accept a loss up to this much (in the group's summed utility).
-    promises: one per candidate ballot, the gain a campaign recommendation promises if its audience
+    promises: one per candidate ballot, the gain a campaign recommendation promises if their audience
     follows (None for other ballots; only bold voters get recommendations). Among ballots that gain
     the same alone, the larger promise wins (docs/campaigns.md, The voter's choice)."""
     best, best_v, best_p = None, 0.0, 0.0

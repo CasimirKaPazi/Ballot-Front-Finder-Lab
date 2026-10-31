@@ -750,7 +750,7 @@ assert _ri[0] > _ri[3], _ri
 _sr = METHODS["Score runoff"]
 assert np.array_equal(np.mod(_stc._move_ballots(_sr, _ur, 3, 1), 4), np.mod(_sr.sincere(_ur), 4))
 # a Condorcet loser winning (CL else Score winner): the Score winner A recommends a move that, with
-# half its audience following, removes the loser's defeat, so A wins
+# half their audience following, removes the loser's defeat, so A wins
 _uc = np.array([[1, .6, .3, 0]] * 3 + [[.2, 1, .5, 0]] * 2 + [[.3, .5, 1, 0]] + [[.5, .2, 0, .1]] * 3, float)
 _mc = METHODS["CL else Score winner"]
 _Bc = _mc.sincere(_uc)
@@ -857,6 +857,20 @@ _uj = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])            # voter 0: worse o
 _ind.judge(_uj, _Rd(), _mem)
 assert _ind.trust(_mem, 0, (("top", 0), ("bottom", 1))) < 0 < _ind.trust(_mem, 1, (("top", 1),)) == 1.0
 assert _mem["last"] == {} and _ind.trust(_mem, 0, (("bottom", 2),)) == 1.0     # other aims untouched
+assert _ind.aims((("top", 1), ("campaign", 1))) == (("campaign", 1), ("up", 1))
+# campaigns (individual.plan): Plurality, first preferences A 36, B 32, T 22, W 9; T's supporters prefer
+# B to A. A quarter of B's audience (all who prefer B to A: B's and T's supporters) compromising for B
+# brings B close to A, so B recommends compromise for B
+_uc = np.array([[1.0, 0.5, 0.3, 0.0]] * 36 + [[0.0, 1.0, 0.5, 0.3]] * 32 + [[0.0, 0.6, 1.0, 0.3]] * 22
+               + [[0.3, 0.0, 0.5, 1.0]] * 9)
+_sc = _pl.sincere(_uc)
+_Fc = _pl.poll_view().features(_sc)
+_rc = _ind.Reading(_pl.poll_view(), "fav", _Fc.sum(axis=0), 4, 99, 245, 2.0)
+_cu = np.array([[1.0, 0.5, 0.3, 0.0], [0.0, 1.0, 0.5, 0.3], [0.0, 0.6, 1.0, 0.3], [0.3, 0.0, 0.5, 1.0]])
+_strat = [_ind.obvious("fav", c, 0) for c in (0, 1, 2)]
+_recs, _bal = _ind.plan(_pl, _pl.poll_view(), _uc, _sc, _Fc, _rc, _strat, 0.25, _cu)
+assert _recs[1][0] == (("top", 1),) and _recs[1][1][1] > 0, _recs             # B's chance rises
+assert (_bal[(("top", 1),)][36:90].argmax(axis=1) == 1).all()       # B's and T's supporters: B
 print("individual voters ok")
 # Laziness in the runoff of two-round ballots: a lazy voter who cares only about A and B ranks just
 # them in the runoff part, so a runoff between C and D gets no vote from them
