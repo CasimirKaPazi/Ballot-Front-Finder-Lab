@@ -872,6 +872,13 @@ _recs, _bal = _ind.plan(_pl, _pl.poll_view(), _uc, _sc, _Fc, _rc, _strat, 0.25, 
 assert _recs[1][0] == (("top", 1),) and _recs[1][1][1] > 0, _recs             # B's chance rises
 assert (_bal[(("top", 1),)][36:90].argmax(axis=1) == 1).all()       # B's and T's supporters: B
 print("individual voters ok")
+# --start previous on another field (run.carry_over): the previous ballots, relabelled, cast again on this
+# election's field; a candidate who was not in the previous election (a new clone) gets nothing
+import run as _run
+_Xc = _run.carry_over(METHODS["Score"], np.array([[5.0, 2.0, 0.0], [0.0, 5.0, 3.0]]),
+                      [(0, 0), (1, 0), (2, 0)], [(1, 0), (0, 0), (0, 1)], np.array([0, 1, 2]))
+assert _Xc.tolist() == [[2, 5, 0], [5, 0, 0]], _Xc            # B, A, A's clone; C left the race
+print("previous field ok")
 # Laziness in the runoff of two-round ballots: a lazy voter who cares only about A and B ranks just
 # them in the runoff part, so a runoff between C and D gets no vote from them
 from ballots import fav_run_ballots as _frb

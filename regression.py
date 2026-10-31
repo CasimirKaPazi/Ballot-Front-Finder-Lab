@@ -61,6 +61,8 @@ CONDITIONS = [
     ("individual-campaign", {"individual": 1, "campaign": 1.0, "coordination": 0.25, "search": 1, "strategic": 1.0,
                              "adaptive": 0.0, "rounds": 3}),           # with campaigns and discovery
     ("individual-previous", {"individual": 1, "search": 0, "start": "previous"}),
+    ("individual-previous-nomination", {"individual": 1, "search": 0, "start": "previous", "exits": 1, "clones": 1,
+                                        "rounds": 1}),       # the previous ballots carried to another field
 ]
 ELECTIONS = 2
 

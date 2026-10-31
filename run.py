@@ -48,7 +48,7 @@ from models import draw_electorate, model_text, MODELS
 from nomination import nominate, clone_setup, utilities, to_original
 from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined
 from ballots import score_ballots
-from strategy import respond, strategy_types, default_poll_size, fidelity
+from strategy import respond, strategy_types, default_poll_size, fidelity, implied_values
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, maximal_lottery, reference_points, FRONT_TOLERANCE
 import participation as part
 import manipulation as manip
@@ -174,8 +174,14 @@ def one_election(job):
             B0 = None
             if start == "previous":
                 perm = np.random.default_rng([seed, e, zlib.crc32(b"relabel")]).permutation(C)
-                B0 = np.empty_like(dummy[name])
-                B0[:, perm] = dummy[name]
+                Bp, ents_p = dummy[name]
+                full = [(d, 0) for d in range(C)]
+                ents_now = ents if nominating else full
+                if list(ents_p) == full and list(ents_now) == full:     # the same field: the ballots as they are
+                    B0 = np.empty_like(Bp)
+                    B0[:, perm] = Bp
+                else:                                   # another field (strategic nomination)
+                    B0 = carry_over(m, Bp, ents_p, ents_now, perm)
             act, cst, lead = {}, {}, {}
             camp = {"share": phi, "cand_u": cu_all[np.ix_(orig, orig)]} if camp_on else None
             # all requested numbers of poll rounds from one run (see strategy.respond)
@@ -338,8 +344,6 @@ def check_params(a, error):
         error("--ks-cut must be between 0 and 1")
     if any(v < 0 for v in vals("poll_error")):
         error("--poll-error must be 0 or more")
-    if "previous" in vals("start") and (any(vals("exits")) or any(vals("clones"))):
-        error("--start previous needs the original field: not with --exits or --clones")
     if any(v not in (0, 1) for v in vals("campaign")):
         error("--campaign must be 0 (off) or 1 (on; it plans with --coordination, the share until 2026-10-29)")
     if any(not 0 <= v <= 1 for v in vals("coordination")):
@@ -397,8 +401,9 @@ LATER_PARAMS = {"campaign": 0.0, "risk": 0, "risk_tolerance": 0.1, "coordination
 
 def previous_election(args):
     """The dummy election for --start previous: an extra electorate (its own random stream) under the
-    same settings (also individual voters, campaigns and risk; their draws on own "previous-" streams),
-    through the same number of poll rounds; returns its final ballots."""
+    same settings (also individual voters, campaigns, risk and strategic nomination; their draws on own
+    "previous-" streams), through the same number of poll rounds; returns its final ballots and its
+    field (the entries (original, is_clone))."""
     sc, p, rounds, name = args
     set_max_score(p["max_score"])
     set_lazy(p.get("lazy", 0.0))
@@ -409,11 +414,12 @@ def previous_election(args):
     individual = bool(int(p.get("individual", 0)))
     followers = (1 + np.random.default_rng([p["seed"], zlib.crc32(b"previous-bold")]).random(len(u))
                  * max(0.0, phi * len(u) - 1)) if individual else None
-    camp = None
-    if float(p.get("campaign", 0.0)) > 0:
-        cu = clone_setup(ele.voters, ele.cands, sc.width, np.random.default_rng([p["seed"], zlib.crc32(b"previous-clones")]),
-                         ele.voter_weights, ele.cand_weights, getattr(sc, "utility", "exp"))[1]
-        camp = {"share": phi, "cand_u": cu}
+    exits, clones = int(p.get("exits", 0)), int(p.get("clones", 0))
+    camp_on = float(p.get("campaign", 0.0)) > 0
+    if camp_on or exits or clones:                 # clones' positions and candidates' preferences
+        u_clone, cu = clone_setup(ele.voters, ele.cands, sc.width,
+                                  np.random.default_rng([p["seed"], zlib.crc32(b"previous-clones")]),
+                                  ele.voter_weights, ele.cand_weights, getattr(sc, "utility", "exp"))
     risk = ({"threshold": np.random.default_rng([p["seed"], zlib.crc32(b"previous-risk")]).random(len(u)),
              "kappa": p.get("risk_tolerance", 0.1)} if bool(p.get("risk", 0)) else None)
     set_voter_lazy(lazy_cuts(np.random.default_rng([p["seed"], zlib.crc32(b"previous-lazy")]), len(u), p.get("lazy", 0.0)))
@@ -423,14 +429,44 @@ def previous_election(args):
     adaptive = personal_thresholds(draw, p["strategic"], p.get("adaptive", 0.0))
     aggressive = rng.random(len(u)) < p["aggressive"]
     m = METHODS[name]
+    C = u.shape[1]
+    ents = [(d, 0) for d in range(C)]
     with m.applied():
-        B, _, _ = respond(m, u, np.random.default_rng([p["seed"], zlib.crc32(b"previous-learning")]), rounds=rounds,
+        uf = u
+        if exits or clones:                         # strategic nomination, as in the elections
+            field, _ = nominate(m, u, u_clone, cu, np.random.default_rng([p["seed"], zlib.crc32(b"previous-nomination")]),
+                                exits, clones)
+            ents = field.entries()
+            uf = utilities(ents, u, u_clone)
+        orig = np.array([d for d, _ in ents])
+        camp = {"share": phi, "cand_u": cu[np.ix_(orig, orig)]} if camp_on else None
+        B, _, _ = respond(m, uf, np.random.default_rng([p["seed"], zlib.crc32(b"previous-learning")]), rounds=rounds,
                           samples=p["samples"], poll_size=p["poll_size"], search=p["search"], strategic=strategic,
                           poll_error=p["poll_error"], aggressive=aggressive, adaptive=adaptive,
                           campaign=camp, risk=risk, individual=followers)
     set_voter_lazy(None)
     set_voter_approval(None)
-    return B
+    return B, ents
+
+
+def carry_over(m, B, ents_prev, ents_now, perm):
+    """--start previous on a field that differs from the previous election's (strategic nomination):
+    the previous ballots, read as the values they imply (strategy.implied_values), relabelled (previous
+    original d is this election's perm[d]; a clone stays a clone), and cast again in the method's
+    format on this election's field (Method.sincere, as moves.render does; Inverse-* methods read the
+    ordinary way). A candidate on this field who was not in the previous election (a new clone, or an
+    original who had withdrawn) gets nothing there: the lowest implied value (0, as the bottom of a
+    ballot). Candidates who are not on this field are left out. Read through the implied values, a ballot keeps its order and levels, but not
+    what the format adds beyond them (e.g. the runoff ranking of a two-round ballot follows the
+    round-1 marks)."""
+    V = implied_values(m, B)
+    at = {(int(perm[d]), k): j for j, (d, k) in enumerate(ents_prev)}
+    W = np.zeros((len(B), len(ents_now)))
+    for i, (d, k) in enumerate(ents_now):
+        j = at.get((int(d), k))
+        if j is not None:
+            W[:, i] = V[:, j]
+    return m.sincere(-W if m.inverse else W)
 
 
 def _fmt_time(t):
