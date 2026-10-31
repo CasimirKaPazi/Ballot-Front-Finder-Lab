@@ -348,11 +348,8 @@ def check_params(a, error):
         error("--campaign needs a --coordination above 0 (a share of the audience to plan with)")
     if any(v < 0 for v in vals("risk_tolerance")):
         error("--risk-tolerance must be 0 or more")
-    if (max(vals("campaign")) > 0 or max(vals("risk")) > 0 or max(vals("individual")) > 0) \
-            and "previous" in vals("start"):
-        error("--campaign, --risk and --individual are not available with --start previous yet")
     if max(vals("individual")) > 0 and max(vals("risk")) > 0:
-        error("--individual replaces the ranking groups and risk: not together with --risk")
+        error("--risk is for the ranking groups: add --individual 0")
 
 
 def cand_text(disp, shift):
@@ -400,12 +397,25 @@ LATER_PARAMS = {"campaign": 0.0, "risk": 0, "risk_tolerance": 0.1, "coordination
 
 def previous_election(args):
     """The dummy election for --start previous: an extra electorate (its own random stream) under the
-    same settings, through the same number of poll rounds; returns its final ballots."""
+    same settings (also individual voters, campaigns and risk; their draws on own "previous-" streams),
+    through the same number of poll rounds; returns its final ballots."""
     sc, p, rounds, name = args
     set_max_score(p["max_score"])
     set_lazy(p.get("lazy", 0.0))
     rng = np.random.default_rng([p["seed"], zlib.crc32(b"previous")])
-    u = electorate_positions(sc, rng)[0]
+    ele = draw_electorate(sc, rng)                  # the same draws as electorate_positions
+    u = ele.u
+    phi = float(p.get("coordination", 0.25))
+    individual = bool(int(p.get("individual", 0)))
+    followers = (1 + np.random.default_rng([p["seed"], zlib.crc32(b"previous-bold")]).random(len(u))
+                 * max(0.0, phi * len(u) - 1)) if individual else None
+    camp = None
+    if float(p.get("campaign", 0.0)) > 0:
+        cu = clone_setup(ele.voters, ele.cands, sc.width, np.random.default_rng([p["seed"], zlib.crc32(b"previous-clones")]),
+                         ele.voter_weights, ele.cand_weights, getattr(sc, "utility", "exp"))[1]
+        camp = {"share": phi, "cand_u": cu}
+    risk = ({"threshold": np.random.default_rng([p["seed"], zlib.crc32(b"previous-risk")]).random(len(u)),
+             "kappa": p.get("risk_tolerance", 0.1)} if bool(p.get("risk", 0)) else None)
     set_voter_lazy(lazy_cuts(np.random.default_rng([p["seed"], zlib.crc32(b"previous-lazy")]), len(u), p.get("lazy", 0.0)))
     set_voter_approval(np.random.default_rng([p["seed"], zlib.crc32(b"previous-approval")]).random(len(u)))
     draw = rng.random(len(u))
@@ -416,7 +426,8 @@ def previous_election(args):
     with m.applied():
         B, _, _ = respond(m, u, np.random.default_rng([p["seed"], zlib.crc32(b"previous-learning")]), rounds=rounds,
                           samples=p["samples"], poll_size=p["poll_size"], search=p["search"], strategic=strategic,
-                          poll_error=p["poll_error"], aggressive=aggressive, adaptive=adaptive)
+                          poll_error=p["poll_error"], aggressive=aggressive, adaptive=adaptive,
+                          campaign=camp, risk=risk, individual=followers)
     set_voter_lazy(None)
     set_voter_approval(None)
     return B
@@ -743,13 +754,13 @@ def parser():
                          "2026-10-29); with --individual 1: random variations per voter and round (discovery, "
                          "default 0)")
     ap.add_argument("--aggressive", type=float, default=0.5,
-                    help="share of strategic voters who exaggerate whenever it cannot hurt; the others (kind) "
-                         "only when the polls show a gain")
+                    help="ranking groups (--individual 0) only: share of strategic voters who exaggerate whenever it "
+                         "cannot hurt; the others (kind) only when the polls show a gain")
     ap.add_argument("--campaign", type=float, default=0.0,
                     help="experimental: 1 = every candidate recommends a move each round, planned with --coordination "
                          "of their audience following (docs/campaigns.md); 0 = off")
-    ap.add_argument("--individual", type=int, default=0, choices=[0, 1],
-                    help="experimental: 1 = the average of the round's polls, read for how close each candidate is; "
+    ap.add_argument("--individual", type=int, default=1, choices=[0, 1],
+                    help="1 (default since 2026-10-31) = individual voters; 0 = the ranking groups. 1: the average of the round's polls, read for how close each candidate is; "
                          "each voter decides alone by their stake in the race, and picks compromise, burial or "
                          "sincere by what the poll totals promise if 1 to --coordination of the voters (their "
                          "boldness) vote as they do (individual.py); --aggressive does not apply, --search: random "
@@ -758,8 +769,8 @@ def parser():
                     help="with --individual: the largest following a bold voter expects (share of the electorate); "
                          "with --campaign: the share of their audience a candidate plans with")
     ap.add_argument("--risk", type=int, default=0, choices=[0, 1],
-                    help="1 = each voter is careful or bold by their satisfaction with the polls, "
-                         "instead of the fixed --aggressive split (docs/campaigns.md)")
+                    help="ranking groups (--individual 0) only: 1 = each voter is careful or bold by their "
+                         "satisfaction with the polls, instead of the fixed --aggressive split (docs/campaigns.md)")
     ap.add_argument("--risk-tolerance", type=float, default=0.1,
                     help="with --risk 1: how much loss bold voters accept, per unit of their shortfall (κ)")
     ap.add_argument("--lazy", type=float, default=0.0,

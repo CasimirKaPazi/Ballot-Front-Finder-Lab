@@ -102,7 +102,7 @@ The exaggerated score ballot and the approval ballot say the same and get the sa
 **How to interpret:**
 - The values are the result. Whether a method lies on the Pareto front is already interpretation: it depends on which axes count and on which methods are included. "Dominated by" is only a pointer to where to look.
 - The axes are kept separate on purpose. Each carries its own value judgement (utilitarian or majoritarian, honest or strategic); no weighting into a single score.
-- Read results **per condition first**. The strategic axes depend on how voters strategise: the number of poll rounds, the aggressive and strategic shares (see [model.md](model.md), Coordination).
+- Read results **per condition first**. The strategic axes depend on how voters strategise: the number of poll rounds, the strategic share and the coordination (see [model.md](model.md), Coordination).
 - An ordering between two methods only counts if their paired difference is not a tie.
 
 **Plots** (in the analysis folder):
@@ -130,7 +130,7 @@ To see how much a model assumption matters, vary each parameter on its own aroun
 
 ```
 python sweep.py --one-at-a-time --noise-strength 5 3 7 --dims 6 10 --width 0.7 1.0 \
-    --rounds 1 3 --aggressive 0.5 0 1 --strategic 0 0.5 1 --seeds 1 2 --elections 400 --out model
+    --rounds 1 3 --coordination 0.25 0.1 0.5 --strategic 0 0.5 1 --seeds 1 2 --elections 400 --out model
 python analyze.py model                                   # -> output/model/analysis/
 ```
 

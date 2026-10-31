@@ -1,4 +1,4 @@
-"""Individual voters reading the polls (run.py --individual 1; experimental). Called by strategy.respond
+"""Individual voters reading the polls (run.py --individual 1, the default since 2026-10-31). Called by strategy.respond
 once per round instead of the ranking groups.
 
 - The polls of a round, averaged (a poll of polls): the totals of `samples` samples of the voters (as

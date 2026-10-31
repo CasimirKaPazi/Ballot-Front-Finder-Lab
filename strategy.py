@@ -1,7 +1,10 @@
 """Strategic voting in poll rounds (respond): a single election with a few polls before it.
   Round 0: every voter votes sincerely ("naive", uninformed).
-  Round r (1 ... rounds): a poll of round r-1 is published, and every strategic group answers it
+  Round r (1 ... rounds): a poll of round r-1 is published, and every strategic voter answers it
   at the same time; nobody sees anyone else's answer before the next poll.
+  Two engines answer: individual voters (individual.py; run.py --individual 1, the default since
+  2026-10-31), each deciding alone from the averaged polls, or the ranking groups below
+  (--individual 0, the engine of version 1.0.0). The polls are the same for both.
   - A poll publishes only the method's own counts (the summed ballot features the method decides
     from: first preferences for Plurality, approvals for Approval, the pairwise matrix for
     Condorcet methods, ...), from a random sample of `poll_size` voters (without replacement),
@@ -12,6 +15,7 @@
   - Uncertainty: voters treat a poll as `poll_error` times less precise than its sampling error
     (default 2: real polls miss results by about twice their stated sampling error, Shirani-Mehr,
     Rothschild, Goel & Gelman 2018). The polls are spread around the true count by that factor.
+  The rest of this docstring describes the ranking groups.
   - Leaders: the two candidates that win most often over the round's polls, the same for
     everyone. If one candidate wins every poll, the polls are widened (deviations x 2, 4, ...,
     counts kept on the side of zero of the true count) until another one wins somewhere: the race
@@ -186,7 +190,7 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strateg
     following a recommendation, "top": candidate whose recommendation has the most followers (-1:
     none), "bold": share of the strategic voters who are bold}}. leaders: a dict, filled with {round: the
     round's two poll leaders (a, b)}, as the polls the voters answered showed them. individual: voters
-    read the averaged polls and each decides alone (experimental; individual.py): None/False (off), True
+    read the averaged polls and each decides alone (individual.py): None/False (the ranking groups), True
     (each voter expects only themselves to vote as they do), or per voter the number of voters they
     expect to (their boldness)."""
     if report is not None:

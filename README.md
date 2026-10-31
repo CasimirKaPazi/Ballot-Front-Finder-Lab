@@ -10,7 +10,7 @@ A simulator for comparing single-winner voting methods: plurality, runoffs, IRV,
 
 1. **An electorate.** Voters and candidates are points in an issue space (by default six issues, with voters gathered in clumps within clumps). A voter likes a candidate less the farther away they are. Each election draws a new electorate ([model](docs/model.md), Electorates).
 2. **Honest ballots.** Each voter fills in the method's ballot sincerely: a name, a ranking, approvals or scores, depending on the method ([model](docs/model.md), Ballots and sincere voting).
-3. **Poll rounds.** Polls show the method's own counts from a sample of the electorate. Voters (by default each one adaptive: strategic in a round when the race between the two leaders matters enough to them), in groups with the same preferences, change their ballot if that improves the result for them in the polls; all groups answer the same poll at once, and the next poll shows the new ballots ([model](docs/model.md), Strategy engine).
+3. **Poll rounds.** Polls show the totals a real poll could publish, from a sample of the electorate. Each voter reads how close the race is and, if enough is at stake for them (by default each one adaptive), compromises, buries or stays sincere, judging by simple arithmetic on the poll totals what their move would do if others like them did the same; everyone answers the same poll at once, and the next poll shows the new ballots ([model](docs/model.md), Strategy engine).
 4. **Optionally**, candidates may withdraw or field clones beforehand (Strategic nomination), and a diagnostic checks whether some voters would do better by staying home (Participation; both in [model](docs/model.md)).
 
 **What is measured.** Two efficiencies, both 0 for a random ballot and 100 for the best candidate of each election ([analysis](docs/analysis.md), Axes):
@@ -38,11 +38,11 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 - Candidates can be made unlike the electorate (clustered in the centre, spread out or shifted).
 
 **Voters and strategy** ([model](docs/model.md), Strategy engine)
-- Poll rounds: voters see only the method's own poll counts, with realistic poll error, and answer them all at once; groups with the same preferences act as blocs. Aggressive voters exaggerate whenever it cannot hurt, kind ones only for a clear gain.
+- Poll rounds: voters see only totals a real poll could show, with realistic poll error, and answer them all at once. Individual voters (the default) each decide alone, by how close the race is and what a move would do if 1 to a quarter of the electorate did the same; they trust moves less that did not keep their promise, and act only when the gain beats the poll's error. Candidates' campaigns are an option. The engine of version 1.0.0, ranking groups acting as blocs, is still available.
 - Who strategises: by default adaptive voters, who strategise in a round when the race between the two leaders matters enough to them, so attack and defence come from the same rule; or a fixed share of always-strategic voters, as in other simulations.
 - Laziness: truncated rankings and fewer approvals or scores, each voter with their own cut.
 - Honest approval fitted to real approval elections: each voter approves above a personal threshold between their mean and their favourite, so approvals stay few as the field grows ([model](docs/model.md), Honest approval).
-- Also: convergent learning as a long-run alternative, strategic nomination (candidates withdraw or field clones), a first poll from a previous election (does a method let the electorate leave a strategic state?), a check of the no-show paradox, and a manipulation test (how often and how badly an informed coalition can manipulate from honest ballots, one- and two-sided).
+- Also: strategic nomination (candidates withdraw or field clones), a first poll from a previous election (does a method let the electorate leave a strategic state?), a check of the no-show paradox, and a manipulation test (how often and how badly an informed coalition can manipulate from honest ballots, one- and two-sided).
 
 **Measures** ([analysis](docs/analysis.md))
 - VSE and WME with the same reference points (random ballot and best candidate), with honest and with strategic ballots, plus Condorcet efficiency and how often the winner is a poor candidate (below the median candidate), which averages hide.
@@ -69,7 +69,7 @@ Python 3.9 or newer + NumPy; the analysis also needs matplotlib (`pip install -r
 python test_methods.py                                   # hand-built checks
 python regression.py                                     # same numbers as before? (after a code change)
 python run.py --out base                                 # one condition at the defaults -> output/base/
-python sweep.py --rounds 1 2 3 --aggressive 0 0.5 1 --out rounds   # grid of conditions -> output/rounds/
+python sweep.py --rounds 1 2 3 --coordination 0.1 0.25 0.5 --out rounds   # grid of conditions -> output/rounds/
 python analyze.py rounds --compare "BTR-score:STAR"      # -> output/rounds/analysis/
 python show_electorates.py --model noise clusters --out look        # look at the electorates, no methods
 ```
@@ -80,7 +80,7 @@ Every run or sweep writes into its own folder in `output/`, and `analyze.py` wri
 
 | File | Contents |
 |---|---|
-| [docs/model.md](docs/model.md) | The model: electorates and their defaults, ballots and sincere voting (honest approval, laziness, the score range), the strategy engine (poll rounds, partial strategy and adaptive voters, convergent learning), starting information, strategic nomination, participation, manipulation test |
+| [docs/model.md](docs/model.md) | The model: electorates and their defaults, ballots and sincere voting (honest approval, laziness, the score range), the strategy engine (poll rounds, partial strategy and adaptive voters, coordination), starting information, strategic nomination, participation, manipulation test |
 | [docs/methods.md](docs/methods.md) | Groups and sets, every method's rule, add-ons |
 | [docs/analysis.md](docs/analysis.md) | Measures and analysis: the axes (VSE, WME, CE), the reachable frontier, strategy types, sincerity and fidelity, the front, the report and its plots, robustness and rank stability |
 | [docs/running.md](docs/running.md) | Running: output folders and what a run writes, progress and resuming, all parameters of `run.py`, `sweep.py` and `analyze.py`, combining runs, older results files, renamed methods, safety and fingerprints, comparing across many runs (`compare.py`), the files of the code, checking changes |

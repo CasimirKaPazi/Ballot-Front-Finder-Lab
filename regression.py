@@ -56,6 +56,11 @@ CONDITIONS = [
     ("adaptive", {"strategic": 0.2, "adaptive": 0.6, "lazy": 0.4, "rounds": 3}),
     ("linear", {"utility": "linear", "exits": 1, "clones": 1}),   # linear utility, with nomination
     ("quadratic", {"utility": "quadratic"}),                     # quadratic utility
+    # individual voters (the default since 2026-10-31; the conditions above are the ranking groups)
+    ("individual", {"individual": 1, "search": 0, "strategic": 0.2, "adaptive": 0.8, "rounds": 3}),
+    ("individual-campaign", {"individual": 1, "campaign": 1.0, "coordination": 0.25, "search": 1, "strategic": 1.0,
+                             "adaptive": 0.0, "rounds": 3}),           # with campaigns and discovery
+    ("individual-previous", {"individual": 1, "search": 0, "start": "previous"}),
 ]
 ELECTIONS = 2
 
