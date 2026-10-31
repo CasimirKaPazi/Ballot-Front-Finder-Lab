@@ -75,7 +75,6 @@ def main():
     ap.add_argument("--aggressive", type=float, nargs="+", default=[0.5])
     ap.add_argument("--lazy", type=float, nargs="+", default=[0.0])
     ap.add_argument("--campaign", type=float, nargs="+", default=[0.0])
-    ap.add_argument("--moves", type=int, nargs="+", default=[0], choices=[0, 1])
     ap.add_argument("--coordination", type=float, nargs="+", default=[0.25])
     ap.add_argument("--individual", type=int, nargs="+", default=[0], choices=[0, 1])
     ap.add_argument("--risk", type=int, nargs="+", default=[0], choices=[0, 1])

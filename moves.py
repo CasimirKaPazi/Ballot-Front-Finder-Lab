@@ -1,10 +1,11 @@
-"""Shared moves: an experimental answer to the poll rounds (run.py --moves 1), in place of the ranking
-groups of strategy.py. It is called by strategy.respond once per round, after the polls, the leaders
-and the strategic voters of the round are known.
+"""Moves: how a voter changes their ballot, as a sequence of steps naming candidates, and the ballot
+that follows (render). Used by the individual voters (individual.py) and by the tests that check the
+moves against the naive exaggerations and push-over of the ranking-group model (_naive, _push). (Until
+2026-10-31 also an experimental engine of moves shared within audiences, run.py --moves 1.)
 
-- A move is a sequence of steps, each naming candidates; a voter applies it to their own utilities
-  and casts the ballot that follows from them in the method's format (render). Two voters following
-  the same move can cast different ballots: rated ballots keep their own intensities.
+- A voter applies a move to their own utilities and casts the ballot that follows from them in the
+  method's format. Two voters following the same move can cast different ballots: rated ballots keep
+  their own intensities.
   Formats with a "nothing" level (approval, truncated rankings) give nothing to the candidates a move
   put at the bottom; after a levelling step (upto, downfrom, below) they support exactly the others
   (after an upto: those at or above its level).
@@ -15,28 +16,7 @@ and the strategic voters of the round are known.
       ("upto", X)         everyone liked at least as much as X tied with X, at the top
       ("downfrom", Y)     everyone liked no more than Y tied with Y, at the bottom
       ("below", X)        everyone liked less than X tied at the bottom: nothing below X
-- Audiences share moves. One per place in the polls (the two leaders and the next place); every
-  strategic voter belongs to those of their first and second choice among the places, and with
-  campaigns also to the audience of the campaign they listen to (the candidate they like most among
-  those campaigning).
-- An audience tries: the moves its members followed in the last round; the naive exaggerations and
-  the push-over of today's model, written as moves (NAIVE, PUSH), for both orders of the leaders; for
-  a campaign audience the recommended move instead; and `search` random moves, each one random step
-  after the audience's most followed move of the last round.
-- Every voter judges every move of their audiences by their own expected utility over the polls, as
-  if a share s of the audience's strategic members switched from sincere to it (each applying it to
-  their own utilities), the rest of the counts as polled. s = 0: one voter's own impact, as the change
-  of an average member of the audience (a stand-in for the voter's own ballot, which would cost one
-  count per voter). A move that strictly gains is taken (the
-  best one). Otherwise aggressive (bold) voters take the best of the naive moves (exaggerations,
-  push-over for the leader they prefer, their own move of the last round) if it does not lose (bold
-  ones with --risk up to their tolerance): they exaggerate when it cannot hurt, as in today's model;
-  the naive moves for the other leader, campaign recommendations, random moves and the moves of others
-  are taken only if they gain. Kind voters take only gains.
-  Otherwise they vote sincerely. Ties keep the move followed in the last round.
 """
-from collections import Counter
-
 import numpy as np
 
 import methods
@@ -196,108 +176,3 @@ def random_move(base, C, rng):
         X, Y = (int(x) for x in rng.choice(C, 2, replace=False))
         return tuple(base) + ((kind, X, Y),)
     return tuple(base) + ((kind, int(rng.integers(C))),)
-
-
-def answer(method, count, u, B, sincere, F_sin, polls, tot_dev, F, rng, *, active, eager, tol_v, places, recs,
-           share, search, last):
-    """One round of shared moves. count: the method as voters count a poll (Method.poll_view). B: the ballots the polls were drawn from; F: their features (None:
-    a method without feature sums, polled by tallying, see strategy.poll_tallies); tot_dev: the polled
-    counts (samples x d); F_sin: features of the sincere ballots; places: the poll places (leaders and
-    next place, None where not found); recs: campaign recommendations [(c, (X, Y), P)]; last: each
-    voter's move in the last round (dict). Returns the new ballots, the moves followed (dict voter ->
-    move), and the followers per campaign candidate (array C)."""
-    from strategy import poll_tallies
-    n, C = u.shape
-    strat = np.flatnonzero(active)
-    pl = [c for c in places if c is not None]
-    a, b = places[0], places[1]
-    third = places[2] if len(places) > 2 else None
-    # audiences: key -> members (voter order)
-    aud = {}
-    for v in strat:
-        first_two = sorted(pl, key=lambda c: -u[v, c])[:2]
-        for c in first_two:
-            aud.setdefault(("place", c), []).append(int(v))
-    rec_of = {}
-    if recs:
-        cs = [c for c, _, _ in recs]
-        rec_of = {c: (("above",) + tuple(mv),) for c, mv, _ in recs}
-        for v in strat:
-            c = max(cs, key=lambda x: u[v, x])
-            aud.setdefault(("camp", c), []).append(int(v))
-    best_all, best_naive = {}, {}                         # voter -> (gain, move, row, from campaign c or -1)
-    for key in sorted(aud, key=lambda k: (k[0], k[1])):
-        M = np.array(aud[key])
-        prev = Counter(last[v] for v in M if last.get(v) is not None)
-        moves = [mv for mv, _ in sorted(prev.items(), key=lambda kv: (-kv[1], kv[0]))]
-        naive = {}                                        # naive move -> the leader it is for
-        if key[0] == "place":
-            if b is not None:
-                for A, Bo in ((a, b), (b, a)):
-                    for mv in _naive(method.ballot, A, Bo) + (
-                            [_push(method.ballot, A, Bo, third)] if third is not None else []):
-                        if mv is not None:
-                            moves.append(mv)
-                            naive.setdefault(mv, (A, Bo))
-        base = moves[0] if prev else ()
-        for _ in range(search):
-            moves.append(random_move(base, C, rng))
-        seen, uniq = set(), []
-        for mv in moves:
-            if mv not in seen:
-                seen.add(mv)
-                uniq.append(mv)
-        lazy, appr = own_params(M)
-        s_eff = share if share > 0 else 1.0 / len(M)        # 0: one voter's impact (an average member)
-        if F is not None:
-            cur = s_eff * (F_sin[M].sum(axis=0) - F[M].sum(axis=0))
-            base_rows = tot_dev + cur                     # the share of the audience voting sincerely
-            P0 = count.decide_many(base_rows, C)
-        else:
-            take = M[rng.permutation(len(M))[:int(np.ceil(s_eff * len(M)))]]
-            B0 = B.copy()
-            B0[take] = sincere[take]
-            P0 = poll_tallies(count.tally, B0, polls)
-        uM = u[M]
-        for mv in uniq:
-            X = render(method, u[M], mv, sincere[M], lazy, appr)
-            if F is not None:
-                D = s_eff * (count.features(X).sum(axis=0) - F_sin[M].sum(axis=0))
-                P = count.decide_many(base_rows + D, C)
-            else:
-                B2 = B0.copy()
-                pos = {v: i for i, v in enumerate(M)}
-                B2[take] = X[[pos[v] for v in take]]
-                P = poll_tallies(count.tally, B2, polls)
-            g = (P - P0).mean(axis=0) @ uM.T               # each member's own expected gain
-            camp_c = key[1] if key[0] == "camp" and mv == rec_of.get(key[1]) else -1
-            side = naive.get(mv)
-            for i, v in enumerate(M):
-                gi = float(g[i])
-                entry = (gi, mv, X[i], camp_c)
-                # without a gain, only the naive moves for the leader the voter prefers (or their own last move)
-                own = side is not None and u[v, side[0]] >= u[v, side[1]]
-                for best, ok in ((best_all, True), (best_naive, own or mv == last.get(v))):
-                    if not ok:
-                        continue
-                    cb = best.get(v)
-                    if (cb is None or gi > cb[0] + TOL
-                            or (abs(gi - cb[0]) <= TOL and mv == last.get(v) and cb[1] != mv)):
-                        best[v] = entry
-    newB = sincere.copy()
-    followed = {}
-    follow = np.zeros(C)
-    for v in strat:
-        v = int(v)
-        pick = None
-        if v in best_all and best_all[v][0] > TOL:
-            pick = best_all[v]
-        elif eager[v] and v in best_naive and best_naive[v][0] >= -TOL - tol_v[v]:
-            pick = best_naive[v]
-        if pick is not None:
-            gi, mv, row, cc = pick
-            newB[v] = row
-            followed[v] = mv
-            if cc >= 0:
-                follow[cc] += 1
-    return newB, followed, follow
