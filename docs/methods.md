@@ -180,62 +180,7 @@ A real, separate runoff: voters come back and vote between the finalists, by the
 
 ## Compositions: methods built from parts
 
-A method can also be written as a composition of parts, on the command line or in an add-on (compose.py; the plan and its reasons in [pipelines.md](pipelines.md)). It runs like any other method: `python run.py --methods 'smith >> "Score"' 'best(share(score) - worst(wv) / n)' Score`.
-
-A composition is a chain of steps (`>>`, read "then"): sets narrow the field, a transform changes a reading, and the last step decides. Readings pass through the steps: after `smith`, `"Score"` reads the same score totals, on the Smith set only. Readings that depend on which candidates are in (first preferences, rank points) are not taken from an earlier field: after a set they are counted again from the ballots restricted to the field (scores and marks as cast, rankings as the induced ranking among the field, an unranked candidate staying unranked). Such a composition is counted from the ballots, which is slower (`ballots("rank") >> smith >> "Borda"`: about 1.5 ms per count against 0.02 ms for Borda), and its polls use the lab's default poll reading: score totals on score ballots, first preferences otherwise ([model.md](model.md), What a poll shows).
-
-| Part | Kind | Meaning |
-|---|---|---|
-| `score` | values | score totals; on rankings rank points (Borda); on two-round ballots the round-1 scores, approvals or marks |
-| `firsts` | values | first preferences among the current field (rankings; on rankings with ties a whole vote for each tied at the top, as ER-IRV; on truncated rankings an exhausted ballot counts for nobody). In a poll: estimated from the first preferences and the transfer table, as the IRV family's stand-in |
-| `margins`, `wv`, `po` | pairs | pairwise margins; winning votes (the votes of the winner of a pair, 0 for the loser); pairwise opposition (the votes for one over the other, whoever wins). On two-round ballots from the round-1 marks |
-| `soft(f)` | pairs | soft margins, as Soft Minimax: per voter the score difference, clipped to the fraction f of the range (0 < f ≤ 1) and divided by it |
-| `n` | number | the number of voters |
-| `levels`, `points` | per level | voters per score level (top level first); the same weighted by the level's score |
-| `approvals(k)` | values | voters scoring a candidate at least k |
-| `share(values)` | values | values / (n × top score) |
-| `worst(pairs)` | values | each candidate's worst defeat: the largest value a rival has against them, 0 if none |
-| `total(pairs)` | values | row sums: a candidate's values against every other (`total(po)`: Borda points among the field on strict rankings) |
-| `diff(values)` | pairs | value of the row minus value of the column |
-| `smith` | set | the Smith set |
-| `best(values)` | set | everyone tied for the highest value |
-| `top(k, values)` | set | the k highest; a tie at the k-th place branches with equal weights |
-| `drop(values)` | set | everyone but the lowest; a tie for lowest branches |
-| `buck(levels)`, `buck(points)` | set | for every depth (the top 1, 2, … levels), the candidates ahead by voters or points from those levels, joined over the depths |
-| `challenger(set, pairs)` | set | the strongest challengers of a set: the candidates outside it with the largest value against one of its members; ties branch; nobody with a positive value: an empty set (which narrows nothing) |
-| `a \| b`, `a & b` | set | union, intersection of two sets of the same field (an empty intersection narrows nothing) |
-| `bottom_two(order, pairs)`, `bottom_two(order, pairs, tiebreak)` | set | one round: the bottom two by the order meet, the loser of the match is out (pairs: positive, the row wins); a tie goes to the higher tiebreak value, else is split |
-| `btr(order, pairs)`, `btr(order, pairs, tiebreak)` | set | the bottom-two climb on a fixed order: the lowest two meet, the winner meets the next one up; a tie is split, or goes to the higher tiebreak value and then to the candidate higher in the order (as BTR-score) |
-| `repeat(steps)` | set | the steps (sets and transforms) again and again, until one candidate is left or a round changes nothing; a `normalize` inside acts each round |
-| `normalize` | transform | every score ballot stretched over the current field (lowest there 0, highest the top score; not rounded); later steps read these scores |
-| `"Name"` | method | an existing method, on the current field and readings ([pipelines.md](pipelines.md), the feature table: which totals can be read on a narrower field, and which are counted again from the ballots) |
-| `runoff`, `runoff(values)` | method | a separate runoff between the finalists, by the runoff rankings of two-round ballots; a tie is split, or goes to the higher value. With more than two finalists (a tie before it), most runoff wins, ties split |
-| `ballots("type")` | first step | the ballot type; default that of the quoted method, else score runoff ballots with `runoff`, else score ballots |
-
-Values and pairs take `+ - * /` and `-` with each other and with numbers. A set at the end splits the win equally among its members (so `best(...)` at the end is "the highest wins, ties split"). The same part twice in one set expression takes the same branch of a tie (in SCR below, `top(1, score)` is the same Score winner on both sides of `|`). `|` binds looser than `>>`, as in Python, so a union before `>>` needs parentheses. Many built-in methods carry their composition as a comment in methods.py (`# composed: ...` above the method), for copying as a starting point; the tests check that each gives exactly the method. The hand-written versions stay, since they are faster (a composition takes about 1.4 to 3 times as long per count). Examples:
-
-```
-smith >> "Score"                            Smith//Score
-buck(points) >> normalize >> "Score"        ESR
-best(share(score) - worst(wv) / n)          MMWV+Score
-ballots("rank") >> best(-worst(margins))    Minimax
-ballots("weak") >> best(-worst(po))         MMPO
-ballots("rank") >> repeat(drop(firsts))     IRV
-ballots("rank") >> repeat(drop(total(po)))  Baldwin
-repeat(normalize >> drop(score))            INS
-btr(score, margins, score)                  BTR-score
-btr(score, margins + n * diff(share(score)))                MARS
-ballots("rank") >> repeat(bottom_two(firsts, margins))      BTR-IRV
-best(-worst(soft(0.2)))                     Soft Minimax
-top(2, score) >> runoff(score)              Score runoff
-ballots("app_run") >> top(2, score) >> runoff(score)                     Approval runoff
-(top(1, score) | challenger(top(1, score), margins)) >> runoff(score)    SCR (the add-on)
-```
-
-- **Names.** A composition is stored under a canonical spelling (spaces and the method's own name spelled as in the lab), so `smith>>"score"` and `smith >> "Score"` are the same method. Files about one method (track plots) get a safe name with a short hash. Quote compositions on the command line, as above.
-- **Group.** The group of the final quoted method; compositions that end in a set or `best(...)` form the group `composed`.
-- **Polls.** A composition's polls are counted from its parts' poll views: `normalize` is read as nothing in a poll (the raw scores), a quoted method by its own poll view ([model.md](model.md), What a poll shows). For ESR written this way, the polls give the same winners as the hand-written ESR's stand-in (Score). The voters' poll arithmetic then also sees the score levels, which the stand-in does not publish, so individual voters can answer a little differently (in a trial, 2 of 1,440 values).
-- **Settings.** A composition takes the settings of its final quoted method (e.g. a fixed score range).
+A method can also be written as a composition of parts, on the command line (`python run.py --methods 'smith >> "Score"'`) or in an add-on (`composed(smith >> "Score")`), without writing counting code: see [compositions.md](compositions.md).
 
 ## Add-ons: methods in separate files
 
@@ -245,7 +190,7 @@ A new method does not have to go into methods.py: put a Python file into the fol
 
 | Name | Required | Meaning |
 |---|---|---|
-| `METHODS` | yes | `{name: Method(ballot, decide, feats)}` (or `Method(ballot, full=tally)` for a rule that needs the whole ballot matrix, or `composed(...)` for a composition, see Compositions above: `from compose import composed, smith, best, score` and `"My method": composed(smith >> "Score")`); names must not clash with existing ones. Optional `settings={"max_score": X}` fixes the score range for this method, named `Name-X` (see [model.md](model.md), Score range) |
+| `METHODS` | yes | `{name: Method(ballot, decide, feats)}` (or `Method(ballot, full=tally)` for a rule that needs the whole ballot matrix, or `composed(...)` for a composition, see [compositions.md](compositions.md): `from compose import composed, smith, best, score` and `"My method": composed(smith >> "Score")`); names must not clash with existing ones. Optional `settings={"max_score": X}` fixes the score range for this method, named `Name-X` (see [model.md](model.md), Score range) |
 | `FEATURES` | no | new per-voter ballot features, `{name: (function(B) -> array per voter, shape of the sum given C)}`; they are summed over voters and poll samples, which keeps tallies fast |
 | `BALLOTS` | no | new ballot types, `{name: ballots.Ballot(...)}`: honest ballots, strategic changes, exaggerations, implied values and the worst ballot (see ballots.py; rarely needed). A type that uses the score range sets `score_range=True` (one made with `dataclasses.replace` from the score ballot keeps it), so its methods join the `max-score` set |
 | `GROUP` | no | the group its methods join: an existing one (e.g. `rated`) or a new one; default `addons` |

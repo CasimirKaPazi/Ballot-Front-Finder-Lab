@@ -879,7 +879,7 @@ _Xc = _run.carry_over(METHODS["Score"], np.array([[5.0, 2.0, 0.0], [0.0, 5.0, 3.
                       [(0, 0), (1, 0), (2, 0)], [(1, 0), (0, 0), (0, 1)], np.array([0, 1, 2]))
 assert _Xc.tolist() == [[2, 5, 0], [5, 0, 0]], _Xc            # B, A, A's clone; C left the race
 print("previous field ok")
-# Compositions (compose.py, docs/pipelines.md): written as compositions, Smith//Score, ESR, MMWV+Score
+# Compositions (compose.py, docs/compositions.md): written as compositions, Smith//Score, ESR, MMWV+Score
 # and Minimax give exactly the hand-written methods, their polls included
 import compose as _cp
 import re as _re
@@ -890,11 +890,12 @@ for _a, _b in zip(_src, _src[1:]):
     if _mc and _mm:
         _comps[_mm.group(1)] = _mc.group(1)
 assert len(_comps) >= 17, _comps
-if "SCR" in METHODS:                               # the add-on, if present
+if "SCR" in METHODS:                               # the add-on, if present: two spellings
     _comps["SCR"] = "(top(1, score) | challenger(top(1, score), margins)) >> runoff(score)"
+    _comps["SCR "] = '("Score" | challenger("Score", margins)) >> runoff(score)'   # methods as sets
 _rgc = np.random.default_rng(31)
 for _nm, _tx in _comps.items():
-    _h, _c = METHODS[_nm], _cp.composed(_cp.parse(_tx))
+    _h, _c = METHODS[_nm.strip()], _cp.composed(_cp.parse(_tx))
     assert _c.ballot == _h.ballot, _nm
     for _t in range(150):
         _C, _nv = int(_rgc.integers(2, 7)), int(_rgc.integers(3, 25))
@@ -962,6 +963,24 @@ for _tx in ['smith >> "Score"', "top(2, score) >> runoff(score)", 'ballots("rank
         _sx = {k: (v if v.shape else float(v)) for k, v in _sx.items()}
         assert np.allclose(_cp.evaluate(_c.composition, _sx, _C, _c.ballot),
                            _cp.evaluate(_c.composition, _sx, _C, _c.ballot, B=_Bx, exact=True)), (_tx, _Bx.tolist())
+# a method used as a set: the set of its winner; on two-round ballots a method of the first round's type
+# counts the round-1 marks (here DMS and ESR on the round-1 scores, then a runoff)
+_cq = _cp.composed(_cp.parse('("DMS" | "ESR") >> runoff(score)'))
+assert _cq.ballot == "score_run" and "r1_levels" in _cq.feats
+for _t in range(60):                               # against the two winners on the round-1 scores, then a runoff
+    _C, _nv = int(_rgc.integers(2, 6)), int(_rgc.integers(3, 20))
+    _Bq = (_rgc.integers(0, 6, (_nv, _C)) * _C + np.argsort(np.argsort(_rgc.random((_nv, _C)), 1), 1)).astype(float)
+    _S1, _R = np.floor_divide(_Bq, _C), np.mod(_Bq, _C)
+    _Mr = (_R[:, :, None] > _R[:, None, :]).sum(0) - (_R[:, :, None] > _R[:, None, :]).sum(0).T
+    _Pq = np.zeros(_C)
+    for _a, _wa in enumerate(METHODS["DMS"].tally(_S1)):
+        for _b, _wb in enumerate(METHODS["ESR"].tally(_S1)):
+            if _wa * _wb > 0:
+                if _a == _b:
+                    _Pq[_a] += _wa * _wb
+                else:
+                    _methods_mod.runoff(_Pq, _Mr, _a, _b, _wa * _wb, tiebreak=_S1.sum(0))
+    assert np.allclose(_cq.tally(_Bq), _Pq), _Bq.tolist()
 # soft margins for any fraction: 0.2 and 0.4 are the lab's features, another gets its feature on first use
 _c3 = _cp.composed(_cp.parse("best(-worst(soft(.3)))"))
 assert _c3.feats == ("soft30",) and _cp.canonical("best(-worst(soft(.3)))") == "best(-worst(soft(0.3)))"

@@ -87,7 +87,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--participation` | off | also check participation (no-show paradox) on sincere and learned ballots (see [model.md](model.md), Participation); slower |
 | `--manipulation` | off | also test coalition manipulation from honest ballots, one- and two-sided (see [model.md](model.md), Manipulation test) |
 | `--workers` | all cores | parallel processes |
-| `--methods` | the `standard` set (29 methods) | run only these methods (start from none); method, group or set names (see [methods.md](methods.md), Groups), case ignored; `all` for every method; also compositions, quoted, e.g. `'smith >> "Score"'` ([methods.md](methods.md), Compositions) |
+| `--methods` | the `standard` set (29 methods) | run only these methods (start from none); method, group or set names (see [methods.md](methods.md), Groups), case ignored; `all` for every method; also compositions, quoted, e.g. `'smith >> "Score"'` ([compositions.md](compositions.md)) |
 | `--exclude` | none | leave these out (from the default, or from `--methods`) |
 | `--out` | time-stamped | folder of the run: `output/<out>/` (see One folder per run) |
 | `--overwrite` | off | replace an existing run in `--out` |
@@ -220,7 +220,7 @@ python compare.py output/falloff --pairs "ESR:Score" "Score runoff:Minimax"
 | `scenario.py` | The settings of a condition's electorates (model and parameters) |
 | `ballots.py` | Ballot types, one entry per type in `BALLOTS`: encoding, sincere ballots, laziness, strategic changes and exaggerations, implied values and the worst ballot (for fidelity and sincerity) |
 | `methods.py` | Exact tallies on ballot matrices (ties shared), method groups, renamed methods, add-on loader |
-| `compose.py` | Compositions: methods built from parts (sets, readings, transforms, quoted methods), read from text; see [methods.md](methods.md), Compositions |
+| `compose.py` | Compositions: methods built from parts (sets, readings, transforms, quoted methods), read from text; see [compositions.md](compositions.md) |
 | `addons/` | Methods in separate files, loaded at start (see [methods.md](methods.md), Add-ons); `_template.py` to start from |
 | `strategy.py` | Poll rounds (both engines; the ranking groups' answers), sincerity and strategy types |
 | `individual.py` | Individual voters (the default engine, `--individual 1`): closeness, chances, stake, moves, judging, campaigns; one round of answers |

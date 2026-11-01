@@ -1694,8 +1694,8 @@ class Method:
 
 
 M_ = Method
-# "# composed: ..." above a method: the same method written as a composition (compose.py, docs/methods.md,
-# Compositions), for copying as a starting point; the hand-written version is kept because it is faster.
+# "# composed: ..." above a method: the same method written as a composition (compose.py,
+# docs/compositions.md), for copying as a starting point; the hand-written version is kept because it is faster.
 # test_methods.py checks that each of these gives exactly the method below it.
 METHODS = {
     # condorcet
@@ -1997,7 +1997,7 @@ def group_of(method):
     return next((g for g, ms in GROUPS.items() if method in ms), "other")
 
 
-# ---------- compositions (compose.py, docs/pipelines.md) ----------
+# ---------- compositions (compose.py, docs/compositions.md) ----------
 COMPOSED_GROUP = "composed"       # the group of a composition that does not end in a quoted method
 
 

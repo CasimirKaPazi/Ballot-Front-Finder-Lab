@@ -1,4 +1,4 @@
-"""Composing methods from parts (docs/pipelines.md; phases 1 to 3; for users: docs/methods.md, Compositions).
+"""Composing methods from parts (docs/compositions.md).
 
 A composition is a chain of steps over one state: the field (the candidates still in) and the readings
 known so far. Sets narrow the field and pass the readings through; transforms replace a reading; a
@@ -51,7 +51,7 @@ import numpy as np
 import methods as M
 from ballots import BALLOTS
 
-# ---------- how each feature narrows to a smaller field (docs/pipelines.md, the feature table) ----------
+# ---------- how each feature narrows to a smaller field (docs/compositions.md, Design notes) ----------
 CAND0 = {"sum", "app", "run_sum", "maxs", "pos", "upper", "ge1", "ge2", "eq0", "grades"}   # axis 0 is the candidate
 CAND1 = {"levels"}                                                                     # axis 1 is the candidate
 PAIR = {"gt", "runoff_gt", "round1_gt", "excess", "soft20", "soft40", "levelled", "diffhist"}   # axes 0, 1
@@ -74,12 +74,32 @@ def rated(ballot):
     return ballot in ("score", "grade3", "approval") or (b.score_range and b.marks is None)
 
 
+ROUND1 = {"score_run": "score", "app_run": "approval", "fav_run": "fav"}   # two-round: the round-1 ballot
+
+
+def base(f):
+    """The feature a derived one is made from (r1_...: the same on the round-1 marks)."""
+    return f[3:] if f.startswith("r1_") else f
+
+
+def r1(f):
+    """Feature f read on the round-1 marks of two-round ballots (made on first use)."""
+    name = "r1_" + f
+    if name not in M.FEATURES:
+        fn, shape = M.FEATURES[f]
+        M.FEATURES[name] = ((lambda fn: lambda B: fn(np.floor_divide(B, B.shape[1])))(fn), shape)
+    return name
+
+
 def is_pair(f):
+    f = base(f)
     return f in PAIR or f.startswith("soft")
 
 
 def restrictable(f, ballot):
     """Can feature f be read on a narrower field from its totals?"""
+    if f.startswith("r1_"):
+        return restrictable(base(f), ROUND1.get(ballot, ballot))
     if f == "sum":
         return rated(ballot)
     return f in CAND0 | CAND1 | AMONG | SCALAR or is_pair(f)
@@ -136,15 +156,16 @@ def restrict(s, f, field, C, norm=None):
     x = s[f]
     if len(F) == C:
         return x
-    if f in SCALAR:
+    b = base(f)
+    if b in SCALAR:
         return x
-    if f in CAND0:
+    if b in CAND0:
         return x[F]
-    if f in CAND1:
+    if b in CAND1:
         return x[:, F]
     if is_pair(f):
         return x[np.ix_(F, F)]
-    if f in AMONG:
+    if b in AMONG:
         sub = x[_sub_index(F, C)]
         return sub[:, F] if sub.ndim == 2 else sub
     raise KeyError(f)
@@ -812,7 +833,10 @@ def ballots(name):
 
 
 class Quoted(Part):
-    kind = "final"
+    """An existing method: as the last step its winner lottery; anywhere a set can stand, the set of its
+    winner (a tie branches with the lottery's weights). On two-round ballots, a method of the round-1
+    ballot type (score ballots for score runoff ballots, approval, one name) counts the round-1 marks."""
+    kind = "set"
 
     def __init__(self, name):
         hit = name if name in M.METHODS else next((k for k in M.METHODS if k.lower() == name.lower()), None)
@@ -831,10 +855,15 @@ class Quoted(Part):
     def view(self, poll):
         return self.method.poll_view() if poll else self.method
 
+    def _feat(self, f, ballot):
+        return f if self.method.ballot == ballot else r1(f)
+
     def check(self, ctx):
         m = self.view(ctx["poll"])
         if self.method.ballot != ctx["ballot"]:
-            raise CompositionError(f"{self.name} uses {self.method.ballot} ballots, the composition {ctx['ballot']}")
+            if ROUND1.get(ctx["ballot"]) != self.method.ballot:
+                raise CompositionError(f"{self.name} uses {self.method.ballot} ballots, the composition {ctx['ballot']}")
+            return set().union(*[_need(r1(f), ctx) for f in m.feats])
         if ctx["normalized"] and not ctx["poll"]:
             bad = [f for f in m.feats if f not in AFTER_NORMALIZE]
             if bad:
@@ -844,7 +873,14 @@ class Quoted(Part):
 
     def lottery(self, st):
         m = self.view(st.poll)
-        return np.asarray(m.decide({f: st.get(f) for f in m.feats}), float)
+        return np.asarray(m.decide({f: st.get(self._feat(f, st.ballot)) for f in m.feats}), float)
+
+    def branches(self, st, memo):
+        key = self.text()
+        if key in memo:
+            return [(1.0, memo[key], memo)]
+        P = self.lottery(st)
+        return [(float(P[i]), [st.field[i]], {**memo, key: [st.field[i]]}) for i in np.flatnonzero(P > 1e-12)]
 
 
 class Runoff(Part):
@@ -1017,16 +1053,18 @@ def _walk(expr):
 
 
 def ballot_of(expr):
-    """The composition's ballot type: ballots(...) if given, else that of its quoted methods, else score
-    runoff ballots if it has a runoff, else score ballots."""
+    """The composition's ballot type: ballots(...) if given; with a runoff the two-round ballot whose
+    first round is that of the first quoted method (score runoff ballots without one); else the ballot
+    of the first quoted method, else score ballots."""
     steps = _steps(expr)
     if steps[0].kind == "ballots":
         return steps[0].name
     parts = _walk(expr)
     quoted = [p for p in parts if isinstance(p, Quoted)]
-    if quoted:
-        return quoted[0].method.ballot
-    return "score_run" if any(isinstance(p, Runoff) for p in parts) else "score"
+    if any(isinstance(p, Runoff) for p in parts):              # two-round: the one whose first round fits
+        first = quoted[0].method.ballot if quoted else "score"
+        return first if first in ROUND1 else next((k for k, v in ROUND1.items() if v == first), "score_run")
+    return quoted[0].method.ballot if quoted else "score"
 
 
 def _C_of(s):
