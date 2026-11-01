@@ -882,11 +882,14 @@ print("previous field ok")
 # Compositions (compose.py, docs/pipelines.md): written as compositions, Smith//Score, ESR, MMWV+Score
 # and Minimax give exactly the hand-written methods, their polls included
 import compose as _cp
-_comps = {"Smith//Score": 'smith >> "Score"', "ESR": 'buck(points) >> normalize >> "Score"',
-          "MMWV+Score": "best(share(score) - worst(wv) / n)", "Minimax": 'ballots("rank") >> best(-worst(margins))',
-          "Score runoff": "top(2, score) >> runoff(score)",
-          "Approval runoff": 'ballots("app_run") >> top(2, score) >> runoff(score)',
-          "MMPO": 'ballots("weak") >> best(-worst(po))', "Soft Minimax": "best(-worst(soft(0.2)))"}
+import re as _re
+_src = open(_methods_mod.__file__).read().split("\n")         # the "# composed: ..." comments in methods.py
+_comps = {}
+for _a, _b in zip(_src, _src[1:]):
+    _mc, _mm = _re.match(r'\s*# composed: (.+)$', _a), _re.match(r'\s*"([^"]+)": M_\(', _b)
+    if _mc and _mm:
+        _comps[_mm.group(1)] = _mc.group(1)
+assert len(_comps) >= 17, _comps
 if "SCR" in METHODS:                               # the add-on, if present
     _comps["SCR"] = "(top(1, score) | challenger(top(1, score), margins)) >> runoff(score)"
 _rgc = np.random.default_rng(31)
@@ -901,7 +904,7 @@ for _nm, _tx in _comps.items():
             _Bc = (_rgc.integers(0, _methods_mod.MAXS + 1, (_nv, _C)) * _C
                    + np.argsort(np.argsort(_rgc.random((_nv, _C)), axis=1), axis=1)).astype(float)
         else:
-            _Bc = _h.sincere(_rgc.random((_nv, _C)), 0.0)
+            _Bc = _h.sincere(_rgc.random((_nv, _C)), _rgc.random(_nv) * 0.5)   # some laziness (truncation)
         assert np.allclose(_h.tally(_Bc), _c.tally(_Bc)), (_nm, _Bc.tolist())
         assert np.allclose(_h.poll_view().tally(_Bc), _c.poll_view().tally(_Bc)), (_nm, "poll", _Bc.tolist())
 # the canonical spelling: the same composition always has the same name, and reads back as itself
@@ -912,7 +915,9 @@ for _tx in ['(best(score) | smith) >> "Score"', "best(score - (score - 1))", "be
 # mistakes are caught with the parts' kinds named, and nothing outside the notation runs
 for _tx, _msg in [("top(2, smith)", "top needs values, smith is a set"),
                   ('ballots("score") >> top(2, score) >> runoff', "needs two-round ballots"), ("challenger(smith, score)", "challenger needs pairs"),
-                  ("best(approvals(0))", "at least 1"), ("best(soft(0.3))", "0.2 and 0.4"),
+                  ("best(approvals(0))", "at least 1"), ("best(soft(1.5))", "at most 1"),
+                  ("repeat(score)", "repeat takes sets"), ("drop(margins)", "drop needs values"),
+                  ('ballots("score") >> best(firsts)', "firsts needs rankings"),
                   ('normalize >> best(levels)', "best needs values"),
                   ('normalize >> "MJ"', "normalize does not provide"),
                   ("smith >> score", "a composition ends in"),
@@ -939,7 +944,10 @@ for _t in range(60):
     assert np.allclose(_cb.tally(_Bb), _Pb), _Bb.tolist()
 # ... and the totals and the exact fallback agree wherever both exist
 for _tx in ['smith >> "Score"', "top(2, score) >> runoff(score)", 'ballots("rank") >> top(3, score) >> "IRV"',
-            'buck(points) >> normalize >> "Score"', 'top(3, score) >> normalize >> top(2, score) >> "STAR"']:
+            'buck(points) >> normalize >> "Score"', 'top(3, score) >> normalize >> top(2, score) >> "STAR"',
+            'ballots("rank") >> repeat(drop(firsts))', "repeat(normalize >> drop(score))",
+            "btr(score, margins, score)", 'smith >> btr(score, margins + n * diff(share(score)))',
+            'ballots("rank") >> repeat(bottom_two(firsts, margins))']:
     _c = _cp.composed(_cp.parse(_tx))
     for _t in range(40):
         _C, _nv = int(_rgc.integers(3, 7)), int(_rgc.integers(3, 25))
@@ -954,6 +962,10 @@ for _tx in ['smith >> "Score"', "top(2, score) >> runoff(score)", 'ballots("rank
         _sx = {k: (v if v.shape else float(v)) for k, v in _sx.items()}
         assert np.allclose(_cp.evaluate(_c.composition, _sx, _C, _c.ballot),
                            _cp.evaluate(_c.composition, _sx, _C, _c.ballot, B=_Bx, exact=True)), (_tx, _Bx.tolist())
+# soft margins for any fraction: 0.2 and 0.4 are the lab's features, another gets its feature on first use
+_c3 = _cp.composed(_cp.parse("best(-worst(soft(.3)))"))
+assert _c3.feats == ("soft30",) and _cp.canonical("best(-worst(soft(.3)))") == "best(-worst(soft(0.3)))"
+assert np.allclose(_c3.tally(np.array([[5, 3, 0], [0, 5, 4], [3, 0, 5.0]])), [0, 0, 1])
 # top(k, ...) branches on a tie at the k-th place: A 10, B and C 5 each -> {A, B} or {A, C}, half each
 _st = _cp.State({"sum": np.array([10.0, 5.0, 5.0])}, [0, 1, 2], None, 3, False, "score")
 assert sorted(map(tuple, (f for _, f, _m in _cp.top(2, _cp.score).branches(_st, {})))) == [(0, 1), (0, 2)]

@@ -1694,6 +1694,9 @@ class Method:
 
 
 M_ = Method
+# "# composed: ..." above a method: the same method written as a composition (compose.py, docs/methods.md,
+# Compositions), for copying as a starting point; the hand-written version is kept because it is faster.
+# test_methods.py checks that each of these gives exactly the method below it.
 METHODS = {
     # condorcet
     "Ranked pairs": M_("rank", d_ranked_pairs, ("gt",)),
@@ -1706,32 +1709,41 @@ METHODS = {
     "SICT": M_("weak", d_sict, ("gt", "top", "eqtop", "eqbot")),
     "Condorcet-random-drop": M_("rank", full=t_condorcet_drop),
     # minimax
+    # composed: ballots("rank") >> best(-worst(margins))
     "Minimax": M_("rank", d_minimax, ("gt",)),
     "Minimax-ER": M_("weak", d_minimax, ("gt",)),
     "MMWV": M_("weak", d_minimax_wv, ("gt",)),
+    # composed: ballots("weak") >> best(-worst(po))
     "MMPO": M_("weak", d_mmpo, ("gt",)),
     "MMPOWV": M_("weak", d_mmpowv, ("n", "gt")),
     # condorcet-based
     "Black": M_("rank", d_black, ("sum", "gt")),
+    # composed: ballots("rank") >> repeat(drop(total(po)))
     "Baldwin": M_("rank", d_baldwin, ("gt",)),
     "Baldwin-ER": M_("weak", d_baldwin, ("gt",)),
     "Nanson": M_("rank", d_nanson, ("gt",)),
     "BTR-Borda": M_("rank", d_btr, ("sum", "gt")),
+    # composed: ballots("rank") >> repeat(bottom_two(firsts, margins))
     "BTR-IRV": M_("rank", d_btr_irv, ("firsts", "gt")),
     "Benham": M_("rank", d_benham, ("firsts", "gt")),
+    # composed: smith >> "Score"
     "Smith//Score": M_("score", d_smith_score, ("sum", "gt")),
     # plurality-based
     "Plurality": M_("fav", d_sum, ("sum",)),
     "TTR": M_("fav_run", d_two_round, ("n", "app", "runoff_gt")),
     "Supplementary vote": M_("rank", d_supplementary, ("first", "firstsecond")),
+    # composed: ballots("rank") >> repeat(drop(firsts))
     "IRV": M_("rank", d_irv, ("firsts",)),
+    # composed: ballots("weak") >> repeat(drop(firsts))
     "ER-IRV": M_("weak", d_er_irv, ("firsts_eq",)),
+    # composed: ballots("trunc3") >> repeat(drop(firsts))
     "IRV-3": M_("trunc3", lambda s: d_irv(s, "firsts_ex"), ("firsts_ex",)),
     "DSC": M_("weak", d_dsc, ("solid",)),
     "DAC": M_("weak", d_dac, ("acquiesce",)),
     "Coombs": M_("rank", d_coombs, ("firsts", "lasts")),
     # approval-based
     "Approval": M_("approval", d_sum, ("sum",)),
+    # composed: ballots("app_run") >> top(2, score) >> runoff(score)
     "Approval runoff": M_("app_run", d_approval_two_round, ("app", "runoff_gt")),
     "Approval cond. runoff": M_("app_run", d_approval_two_round_if_needed, ("n", "app", "runoff_gt")),
     "MDDA": M_("trunc", d_mdda, ("n", "gt", "pos")),
@@ -1742,14 +1754,19 @@ METHODS = {
     "MAV": M_("score", d_mav, ("grades",)),
     "MCA": M_("grade3", d_mca, ("n", "ge2", "ge1")),
     "Reciprocal score": M_("score", d_reciprocal_score, ("fset", "fsetB")),
+    # composed: repeat(normalize >> drop(score))
     "INS": M_("score", d_iterated_normalized_score, ("nscore_sub",)),
     "DMS": M_("score", d_dms, ("levels",)),
+    # composed: buck(points) >> normalize >> "Score"
     "ESR": M_("score", d_esr, ("levels", "nscore_sub")),
     "Geometric median": M_("score", full=t_geometric_median),
     # hybrid
     "STAR": M_("score", d_star, ("sum", "gt")),
+    # composed: top(2, score) >> runoff(score)
     "Score runoff": M_("score_run", d_score_two_round, ("run_sum", "runoff_gt")),
+    # composed: btr(score, margins, score)
     "BTR-score": M_("score", d_btr, ("sum", "gt")),
+    # composed: btr(score, margins + n * diff(share(score)))
     "MARS": M_("score", d_mars, ("sum", "gt")),
     "IC-MARS": M_("score", d_ic_mars, ("sum", "gt", "eqtop")),
     "MARS-T": M_("score", d_mars_t, ("n", "sum", "gt", "diffhist")),
@@ -1757,10 +1774,13 @@ METHODS = {
     "ARA-Top": M_("score", ara("maxs"), ("maxs", "gt")),        # only the top score counts as approval
     "Score+": M_("score", d_score_plus, ("sum", "excess", "keepnorm")),
     "321": M_("grade3", d_321, ("n", "ge2", "eq0", "sum", "gt")),
+    # composed: best(share(score) - worst(wv) / n)
     "MMWV+Score": M_("score", d_mmwv_plus_score, ("n", "sum", "gt")),
     "MMWVxScore": M_("score", d_mmwv_times_score, ("n", "sum", "gt")),
     "STLR": M_("score", d_stlr, ("sum", "levelled")),
+    # composed: best(-worst(soft(0.2)))
     "Soft Minimax": M_("score", soft_minimax("soft20"), ("soft20",)),
+    # composed: best(-worst(soft(0.4)))
     "Soft Minimax-40": M_("score", soft_minimax("soft40"), ("soft40",)),
     "Soft Minimax-L": M_("score", d_soft_level, ("n", "sum", "diffhist")),
     "Soft Minimax-D": M_("score", d_soft_diff, ("n", "sum", "diffhist")),

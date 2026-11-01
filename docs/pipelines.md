@@ -1,6 +1,6 @@
 # Composing methods: a plan
 
-Status: phases 1 and 2 built (2026-11-01; compose.py, described for users in [methods.md](methods.md), Compositions); phases 3 and 4 are plans. First proposal 2026-10-22, revised 2026-11-01. The aim is a notation that works like a small standard: clear to read, the same inline and in add-ons, and compatible with ordinary Python, so that people can build methods from parts instead of writing each one out.
+Status: phases 1 to 3 built (2026-11-01; compose.py, described for users in [methods.md](methods.md), Compositions); phase 4 (multi-winner results) is a plan. First proposal 2026-10-22, revised 2026-11-01. The aim is a notation that works like a small standard: clear to read, the same inline and in add-ons, and compatible with ordinary Python, so that people can build methods from parts instead of writing each one out.
 
 ## Why
 
@@ -136,7 +136,7 @@ This gives the stand-ins written by hand today: ESR and INS are polled as Score 
 - **Ballot types.** Each part states the ballot types it works on; a composition has one, and a mismatch is reported with the part's name. `runoff` switches the composition to the two-round ballot.
 - **Settings.** A composed method takes the settings of its final step (`Method.settings`, e.g. a fixed score range), if it has any.
 - **Reuse of results.** A part that appears twice in one set expression takes the same branch of a tie (the repeated `top(1, score)` in SCR is the same Score winner on both sides). Sharing across methods would apply only to the honest count (with learned ballots every method has its own ballots), so it is not planned.
-- **Existing methods** can then be written as compositions where that is exact. Each rewrite has to reproduce the hand-written version exactly (the regression check), so this can happen method by method.
+- **Existing methods** stay hand-written, since compositions take longer per count; where a composition gives exactly the same method, it is written as a comment above the method in methods.py (`# composed: ...`), for copying, and the tests check it.
 
 ## Names in the files
 
@@ -154,7 +154,7 @@ Voters see polls of the composed result as a whole, as for every method: no vote
 
 1. **The core** (built 2026-11-01): the expression reader; sets, values and pairs with ties; `>>`, `|`, `&`; the state with pass-through and the field-dependence check; `normalize`; the parts `smith`, `top`, `best`, `buck`, `score`, `margins`, `wv`, `n`, `levels`, `points`, `share`, `worst`, `ballots(...)`; quoted methods whose features restrict; the automatic poll view; canonical names and safe file names; named compositions in add-ons. Checked in the tests: Smith//Score, ESR, MMWV+Score and Minimax written as compositions give exactly the hand-written methods, their polls included; in full runs (30 elections, all voters strategic) the same results in every row, except 2 of 1,440 values for ESR (see Polls). Speed per count against the hand-written method: ESR 0.8×, Smith//Score 1.3×, MMWV+Score 1.75×, Minimax 2.0×.
 2. **More parts and runoffs** (built 2026-11-01): `po`, `soft(0.2 / 0.4)`, `approvals(k)`, `challenger(set, pairs)`, `runoff` and `runoff(values)`, pairwise readings on two-round ballots from the round-1 marks (a new feature `round1_gt`), and the exact fallback. Checked in the tests: Score runoff, Approval runoff, MMPO, Soft Minimax and SCR (the add-on) written as compositions give exactly the hand-written methods, polls included; Borda among the Smith set by the exact fallback equals Borda on the induced rankings; the totals and the exact fallback agree on five compositions.
-3. Orders and iteration (`btr`, `repeat`), then rewriting existing methods where exact.
+3. **Orders and iteration** (built 2026-11-01): `firsts` (first preferences among the field; in a poll by the IRV stand-in's first preferences and transfers), `total`, `diff`, `drop`, `bottom_two`, `btr` and `repeat`; `soft(f)` for any fraction. The existing methods are not rewritten (the compositions are slower); instead 17 of them carry their composition as a comment in methods.py, and the tests check that each gives exactly the method, polls included: besides those of phases 1 and 2, IRV, IRV-3, ER-IRV, Baldwin, INS, BTR-IRV, BTR-score, MARS and Soft Minimax-40.
 4. Multi-winner results.
 
 ## Decided in phase 1
@@ -171,6 +171,15 @@ Voters see polls of the composed result as a whole, as for every method: no vote
 - **Ballot type with `runoff`:** score runoff ballots unless `ballots(...)` says otherwise; `score` then reads the round-1 scores (approvals or marks on the other two-round types), and the pairwise readings come from the round-1 marks.
 - **The exact fallback** replaces the error for field-dependent readings after a set; the error remains only for ballot types that cannot be restricted to a field. Its polls use the lab's default poll reading when the poll view would need the fallback too.
 
+## Decided in phase 3
+
+- **Two bottom-two parts.** `btr(order, pairs[, tiebreak])` is the climb on a fixed order (BTR-score, MARS: the lowest two meet, the winner meets the next one up), done as the lab's `bottom_two_runoff`, with every order of tied candidates equally. `bottom_two(order, pairs[, tiebreak])` is one round (the loser of the bottom two is out); with `repeat` the order is read again on the field left each round (BTR-IRV). With a fixed order and no ties the two give the same winner; with ties they differ, so both exist. A tie in `btr` with a tiebreak that ties too goes to the candidate higher in the order, as BTR-score has done since 2026-10-26.
+- **`repeat(steps)`** applies sets and transforms round after round until one candidate is left or a round changes nothing; each round starts from the readings before the repeat (so `repeat(normalize >> drop(score))` stretches the ballots over the field left, every round, as INS).
+- **`firsts` in polls** uses the IRV family's stand-in (first preferences and the transfer table; whole votes on rankings with ties): the first poll-like counterpart of a reading over every subset, so IRV written as a composition is polled exactly as IRV.
+- **`soft(f)`** takes any fraction; a feature for a new fraction is made on first use (also in worker processes, which read the composition again).
+- **No rewriting of existing methods.** Compositions take about 1.4 to 3 times as long per count as the hand-written methods (measured on all 17 commented ones), so the hand-written methods stay; the comments are the reference for copying.
+- **Speed.** Readings that pass through are computed once per count on the whole field and indexed afterwards, and `firsts` reads the one row of the current field; this brought IRV as a composition from about 7 to 2 times the hand-written time.
+
 ## Open questions
 
-- Phase 3 (orders and iteration: `btr`, `repeat`) and rewriting existing methods as compositions where exact.
+- Phase 4: multi-winner results.
