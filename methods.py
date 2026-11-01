@@ -524,6 +524,8 @@ FEATURES.update({
     "transfer": (lambda B: _transfer(*_levels_down(B)), lambda C: (C, C)),
     "transfer_whole": (lambda B: _transfer(*_levels_down(B), whole=True), lambda C: (C, C)),
     "lasttransfer": (lambda B: _transfer(*_levels_up(B)), lambda C: (C, C)),
+    "round1_gt": (lambda B: (lambda S: (S[:, :, None] > S[:, None, :]).reshape(len(B), -1))(np.floor_divide(B, B.shape[1])),
+                  lambda C: (C, C)),                     # two-round ballots: pairwise on the round-1 marks (compose.py)
     "favscore": (lambda B: ((lambda L: L / L.sum(axis=1, keepdims=True))(B >= B.max(axis=1, keepdims=True))[:, :, None]
                             * B[:, None, :]).reshape(len(B), -1), lambda C: (C, C)),
 })

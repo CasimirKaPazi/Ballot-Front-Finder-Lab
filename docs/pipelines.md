@@ -1,6 +1,6 @@
 # Composing methods: a plan
 
-Status: phase 1 built (2026-11-01; compose.py, described for users in [methods.md](methods.md), Compositions); phases 2–4 are plans. First proposal 2026-10-22, revised 2026-11-01. The aim is a notation that works like a small standard: clear to read, the same inline and in add-ons, and compatible with ordinary Python, so that people can build methods from parts instead of writing each one out.
+Status: phases 1 and 2 built (2026-11-01; compose.py, described for users in [methods.md](methods.md), Compositions); phases 3 and 4 are plans. First proposal 2026-10-22, revised 2026-11-01. The aim is a notation that works like a small standard: clear to read, the same inline and in add-ons, and compatible with ordinary Python, so that people can build methods from parts instead of writing each one out.
 
 ## Why
 
@@ -35,7 +35,7 @@ So `smith >> "Score"` is: ballots (score) → `smith` (narrows the field, scores
 **Readings that depend on the field.** Passing through is exact for a reading that does not depend on which other candidates are in: a candidate's score total, a pair's head-to-head count; narrowing just drops columns or rows. Some readings do depend on the field: first preferences (whose favourite among those left?), last places, rank points (Borda), scores stretched over the field. Falling back to an earlier field would change their meaning without anyone noticing: `smith >> "Plurality"` would count favourites among all candidates, not among the Smith set. So each reading states whether it depends on the field:
 
 - **independent of the field:** passed through and restricted;
-- **dependent on the field:** computed again on the current field: from totals over every subset of candidates (exact, but not what a poll shows; the poll then uses the stand-in, see Polls), or by the exact fallback (How it would run). If neither is available, the reader reports an error naming the reading. It never falls back to an earlier field.
+- **dependent on the field:** computed again on the current field: from totals over every subset of candidates (exact, but not what a poll shows; the poll then uses the stand-in, see Polls), or by the exact fallback from the ballots restricted to the field (How it would run). Only for a ballot type that cannot be restricted (an add-on's own type) does the reader report an error naming the reading. It never falls back to an earlier field.
 
 The features as they are today (methods.py, `FEATURES`):
 
@@ -88,13 +88,13 @@ This table also decides which quoted methods can be a final step on a narrower f
 smith >> "Score"                                   Smith//Score
 buck(points) >> normalize >> "Score"               ESR
 buck(levels) >> "BTR-score"                        a new combination
-best(-worst(margins))                              Minimax
+ballots("rank") >> best(-worst(margins))           Minimax
 best(share(score) - worst(wv) / n)                 MMWV+Score
-top(2, score) >> runoff                            Score runoff
-(best(score) | challenger(best(score), margins)) >> runoff      SCR (the add-on)
+top(2, score) >> runoff(score)                     Score runoff
+(top(1, score) | challenger(top(1, score), margins)) >> runoff(score)     SCR (the add-on)
 ```
 
-SCR shows why sets need union: the Score winner and their strongest challenger are two separate results of the same field, joined before the runoff. The repeated `best(score)` is computed once.
+SCR shows why sets need union: the Score winner and their strongest challenger are two separate results of the same field, joined before the runoff. The repeated `top(1, score)` takes the same branch on both sides, so with a tie for the Score winner each tied winner meets their own challenger.
 
 In an add-on the same text is Python, with a name:
 
@@ -123,18 +123,19 @@ On the command line: `python run.py --methods 'buck(levels) >> "BTR-score"' Scor
 Voters count a poll only from totals a real poll could show (model.md, What a poll shows), so every composed method has a poll view, built from its parts:
 
 - if every reading of the composition is poll-like (per candidate, per pair, per grade), the composition counts its own polls;
-- otherwise each part brings its poll reading: `normalize` is read as nothing in a poll (the raw scores), a quoted method as its own poll view (its stand-in, if it has one). Readings over every subset have no poll-like counterpart of their own (yet; see Decided in phase 1).
+- otherwise each part brings its poll reading: `normalize` is read as nothing in a poll (the raw scores), a quoted method as its own poll view (its stand-in, if it has one). Readings over every subset have no poll-like counterpart of their own (yet; see Decided in phase 1);
+- a composition whose poll reading would itself need the exact fallback (a field-dependent reading after a set, also in the poll views) is polled by the lab's default poll reading: score totals on score ballots, first preferences otherwise, as an add-on method without a stand-in.
 
 This gives the stand-ins written by hand today: ESR and INS are polled as Score because, without renormalising, the Score winner wins. Individual voters need the poll view to be countable from totals (closeness and the scenario table count the summed totals many times per round), so the exact fallback serves the election count only, never a poll.
 
 ## How it would run
 
 - **From totals where possible.** The lab sums per-voter features, so a poll is a weighted sum, not a recount. A composition whose readings all restrict to a narrower field (the table above) compiles to an ordinary feature-based method.
-- **Exact fallback** (phase 2). Otherwise each part recomputes from the ballots restricted to the current field (scores as cast, rankings as the induced ranking among the field). Exact but slower, as Geometric median is now; for the election count only (see Polls). The tests run every composition both ways where both exist and require the same result.
-- **Ties and speed.** A tie splits the field into weighted branches; a count follows each branch and adds up the weights. Polls and the individual voters' closeness evaluate a count on many rows of totals at once, so a composed decision has to be cheap per row: no more than about twice the time of the hand-written method it reproduces (checked for the phase-1 examples).
+- **Exact fallback** (built in phase 2). Otherwise each reading that needs it is counted again from the ballots restricted to the current field: scores and marks as cast (a vote for a candidate who is out counts for nobody), rankings as the induced ranking among the field (renumbered, ties kept, an unranked candidate stays unranked), two-round ballots both parts so; after `normalize`, the ballots stretched over the field it saw. The composition is then counted from the ballots (`Method.full`), exact but slower (`ballots("rank") >> smith >> "Borda"`: about 1.5 ms per count, Borda 0.02 ms); for the election count only (see Polls). The tests run compositions both ways where both exist and require the same result.
+- **Ties and speed.** A tie splits the field into weighted branches; a count follows each branch and adds up the weights. Polls and the individual voters' closeness evaluate a count on many rows of totals at once, so a composed decision has to be cheap per row: no more than about twice the time of the hand-written method it reproduces. Measured: ESR 0.8×, Smith//Score 1.3×, Score runoff 1.6×, MMWV+Score 1.75×, MMPO 1.8×, Minimax 2.0×, Soft Minimax 2.1×, Approval runoff 2.2×; SCR 3.6× (the hand-written add-on is very compact; the overhead is the branching of `top(1, ...)` and `challenger` shared across `|`).
 - **Ballot types.** Each part states the ballot types it works on; a composition has one, and a mismatch is reported with the part's name. `runoff` switches the composition to the two-round ballot.
 - **Settings.** A composed method takes the settings of its final step (`Method.settings`, e.g. a fixed score range), if it has any.
-- **Reuse of results.** A part that appears twice in one composition (the repeated `best(score)` in SCR) is computed once. Sharing across methods would apply only to the honest count (with learned ballots every method has its own ballots), so it is not planned.
+- **Reuse of results.** A part that appears twice in one set expression takes the same branch of a tie (the repeated `top(1, score)` in SCR is the same Score winner on both sides). Sharing across methods would apply only to the honest count (with learned ballots every method has its own ballots), so it is not planned.
 - **Existing methods** can then be written as compositions where that is exact. Each rewrite has to reproduce the hand-written version exactly (the regression check), so this can happen method by method.
 
 ## Names in the files
@@ -152,7 +153,7 @@ Voters see polls of the composed result as a whole, as for every method: no vote
 ## Phases
 
 1. **The core** (built 2026-11-01): the expression reader; sets, values and pairs with ties; `>>`, `|`, `&`; the state with pass-through and the field-dependence check; `normalize`; the parts `smith`, `top`, `best`, `buck`, `score`, `margins`, `wv`, `n`, `levels`, `points`, `share`, `worst`, `ballots(...)`; quoted methods whose features restrict; the automatic poll view; canonical names and safe file names; named compositions in add-ons. Checked in the tests: Smith//Score, ESR, MMWV+Score and Minimax written as compositions give exactly the hand-written methods, their polls included; in full runs (30 elections, all voters strategic) the same results in every row, except 2 of 1,440 values for ESR (see Polls). Speed per count against the hand-written method: ESR 0.8×, Smith//Score 1.3×, MMWV+Score 1.75×, Minimax 2.0×.
-2. More parts (`approvals`, `soft`, `challenger`, ...), the exact fallback, and `runoff` (SCR, Score runoff).
+2. **More parts and runoffs** (built 2026-11-01): `po`, `soft(0.2 / 0.4)`, `approvals(k)`, `challenger(set, pairs)`, `runoff` and `runoff(values)`, pairwise readings on two-round ballots from the round-1 marks (a new feature `round1_gt`), and the exact fallback. Checked in the tests: Score runoff, Approval runoff, MMPO, Soft Minimax and SCR (the add-on) written as compositions give exactly the hand-written methods, polls included; Borda among the Smith set by the exact fallback equals Borda on the induced rankings; the totals and the exact fallback agree on five compositions.
 3. Orders and iteration (`btr`, `repeat`), then rewriting existing methods where exact.
 4. Multi-winner results.
 
@@ -163,6 +164,13 @@ Voters see polls of the composed result as a whole, as for every method: no vote
 - **The poll arithmetic depends on what a poll publishes.** A composition's poll view publishes every total its parts read. For ESR that includes the score levels (for `buck`), which the hand-written stand-in (Score) does not: the winners of every poll are the same, but individual voters project their moves on all published totals, so their answers can differ slightly (2 of 1,440 values in the trial). Left as it is: what a poll publishes is part of a method's description.
 - **Sets at the end** split the win equally among their members; **an empty intersection** narrows nothing; **`|` binds looser than `&` and `>>`**, as in Python: `(best(score) | smith) >> "Score"` needs the parentheses.
 
+## Decided in phase 2
+
+- **`runoff` names its tie-break.** The hand-written two-round methods give a runoff tie to the higher round-1 value (Score runoff, Approval runoff); a composition says so: `runoff(score)`. Plain `runoff` splits a tie. With more than two finalists (a tie before the runoff), the candidates with most runoff wins win, ties split.
+- **`challenger(set, pairs)`** is a set of its own (the strongest beaters of the set's members), joined with the set by `|`: `(top(1, score) | challenger(top(1, score), margins)) >> runoff(score)`. `top(1, ...)` rather than `best(...)` makes a tie for the Score winner branch, as SCR does: each tied winner with their own challenger. A set nobody beats has no challenger: an empty set, which narrows nothing in a union.
+- **Ballot type with `runoff`:** score runoff ballots unless `ballots(...)` says otherwise; `score` then reads the round-1 scores (approvals or marks on the other two-round types), and the pairwise readings come from the round-1 marks.
+- **The exact fallback** replaces the error for field-dependent readings after a set; the error remains only for ballot types that cannot be restricted to a field. Its polls use the lab's default poll reading when the poll view would need the fallback too.
+
 ## Open questions
 
-- None for phase 1. Phase 2 starts with the exact fallback and `runoff`.
+- Phase 3 (orders and iteration: `btr`, `repeat`) and rewriting existing methods as compositions where exact.

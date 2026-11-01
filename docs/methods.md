@@ -182,32 +182,41 @@ A real, separate runoff: voters come back and vote between the finalists, by the
 
 A method can also be written as a composition of parts, on the command line or in an add-on (compose.py; the plan and its reasons in [pipelines.md](pipelines.md)). It runs like any other method: `python run.py --methods 'smith >> "Score"' 'best(share(score) - worst(wv) / n)' Score`.
 
-A composition is a chain of steps (`>>`, read "then"): sets narrow the field, a transform changes a reading, and the last step decides. Readings pass through the steps: after `smith`, `"Score"` reads the same score totals, on the Smith set only. Readings that depend on which candidates are in (first preferences, rank points) are not taken from an earlier field: a composition that would need them after a set is refused with a message.
+A composition is a chain of steps (`>>`, read "then"): sets narrow the field, a transform changes a reading, and the last step decides. Readings pass through the steps: after `smith`, `"Score"` reads the same score totals, on the Smith set only. Readings that depend on which candidates are in (first preferences, rank points) are not taken from an earlier field: after a set they are counted again from the ballots restricted to the field (scores and marks as cast, rankings as the induced ranking among the field, an unranked candidate staying unranked). Such a composition is counted from the ballots, which is slower (`ballots("rank") >> smith >> "Borda"`: about 1.5 ms per count against 0.02 ms for Borda), and its polls use the lab's default poll reading: score totals on score ballots, first preferences otherwise ([model.md](model.md), What a poll shows).
 
 | Part | Kind | Meaning |
 |---|---|---|
-| `score` | values | score totals (on rankings: rank points, so not after a set) |
-| `margins`, `wv` | pairs | pairwise margins; winning votes (the votes of the winner of a pair, 0 for the loser) |
+| `score` | values | score totals; on rankings rank points (Borda); on two-round ballots the round-1 scores, approvals or marks |
+| `margins`, `wv`, `po` | pairs | pairwise margins; winning votes (the votes of the winner of a pair, 0 for the loser); pairwise opposition (the votes for one over the other, whoever wins). On two-round ballots from the round-1 marks |
+| `soft(0.2)`, `soft(0.4)` | pairs | soft margins, as Soft Minimax: per voter the score difference, clipped to 0.2 or 0.4 of the range |
 | `n` | number | the number of voters |
 | `levels`, `points` | per level | voters per score level (top level first); the same weighted by the level's score |
+| `approvals(k)` | values | voters scoring a candidate at least k |
 | `share(values)` | values | values / (n × top score) |
 | `worst(pairs)` | values | each candidate's worst defeat: the largest value a rival has against them, 0 if none |
 | `smith` | set | the Smith set |
 | `best(values)` | set | everyone tied for the highest value |
 | `top(k, values)` | set | the k highest; a tie at the k-th place branches with equal weights |
 | `buck(levels)`, `buck(points)` | set | for every depth (the top 1, 2, … levels), the candidates ahead by voters or points from those levels, joined over the depths |
+| `challenger(set, pairs)` | set | the strongest challengers of a set: the candidates outside it with the largest value against one of its members; ties branch; nobody with a positive value: an empty set (which narrows nothing) |
 | `a \| b`, `a & b` | set | union, intersection of two sets of the same field (an empty intersection narrows nothing) |
 | `normalize` | transform | every score ballot stretched over the current field (lowest there 0, highest the top score; not rounded); later steps read these scores |
-| `"Name"` | method | an existing method, on the current field and readings, if its totals can be read on a narrower field ([pipelines.md](pipelines.md), the feature table) |
-| `ballots("type")` | first step | the ballot type; default that of the quoted method, else score ballots |
+| `"Name"` | method | an existing method, on the current field and readings ([pipelines.md](pipelines.md), the feature table: which totals can be read on a narrower field, and which are counted again from the ballots) |
+| `runoff`, `runoff(values)` | method | a separate runoff between the finalists, by the runoff rankings of two-round ballots; a tie is split, or goes to the higher value. With more than two finalists (a tie before it), most runoff wins, ties split |
+| `ballots("type")` | first step | the ballot type; default that of the quoted method, else score runoff ballots with `runoff`, else score ballots |
 
-Values and pairs take `+ - * /` and `-` with each other and with numbers. A set at the end splits the win equally among its members (so `best(...)` at the end is "the highest wins, ties split"). Examples, each equal to the hand-written method in every count (tested):
+Values and pairs take `+ - * /` and `-` with each other and with numbers. A set at the end splits the win equally among its members (so `best(...)` at the end is "the highest wins, ties split"). The same part twice in one set expression takes the same branch of a tie (in SCR below, `top(1, score)` is the same Score winner on both sides of `|`). `|` binds looser than `>>`, as in Python, so a union before `>>` needs parentheses. Examples, each equal to the hand-written method in every count (tested):
 
 ```
 smith >> "Score"                            Smith//Score
 buck(points) >> normalize >> "Score"        ESR
 best(share(score) - worst(wv) / n)          MMWV+Score
 ballots("rank") >> best(-worst(margins))    Minimax
+ballots("weak") >> best(-worst(po))         MMPO
+best(-worst(soft(0.2)))                     Soft Minimax
+top(2, score) >> runoff(score)              Score runoff
+ballots("app_run") >> top(2, score) >> runoff(score)                     Approval runoff
+(top(1, score) | challenger(top(1, score), margins)) >> runoff(score)    SCR (the add-on)
 ```
 
 - **Names.** A composition is stored under a canonical spelling (spaces and the method's own name spelled as in the lab), so `smith>>"score"` and `smith >> "Score"` are the same method. Files about one method (track plots) get a safe name with a short hash. Quote compositions on the command line, as above.

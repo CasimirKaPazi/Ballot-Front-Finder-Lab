@@ -1,32 +1,41 @@
-"""Composing methods from parts (docs/pipelines.md; phase 1).
+"""Composing methods from parts (docs/pipelines.md; phases 1 and 2).
 
 A composition is a chain of steps over one state: the field (the candidates still in) and the readings
 known so far. Sets narrow the field and pass the readings through; transforms replace a reading; a
 reading or a final step takes the latest version of what it needs, restricted to the current field.
 Readings that depend on the field (first preferences, rank points, scores stretched over the field) are
-computed again on it from totals over every subset of candidates, or refused with an error; they are
-never taken from an earlier field.
+never taken from an earlier field: they are computed again on it, from totals over every subset of
+candidates where the lab has them, else from the ballots restricted to the field (the exact fallback,
+for the election count; polls then use the lab's default poll reading).
 
 The same text works in Python (an add-on) and on the command line (read with Python's own parser,
 only the parts below accepted):
 
-    smith >> "Score"                          Smith//Score
-    buck(points) >> normalize >> "Score"      ESR
-    best(share(score) - worst(wv) / n)        MMWV+Score
-    ballots("rank") >> best(-worst(margins))  Minimax
+    smith >> "Score"                                              Smith//Score
+    buck(points) >> normalize >> "Score"                          ESR
+    best(share(score) - worst(wv) / n)                            MMWV+Score
+    ballots("rank") >> best(-worst(margins))                      Minimax
+    top(2, score) >> runoff(score)                                Score runoff
+    (top(1, score) | challenger(top(1, score), margins)) >> runoff(score)     SCR (add-on)
 
-Parts (phase 1):
-    readings   score (totals), margins, wv (winning votes), n (voters), levels (voters per score level),
-               points (score points per level); share(values) = values / (n x top score)
+Parts:
+    readings   score (totals; on two-round ballots the round-1 marks), margins, wv (winning votes), po
+               (pairwise opposition: votes for the row over the column), soft(0.2 or 0.4) (soft margins),
+               n (voters), levels (voters per score level, top first), points (the same times the
+               level's score), approvals(k) (voters scoring at least k); share(values) = values /
+               (n x top score). On two-round ballots the pairwise readings come from the round-1 marks
     pairs -> values   worst(pairs): each candidate's worst defeat (largest value a rival has against
                them, 0 if none)
     sets       smith, best(values) (all tied for highest), top(k, values) (ties at the k-th place
-               branch), buck(levels or points) (for every depth, the candidates ahead in the top
-               levels, joined); a | b, a & b
+               branch), buck(levels or points), challenger(set, pairs) (the strongest beaters of the
+               set; ties branch; none: an empty set); a | b, a & b. The same part twice in one set
+               expression takes the same branch
     transforms normalize (score ballots stretched over the current field, not rounded)
-    final      "Name": an existing method on the current field and readings; a set at the end
-               splits the win equally among its members
-    first      ballots("type"): the ballot type (default: that of the quoted method, else score)
+    final      "Name": an existing method on the current field and readings; runoff, runoff(values):
+               a separate runoff between the finalists by the runoff rankings of two-round ballots
+               (a tie split, or to the higher value); a set at the end splits the win equally
+    first      ballots("type"): the ballot type (default: that of the quoted method; score runoff
+               ballots with runoff; else score)
     chaining   >> ("then"); arithmetic + - * / and unary minus on values and pairs
 
 composed(expr) turns a composition into an ordinary Method (methods.py): ballot type, features,
@@ -45,12 +54,17 @@ from ballots import BALLOTS
 # ---------- how each feature narrows to a smaller field (docs/pipelines.md, the feature table) ----------
 CAND0 = {"sum", "app", "run_sum", "maxs", "pos", "upper", "ge1", "ge2", "eq0", "grades"}   # axis 0 is the candidate
 CAND1 = {"levels"}                                                                     # axis 1 is the candidate
-PAIR = {"gt", "runoff_gt", "excess", "soft20", "soft40", "levelled", "diffhist"}      # axes 0 and 1
+PAIR = {"gt", "runoff_gt", "round1_gt", "excess", "soft20", "soft40", "levelled", "diffhist"}   # axes 0, 1
 AMONG = {"firsts", "firsts_eq", "firsts_ex", "lasts", "keepnorm", "nscore_sub"}       # per subset, among it
 SCALAR = {"n"}
 # after normalize: features that keep their meaning (order among candidates, or already stretched per
 # subset); "sum" becomes the normalized scores
 AFTER_NORMALIZE = {"n", "sum", "gt", "firsts", "firsts_eq", "firsts_ex", "lasts", "nscore_sub"}
+TWO_ROUND = {"fav_run", "app_run", "score_run"}
+UNRANKED = {"rank", "weak", "trunc", "trunc3"}       # rankings where 0 can mean "not ranked"
+ORDINAL = UNRANKED | {"strict"}
+AS_CAST = {"fav", "veto"}                           # restricted to a field: as cast (a vote for a candidate
+                                                    # who is out counts for nobody)
 
 
 def rated(ballot):
@@ -61,10 +75,43 @@ def rated(ballot):
 
 
 def restrictable(f, ballot):
-    """Can feature f be read on a narrower field (from totals)?"""
+    """Can feature f be read on a narrower field from its totals?"""
     if f == "sum":
         return rated(ballot)
     return f in CAND0 | CAND1 | PAIR | AMONG | SCALAR
+
+
+def recastable(ballot):
+    """Can ballots of this type be restricted to a narrower field (the exact fallback)?"""
+    return rated(ballot) or ballot in ORDINAL | AS_CAST | TWO_ROUND
+
+
+def _dense(X, keep_zero):
+    """Per row: dense levels of the values (ties share a level), lowest 0; keep_zero: a 0 stays 0
+    (not ranked) and the others are numbered from 1."""
+    out = np.zeros_like(X, dtype=float)
+    for i, row in enumerate(X):
+        vals = np.unique(row[row > 0] if keep_zero else row)
+        lev = np.searchsorted(vals, row) + (1 if keep_zero else 0)
+        out[i] = np.where((row > 0) | (not keep_zero), lev, 0)
+    return out
+
+
+def restrict_ballots(B, field, ballot):
+    """The ballots on a narrower field: scores and marks as cast; rankings as the induced ranking among
+    the field (renumbered, ties kept, an unranked candidate stays unranked); two-round ballots both
+    parts so (the runoff ranking renumbered)."""
+    F = list(field)
+    X = B[:, F]
+    if rated(ballot) or ballot in AS_CAST:
+        return X
+    if ballot in ORDINAL:
+        return _dense(X, ballot in UNRANKED)
+    if ballot in TWO_ROUND:
+        C, k = B.shape[1], len(F)
+        marks, run = np.floor_divide(B, C)[:, F], np.mod(B, C)[:, F]
+        return marks * k + _dense(run, False)
+    raise CompositionError(f"ballots of type {ballot} cannot be restricted to a narrower field")
 
 
 def _sub_index(field, C):
@@ -79,12 +126,12 @@ def _sub_index(field, C):
 def restrict(s, f, field, C, norm=None):
     """Feature f's sum on the field (a list of candidates). norm: the field normalize stretched over
     (then "sum" is the normalized scores)."""
-    x = s[f]
     F = list(field)
-    if len(F) == C and (norm is None or f != "sum"):
-        return x
     if f == "sum" and norm is not None:
         return s["nscore_sub"][int(sum(1 << c for c in norm))][F]
+    x = s[f]
+    if len(F) == C:
+        return x
     if f in SCALAR:
         return x
     if f in CAND0:
@@ -116,7 +163,7 @@ def _part(x):
 
 
 class Part:
-    kind = None              # values, pairs, scalar, levels, set, transform, final, ballots
+    kind = None              # values, pairs, scalar, levels, set, transform, final, ballots, chain
     prec = 9                 # for the canonical text, as Python binds: 9 atom, 6 unary, 5 * /, 4 + -, 3 >>, 2 &, 1 |
 
     # chaining and set operations
@@ -151,7 +198,7 @@ class Part:
 
     def check(self, ctx):
         """Static check on the context (ballot, narrowed, normalized, poll); returns the features
-        needed."""
+        needed from totals. A feature that depends on the field after a set is added to ctx["fallback"]."""
         return set()
 
 
@@ -160,46 +207,87 @@ def _wrap(p, prec):
     return f"({t})" if p.prec < prec else t
 
 
+def _need(f, ctx):
+    """Feature f in this context: from totals if it can be read on the current field, else marked for
+    the exact fallback (ballots restricted to the field)."""
+    if ctx["narrowed"] and not restrictable(f, ctx["ballot"]):
+        if not recastable(ctx["ballot"]):
+            raise CompositionError(f"{f} depends on the field, and {ctx['ballot']} ballots cannot be "
+                                   "restricted to a narrower field")
+        ctx["fallback"].add(f)
+        return set()
+    return {f}
+
+
 class Reading(Part):
-    def __init__(self, name, kind, feats, fn, needs_rated=False, field_free=True):
-        self.name, self.kind, self._feats, self.fn = name, kind, feats, fn
-        self.needs_rated, self.field_free = needs_rated, field_free
+    """A reading of the ballots: feat(ballot) names the feature, fn(x, st) turns its sum on the field
+    into the reading."""
+    def __init__(self, name, kind, feat, fn, scored=False):
+        self.name, self.kind, self.feat, self.fn, self.scored = name, kind, feat, fn, scored
 
     def text(self):
         return self.name
 
     def check(self, ctx):
-        if self.needs_rated and not rated(ctx["ballot"]):
-            raise CompositionError(f"{self.name} needs rated ballots (score, grades, approval), not {ctx['ballot']}")
-        if self.name == "score" and ctx["narrowed"] and not ctx["normalized"] and not rated(ctx["ballot"]):
-            raise CompositionError(f"score on {ctx['ballot']} ballots is rank points, which depend on the field: "
-                                   "not available after a set")
-        if self.name in ("levels", "points") and ctx["normalized"] and not ctx["poll"]:
+        b = ctx["ballot"]
+        if self.scored and not (rated(b) and BALLOTS[b].score_range):
+            raise CompositionError(f"{self.name} needs score ballots, not {b}")
+        if self.scored and ctx["normalized"] and not ctx["poll"]:
             raise CompositionError(f"{self.name} is not defined after normalize (stretched scores are not rounded)")
-        if self.name == "score" and ctx["normalized"] and not ctx["poll"]:
+        f = self.feat(b)
+        if f == "sum" and ctx["normalized"] and not ctx["poll"]:
             return {"nscore_sub"}
-        return set(self._feats)
+        return _need(f, ctx)
 
     def value(self, st):
-        return self.fn(st)
+        return self.fn(st.get(self.feat(st.ballot)), st)
 
 
-def _score(st):
-    return st.get("sum")
+def _score_feat(b):
+    if b == "score_run":
+        return "run_sum"
+    if b in ("fav_run", "app_run"):
+        return "app"
+    return "sum"
 
 
-def _gt(st):
-    return st.get("gt").astype(float)
+def _pair_feat(b):
+    return "round1_gt" if b in TWO_ROUND else "gt"
 
 
-score = Reading("score", "values", ("sum",), _score)
-margins = Reading("margins", "pairs", ("gt",), lambda st: (lambda g: g - g.T)(_gt(st)))
-wv = Reading("wv", "pairs", ("gt",), lambda st: (lambda g: np.where(g > g.T, g, 0.0))(_gt(st)))
-n = Reading("n", "scalar", ("n",), lambda st: st.get("n"))
-levels = Reading("levels", "levels", ("levels",), lambda st: st.get("levels"), needs_rated=True)
-points = Reading("points", "levels", ("levels",),
-                 lambda st: (lambda c: (c.shape[0] - np.arange(c.shape[0]))[:, None] * c)(st.get("levels")),
-                 needs_rated=True)
+def _f(x):
+    return np.asarray(x, float)
+
+
+score = Reading("score", "values", _score_feat, lambda x, st: _f(x))
+margins = Reading("margins", "pairs", _pair_feat, lambda x, st: _f(x) - _f(x).T)
+wv = Reading("wv", "pairs", _pair_feat, lambda x, st: np.where(_f(x) > _f(x).T, _f(x), 0.0))
+po = Reading("po", "pairs", _pair_feat, lambda x, st: _f(x) * (1 - np.eye(len(x))))
+n = Reading("n", "scalar", lambda b: "n", lambda x, st: float(x))
+levels = Reading("levels", "levels", lambda b: "levels", lambda x, st: _f(x), scored=True)
+points = Reading("points", "levels", lambda b: "levels",
+                 lambda x, st: (len(x) - np.arange(len(x)))[:, None] * _f(x), scored=True)
+
+
+def soft(frac):
+    """Soft margins (as Soft Minimax): per voter the score difference clipped to +-frac of the range."""
+    if frac not in (0.2, 0.4):
+        raise CompositionError(f"soft margins exist for 0.2 and 0.4, not {frac!r}")
+    k = f"soft{int(round(frac * 100))}"
+    r = Reading(f"soft({frac})", "pairs", lambda b: k, lambda x, st: _f(x), scored=True)
+    return r
+
+
+def approvals(level):
+    """Voters scoring each candidate at least `level` (1 .. top score)."""
+    if not isinstance(level, int) or level < 1:
+        raise CompositionError(f"approvals needs a score level of at least 1, not {level!r}")
+
+    def fn(x, st):
+        if level > len(x):
+            raise CompositionError(f"approvals({level}) is above the top score {len(x)}")
+        return _f(x)[:len(x) - level + 1].sum(axis=0)       # levels: top score first
+    return Reading(f"approvals({level})", "values", lambda b: "levels", fn, scored=True)
 
 
 class Const(Part):
@@ -226,7 +314,7 @@ class Func(Part):
         return f"{self.name}({self.arg.text()})"
 
     def check(self, ctx):
-        return self.arg.check(ctx) | set(self.extra)
+        return self.arg.check(ctx) | set().union(*[_need(f, ctx) for f in self.extra])
 
     def value(self, st):
         return self.fn(self.arg.value(st), st)
@@ -288,9 +376,14 @@ class Neg(Part):
         return -self.a.value(st)
 
 
-# sets: value(st) -> list of (weight, field), the field as a list of candidates
+# sets: branches(st, memo) -> list of (weight, field, memo); the field a list of candidates, memo the
+# branch taken by each branching part so far (the same part twice in one set expression takes the same
+# branch)
 class Set(Part):
     kind = "set"
+
+    def branches(self, st, memo):
+        return [(1.0, self.field(st), memo)]
 
 
 class Smith(Set):
@@ -298,11 +391,11 @@ class Smith(Set):
         return "smith"
 
     def check(self, ctx):
-        return {"gt"}
+        return margins.check(ctx)
 
-    def value(self, st):
-        g = _gt(st)
-        return [(1.0, [st.field[i] for i in M.smith_set(g - g.T)])]
+    def field(self, st):
+        M_ = margins.value(st)
+        return [st.field[i] for i in M.smith_set(M_)]
 
 
 smith = Smith()
@@ -320,9 +413,9 @@ class Best(Set):
     def check(self, ctx):
         return self.arg.check(ctx)
 
-    def value(self, st):
+    def field(self, st):
         v = np.asarray(self.arg.value(st), float)
-        return [(1.0, [st.field[i] for i in np.flatnonzero(v >= v.max() - M.EPS)])]
+        return [st.field[i] for i in np.flatnonzero(v >= v.max() - M.EPS)]
 
 
 def best(x):
@@ -330,7 +423,16 @@ def best(x):
     return Best(_part(x))
 
 
-class Top(Set):
+class Branching(Set):
+    """A set whose ties branch: the memo keeps the branch for the same part elsewhere in the expression."""
+    def branches(self, st, memo):
+        key = self.text()
+        if key in memo:
+            return [(1.0, memo[key], memo)]
+        return [(w, f, {**memo, key: f}) for w, f in self.options(st, memo)]
+
+
+class Top(Branching):
     def __init__(self, k, arg):
         if not isinstance(k, int) or k < 1:
             raise CompositionError(f"top needs a whole number of candidates first, not {k!r}")
@@ -344,14 +446,16 @@ class Top(Set):
     def check(self, ctx):
         return self.arg.check(ctx)
 
-    def value(self, st):
+    def options(self, st, memo):
         F = st.field
         if len(F) <= self.k:
             return [(1.0, list(F))]
         v = np.asarray(self.arg.value(st), float)
-        cut = np.sort(v)[::-1][self.k - 1]
-        above = [i for i in range(len(F)) if v[i] > cut + M.EPS]
-        tied = [i for i in range(len(F)) if abs(v[i] - cut) <= M.EPS]
+        cut = v.max() if self.k == 1 else np.sort(v)[::-1][self.k - 1]
+        above = np.flatnonzero(v > cut + M.EPS).tolist()
+        tied = np.flatnonzero(np.abs(v - cut) <= M.EPS).tolist()
+        if len(tied) == self.k - len(above):
+            return [(1.0, [F[i] for i in sorted(above + tied)])]
         ways = list(itertools.combinations(tied, self.k - len(above)))
         return [(1.0 / len(ways), [F[i] for i in sorted(above + list(w))]) for w in ways]
 
@@ -359,6 +463,45 @@ class Top(Set):
 def top(k, x):
     """The k highest by a measure; a tie at the k-th place branches with equal weights."""
     return Top(k, _part(x))
+
+
+class Challenger(Set):
+    def __init__(self, of, arg):
+        if of.kind != "set":
+            raise CompositionError(f"challenger needs a set first, {of.text()} is {_kind_name(of)}")
+        if arg.kind != "pairs":
+            raise CompositionError(f"challenger needs pairs second, {arg.text()} is {_kind_name(arg)}")
+        self.of, self.arg = of, arg
+
+    def text(self):
+        return f"challenger({self.of.text()}, {self.arg.text()})"
+
+    def check(self, ctx):
+        return self.of.check(ctx) | self.arg.check(ctx)
+
+    def branches(self, st, memo):
+        key = self.text()
+        if key in memo:
+            return [(1.0, memo[key], memo)]
+        out = []
+        p = np.asarray(self.arg.value(st), float)
+        pos = {c: i for i, c in enumerate(st.field)}
+        for w, S, m in self.of.branches(st, memo):
+            inside = [pos[c] for c in S]
+            outside = [i for i in range(len(st.field)) if i not in inside]
+            beat = p[outside][:, inside].max(axis=1) if outside and inside else np.zeros(0)
+            if not len(beat) or beat.max() <= M.EPS:
+                out.append((w, [], {**m, key: []}))            # nobody beats the set: no challenger
+                continue
+            ch = [st.field[outside[i]] for i in np.flatnonzero(beat >= beat.max() - M.EPS)]
+            out += [(w / len(ch), [c], {**m, key: [c]}) for c in ch]
+        return out
+
+
+def challenger(of, x):
+    """The strongest challengers of a set: the candidates outside it with the largest value (of the
+    pairs) against one of its members; ties branch; nobody with a positive value: an empty set."""
+    return Challenger(_part(of), _part(x))
 
 
 class Buck(Set):
@@ -373,10 +516,10 @@ class Buck(Set):
     def check(self, ctx):
         return self.arg.check(ctx)
 
-    def value(self, st):
+    def field(self, st):
         A = np.cumsum(self.arg.value(st), axis=0)           # per depth: totals from the top levels
         sup = sorted({int(c) for row in A for c in np.flatnonzero(row >= row.max() - M.EPS)})
-        return [(1.0, [st.field[i] for i in sup])]
+        return [st.field[i] for i in sup]
 
 
 def buck(x):
@@ -399,11 +542,12 @@ class SetOp(Set):
     def check(self, ctx):
         return self.a.check(ctx) | self.b.check(ctx)
 
-    def value(self, st):
+    def branches(self, st, memo):
         out = []
-        for (wa, fa), (wb, fb) in itertools.product(self.a.value(st), self.b.value(st)):
-            f = sorted(set(fa) | set(fb)) if self.op == "|" else sorted(set(fa) & set(fb))
-            out.append((wa * wb, f or list(st.field)))     # an empty intersection narrows nothing
+        for wa, fa, ma in self.a.branches(st, memo):
+            for wb, fb, mb in self.b.branches(st, ma):
+                f = sorted(set(fa) | set(fb)) if self.op == "|" else sorted(set(fa) & set(fb))
+                out.append((wa * wb, f, mb))
         return out
 
 
@@ -463,21 +607,57 @@ class Quoted(Part):
         m = self.view(ctx["poll"])
         if self.method.ballot != ctx["ballot"]:
             raise CompositionError(f"{self.name} uses {self.method.ballot} ballots, the composition {ctx['ballot']}")
-        if ctx["narrowed"]:
-            bad = [f for f in m.feats if not restrictable(f, ctx["ballot"])]
-            if bad:
-                raise CompositionError(f"{self.name} reads {', '.join(bad)}, which "
-                                       f"{'depends' if len(bad) == 1 else 'depend'} on the field: not available after a set")
         if ctx["normalized"] and not ctx["poll"]:
             bad = [f for f in m.feats if f not in AFTER_NORMALIZE]
             if bad:
                 raise CompositionError(f"{self.name} reads {', '.join(bad)}, which normalize does not provide")
-        return set(m.feats) | ({"nscore_sub"} if ctx["normalized"] and not ctx["poll"] and "sum" in m.feats else set())
+            return set().union(*[_need("nscore_sub" if f == "sum" else f, ctx) for f in m.feats])
+        return set().union(*[_need(f, ctx) for f in m.feats])
 
     def lottery(self, st):
         m = self.view(st.poll)
-        d = {f: st.get(f) for f in m.feats}
-        return np.asarray(m.decide(d), float)
+        return np.asarray(m.decide({f: st.get(f) for f in m.feats}), float)
+
+
+class Runoff(Part):
+    kind = "final"
+
+    def __init__(self, tiebreak=None):
+        if tiebreak is not None and tiebreak.kind != "values":
+            raise CompositionError(f"runoff breaks a tie by values, {tiebreak.text()} is {_kind_name(tiebreak)}")
+        self.tiebreak = tiebreak
+
+    def text(self):
+        return "runoff" if self.tiebreak is None else f"runoff({self.tiebreak.text()})"
+
+    def check(self, ctx):
+        if ctx["ballot"] not in TWO_ROUND:
+            raise CompositionError(f"runoff needs two-round ballots (score_run, app_run, fav_run), not {ctx['ballot']}")
+        return _need("runoff_gt", ctx) | (self.tiebreak.check(ctx) if self.tiebreak is not None else set())
+
+    def lottery(self, st):
+        k = len(st.field)
+        P = np.zeros(k)
+        if k == 1:
+            P[0] = 1.0
+            return P
+        g = _f(st.get("runoff_gt"))
+        Mr = g - g.T
+        tb = None if self.tiebreak is None else np.asarray(self.tiebreak.value(st), float)
+        if k == 2:
+            M.runoff(P, Mr, 0, 1, 1.0, tiebreak=tb)
+            return P
+        wins = (Mr > 0).sum(axis=1)                         # more than two finalists (a tie before):
+        return M.uniform_max(wins.astype(float))            # most runoff wins, ties split
+
+
+class _RunoffName(Runoff):
+    """`runoff` as a plain name, and runoff(values) as a call."""
+    def __call__(self, tiebreak):
+        return Runoff(_part(tiebreak))
+
+
+runoff = _RunoffName()
 
 
 class Chain(Part):
@@ -502,13 +682,42 @@ class Chain(Part):
 
 # ---------- the state while counting ----------
 class State:
-    __slots__ = ("s", "field", "norm", "C", "poll")
+    __slots__ = ("s", "field", "norm", "C", "poll", "ballot", "B", "cache", "exact")
 
-    def __init__(self, s, field, norm, C, poll):
+    def __init__(self, s, field, norm, C, poll, ballot, B=None, exact=False):
         self.s, self.field, self.norm, self.C, self.poll = s, field, norm, C, poll
+        self.ballot, self.B, self.cache, self.exact = ballot, B, {}, exact
 
     def get(self, f):
-        return restrict(self.s, f, self.field, self.C, None if self.poll else self.norm)
+        """Feature f's sum on the field: from the totals where it can be read there, else from the
+        ballots restricted to the field (the exact fallback)."""
+        if f in self.cache:
+            return self.cache[f]
+        norm = None if self.poll else self.norm
+        have = f in self.s or (f == "sum" and norm is not None and "nscore_sub" in self.s)
+        full = len(self.field) == self.C and (f != "sum" or norm is None)
+        if self.B is None or (have and (full or (not self.exact and
+                                                  (restrictable(f, self.ballot) or (f == "sum" and norm is not None))))):
+            x = restrict(self.s, f, self.field, self.C, norm)
+        else:
+            if f == "sum" and norm is not None:          # the ballots stretched over the field normalize saw
+                Bn = normalize_ballots(self.B[:, list(norm)])
+                pos = {c: i for i, c in enumerate(norm)}
+                x = Bn[:, [pos[c] for c in self.field]].sum(axis=0)
+            else:
+                Bf = self.B if len(self.field) == self.C else restrict_ballots(self.B, self.field, self.ballot)
+                k = len(self.field)
+                x = M.FEATURES[f][0](Bf).reshape(len(Bf), -1).astype(float).sum(axis=0).reshape(M.FEATURES[f][1](k))
+                x = x if x.shape else float(x)
+        self.cache[f] = x
+        return x
+
+
+def normalize_ballots(X):
+    """Score ballots stretched over their columns: lowest 0, highest the top score, not rounded; a
+    ballot rating them all alike counts 0 for all (as the feature nscore_sub)."""
+    lo, hi = X.min(axis=1, keepdims=True), X.max(axis=1, keepdims=True)
+    return np.where(hi > lo, (X - lo) * M.MAXS / np.where(hi > lo, hi - lo, 1), 0.0)
 
 
 def _steps(expr):
@@ -523,8 +732,9 @@ def _final(expr):
 
 
 def check(expr, ballot, poll=False):
-    """Static check of the whole composition; the features it needs."""
-    ctx = {"ballot": ballot, "narrowed": False, "normalized": False, "poll": poll}
+    """Static check of the whole composition: (features needed from totals, features that need the
+    exact fallback)."""
+    ctx = {"ballot": ballot, "narrowed": False, "normalized": False, "poll": poll, "fallback": set()}
     feats = set()
     _final(expr)
     for p in _steps(expr):
@@ -535,48 +745,41 @@ def check(expr, ballot, poll=False):
             ctx["narrowed"] = True
         elif p.kind == "transform":
             ctx["normalized"] = True
-    return feats
+    return feats, ctx["fallback"]
 
 
-def evaluate(expr, s, C, poll=False):
-    """Winner probabilities (C,) of the composition from the summed features s."""
+def evaluate(expr, s, C, ballot, poll=False, B=None, exact=False):
+    """Winner probabilities (C,) of the composition from the summed features s (and the ballots B for
+    the exact fallback; exact: every reading on a narrower field from the ballots, for the tests)."""
     P = np.zeros(C)
     steps = [p for p in _steps(expr) if p.kind != "ballots"]
 
     def go(i, st, w):
         p = steps[i]
         if p.kind == "transform":
-            go(i + 1, State(st.s, st.field, tuple(st.field), C, poll), w)
+            go(i + 1, State(st.s, st.field, tuple(st.field), C, poll, ballot, B, exact), w)
         elif p.kind == "set":
-            for wb, F in p.value(st):
+            for wb, F, _ in p.branches(st, {}):
+                if not F:
+                    F = list(st.field)                       # an empty set narrows nothing
                 if i == len(steps) - 1:                  # a set at the end: the win split equally
                     P[F] += w * wb / len(F)
                 else:
-                    go(i + 1, State(st.s, F, st.norm, C, poll), w * wb)
-        else:                                           # a quoted method
+                    go(i + 1, State(st.s, F, st.norm, C, poll, ballot, B, exact), w * wb)
+        else:                                           # a quoted method or a runoff
             P[st.field] += w * p.lottery(st)
 
-    go(0, State(s, list(range(C)), None, C, poll), 1.0)
+    go(0, State(s, list(range(C)), None, C, poll, ballot, B, exact), 1.0)
     return P
 
 
-def ballot_of(expr):
-    """The composition's ballot type: ballots(...) if given, else that of its quoted methods, else score."""
-    steps = _steps(expr)
-    if steps[0].kind == "ballots":
-        return steps[0].name
-    quoted = [p for p in _quoted(expr)]
-    return quoted[0].method.ballot if quoted else "score"
-
-
-def _quoted(expr):
+def _walk(expr):
     out = []
 
     def walk(p):
-        if isinstance(p, Quoted):
-            out.append(p)
-        for a in ("a", "b", "arg"):
-            if hasattr(p, a) and isinstance(getattr(p, a), Part):
+        out.append(p)
+        for a in ("a", "b", "arg", "of", "tiebreak"):
+            if isinstance(getattr(p, a, None), Part):
                 walk(getattr(p, a))
         for q in getattr(p, "steps", ()):
             walk(q)
@@ -584,8 +787,17 @@ def _quoted(expr):
     return out
 
 
-def _has_normalize(expr):
-    return any(p.kind == "transform" for p in _steps(expr))
+def ballot_of(expr):
+    """The composition's ballot type: ballots(...) if given, else that of its quoted methods, else score
+    runoff ballots if it has a runoff, else score ballots."""
+    steps = _steps(expr)
+    if steps[0].kind == "ballots":
+        return steps[0].name
+    parts = _walk(expr)
+    quoted = [p for p in parts if isinstance(p, Quoted)]
+    if quoted:
+        return quoted[0].method.ballot
+    return "score_run" if any(isinstance(p, Runoff) for p in parts) else "score"
 
 
 def _C_of(s):
@@ -601,23 +813,40 @@ def composed(expr, ballot=None):
     """The composition as a Method (methods.py)."""
     expr = _part(expr)
     ballot = ballot or ballot_of(expr)
-    feats = tuple(sorted(check(expr, ballot)))
-    pfeats = tuple(sorted(check(expr, ballot, poll=True)))
-    q = _quoted(expr)
+    feats, fallback = check(expr, ballot)
+    feats = tuple(sorted(feats))
+    pfeats, pfallback = check(expr, ballot, poll=True)
+    parts = _walk(expr)
     finals = [p for p in _steps(expr) if isinstance(p, Quoted)]
     settings = finals[-1].method.settings if finals else None
     poll = None
-    if _has_normalize(expr) or any(p.method.poll_view() is not p.method for p in q):
-        poll = (pfeats, lambda s: evaluate(expr, s, _C_of(s), poll=True))
-    m = M.Method(ballot, lambda s: evaluate(expr, s, _C_of(s)), feats, settings=settings, poll=poll)
+    if pfallback:
+        poll = None                     # the lab's default poll reading (score totals or first preferences)
+    elif fallback or any(isinstance(p, Normalize) for p in parts) or \
+            any(p.method.poll_view() is not p.method for p in parts if isinstance(p, Quoted)):
+        poll = (tuple(sorted(pfeats)), lambda s: evaluate(expr, s, _C_of(s), ballot, poll=True))
+    if fallback:                        # counted from the ballots (features of the field as needed)
+        inner = M.Method(ballot, None, feats) if feats else None
+
+        def full(B):
+            C = B.shape[1]
+            s = {}
+            if inner is not None:
+                inner._C = C
+                s = inner.unpack(inner.features(B).sum(axis=0))
+            return evaluate(expr, s, C, ballot, B=B)
+        m = M.Method(ballot, full=full, settings=settings, poll=poll)
+    else:
+        m = M.Method(ballot, lambda s: evaluate(expr, s, _C_of(s), ballot), feats, settings=settings, poll=poll)
     m.__dict__["composition"] = expr
     return m
 
 
 # ---------- reading the text ----------
-NAMES = {"score": score, "margins": margins, "wv": wv, "n": n, "levels": levels, "points": points,
-         "smith": smith, "normalize": normalize}
-CALLS = {"share": share, "worst": worst, "best": best, "top": top, "buck": buck, "ballots": ballots}
+NAMES = {"score": score, "margins": margins, "wv": wv, "po": po, "n": n, "levels": levels, "points": points,
+         "smith": smith, "normalize": normalize, "runoff": runoff}
+CALLS = {"share": share, "worst": worst, "best": best, "top": top, "buck": buck, "ballots": ballots,
+         "challenger": challenger, "soft": soft, "approvals": approvals, "runoff": runoff}
 
 
 def parse(text):
@@ -636,7 +865,7 @@ def parse(text):
         elif isinstance(node, ast.Name):
             if node.id in NAMES:
                 return NAMES[node.id]
-            raise CompositionError(f"unknown part {node.id!r}; parts: {', '.join(list(NAMES) + list(CALLS))}")
+            raise CompositionError(f"unknown part {node.id!r}; parts: {', '.join(sorted(set(NAMES) | set(CALLS)))}")
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and not node.keywords:
             if node.func.id not in CALLS:
                 raise CompositionError(f"unknown part {node.func.id!r}(...); parts with arguments: {', '.join(CALLS)}")

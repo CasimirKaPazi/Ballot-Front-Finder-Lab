@@ -883,15 +883,25 @@ print("previous field ok")
 # and Minimax give exactly the hand-written methods, their polls included
 import compose as _cp
 _comps = {"Smith//Score": 'smith >> "Score"', "ESR": 'buck(points) >> normalize >> "Score"',
-          "MMWV+Score": "best(share(score) - worst(wv) / n)", "Minimax": 'ballots("rank") >> best(-worst(margins))'}
+          "MMWV+Score": "best(share(score) - worst(wv) / n)", "Minimax": 'ballots("rank") >> best(-worst(margins))',
+          "Score runoff": "top(2, score) >> runoff(score)",
+          "Approval runoff": 'ballots("app_run") >> top(2, score) >> runoff(score)',
+          "MMPO": 'ballots("weak") >> best(-worst(po))', "Soft Minimax": "best(-worst(soft(0.2)))"}
+if "SCR" in METHODS:                               # the add-on, if present
+    _comps["SCR"] = "(top(1, score) | challenger(top(1, score), margins)) >> runoff(score)"
 _rgc = np.random.default_rng(31)
 for _nm, _tx in _comps.items():
     _h, _c = METHODS[_nm], _cp.composed(_cp.parse(_tx))
     assert _c.ballot == _h.ballot, _nm
     for _t in range(150):
         _C, _nv = int(_rgc.integers(2, 7)), int(_rgc.integers(3, 25))
-        _Bc = (_h.sincere(_rgc.random((_nv, _C)), 0.0) if _h.ballot == "rank"
-               else _rgc.integers(0, _methods_mod.MAXS + 1, (_nv, _C)).astype(float))      # many ties
+        if _h.ballot == "score":                                                    # many ties
+            _Bc = _rgc.integers(0, _methods_mod.MAXS + 1, (_nv, _C)).astype(float)
+        elif _h.ballot == "score_run":                                              # round-1 scores, runoff ranking
+            _Bc = (_rgc.integers(0, _methods_mod.MAXS + 1, (_nv, _C)) * _C
+                   + np.argsort(np.argsort(_rgc.random((_nv, _C)), axis=1), axis=1)).astype(float)
+        else:
+            _Bc = _h.sincere(_rgc.random((_nv, _C)), 0.0)
         assert np.allclose(_h.tally(_Bc), _c.tally(_Bc)), (_nm, _Bc.tolist())
         assert np.allclose(_h.poll_view().tally(_Bc), _c.poll_view().tally(_Bc)), (_nm, "poll", _Bc.tolist())
 # the canonical spelling: the same composition always has the same name, and reads back as itself
@@ -901,7 +911,8 @@ for _tx in ['(best(score) | smith) >> "Score"', "best(score - (score - 1))", "be
     assert _cp.canonical(_cp.canonical(_tx)) == _cp.canonical(_tx), _tx
 # mistakes are caught with the parts' kinds named, and nothing outside the notation runs
 for _tx, _msg in [("top(2, smith)", "top needs values, smith is a set"),
-                  ('smith >> "Plurality"', "depends on the field"),           # first preferences among the field
+                  ('ballots("score") >> top(2, score) >> runoff', "needs two-round ballots"), ("challenger(smith, score)", "challenger needs pairs"),
+                  ("best(approvals(0))", "at least 1"), ("best(soft(0.3))", "0.2 and 0.4"),
                   ('normalize >> best(levels)', "best needs values"),
                   ('normalize >> "MJ"', "normalize does not provide"),
                   ("smith >> score", "a composition ends in"),
@@ -914,9 +925,38 @@ for _tx, _msg in [("top(2, smith)", "top needs values, smith is a set"),
 # a quoted method after a set reads its totals on the narrower field: Smith//Score's Smith set of two
 _Bs = np.array([[5, 4, 0], [5, 4, 0], [0, 5, 4], [4, 0, 5], [4, 5, 0]], float)
 assert np.allclose(_cp.composed(_cp.parse('smith >> "Score"')).tally(_Bs), METHODS["Smith//Score"].tally(_Bs))
+# the exact fallback: a reading that depends on the field, after a set, from the ballots restricted to the
+# field (here Borda among the Smith set, on the induced rankings); the result is counted from the ballots
+_cb = _cp.composed(_cp.parse('ballots("rank") >> smith >> "Borda"'))
+assert _cb.full is not None
+for _t in range(60):
+    _C, _nv = int(_rgc.integers(3, 7)), int(_rgc.integers(3, 25))
+    _Bb = METHODS["Borda"].sincere(_rgc.random((_nv, _C)), 0.0)
+    _g = (_Bb[:, :, None] > _Bb[:, None, :]).sum(axis=0)
+    _sm = list(_methods_mod.smith_set(_g - _g.T))
+    _Pb = np.zeros(_C)
+    _Pb[_sm] = METHODS["Borda"].tally(np.argsort(np.argsort(_Bb[:, _sm], axis=1), axis=1).astype(float))
+    assert np.allclose(_cb.tally(_Bb), _Pb), _Bb.tolist()
+# ... and the totals and the exact fallback agree wherever both exist
+for _tx in ['smith >> "Score"', "top(2, score) >> runoff(score)", 'ballots("rank") >> top(3, score) >> "IRV"',
+            'buck(points) >> normalize >> "Score"', 'top(3, score) >> normalize >> top(2, score) >> "STAR"']:
+    _c = _cp.composed(_cp.parse(_tx))
+    for _t in range(40):
+        _C, _nv = int(_rgc.integers(3, 7)), int(_rgc.integers(3, 25))
+        if _c.ballot == "score":
+            _Bx = _rgc.integers(0, _methods_mod.MAXS + 1, (_nv, _C)).astype(float)
+        elif _c.ballot == "score_run":
+            _Bx = (_rgc.integers(0, 6, (_nv, _C)) * _C + np.argsort(np.argsort(_rgc.random((_nv, _C)), 1), 1)).astype(float)
+        else:
+            _Bx = METHODS["IRV"].sincere(_rgc.random((_nv, _C)), 0.0)
+        _sx = {f: _methods_mod.FEATURES[f][0](_Bx).reshape(_nv, -1).astype(float).sum(0).reshape(
+            _methods_mod.FEATURES[f][1](_C)) for f in _c.feats}
+        _sx = {k: (v if v.shape else float(v)) for k, v in _sx.items()}
+        assert np.allclose(_cp.evaluate(_c.composition, _sx, _C, _c.ballot),
+                           _cp.evaluate(_c.composition, _sx, _C, _c.ballot, B=_Bx, exact=True)), (_tx, _Bx.tolist())
 # top(k, ...) branches on a tie at the k-th place: A 10, B and C 5 each -> {A, B} or {A, C}, half each
-_st = _cp.State({"sum": np.array([10.0, 5.0, 5.0])}, [0, 1, 2], None, 3, False)
-assert sorted(map(tuple, (f for _, f in _cp.top(2, _cp.score).value(_st)))) == [(0, 1), (0, 2)]
+_st = _cp.State({"sum": np.array([10.0, 5.0, 5.0])}, [0, 1, 2], None, 3, False, "score")
+assert sorted(map(tuple, (f for _, f, _m in _cp.top(2, _cp.score).branches(_st, {})))) == [(0, 1), (0, 2)]
 # selection: a composition named in --methods is registered under its canonical name, with a group and a
 # safe file name
 _sel = select(['smith>>"Score"', "Score"])
