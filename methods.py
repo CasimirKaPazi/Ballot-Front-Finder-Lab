@@ -1968,8 +1968,51 @@ def sincerity_defined(method):
 
 
 def group_of(method):
-    """The group a method belongs to ("other" for names not in METHODS, e.g. from older CSVs)."""
+    """The group a method belongs to ("other" for names not in METHODS, e.g. from older CSVs; a
+    composition is registered first, see register)."""
+    if method not in METHODS:
+        ensure([method], strict=False)
     return next((g for g, ms in GROUPS.items() if method in ms), "other")
+
+
+# ---------- compositions (compose.py, docs/pipelines.md) ----------
+COMPOSED_GROUP = "composed"       # the group of a composition that does not end in a quoted method
+
+
+def register(text):
+    """Register a composition (its text, e.g. 'smith >> "Score"') as a method under its canonical
+    name, in the group of its final quoted method (else "composed"); returns the name."""
+    import compose
+    name = compose.canonical(text)
+    if name not in METHODS:
+        m = compose.composed(compose.parse(name))
+        METHODS[name] = m
+        finals = [p for p in compose._steps(m.composition) if isinstance(p, compose.Quoted)]
+        GROUPS.setdefault(group_of(finals[-1].name) if finals else COMPOSED_GROUP, []).append(name)
+    return name
+
+
+def ensure(names, strict=True):
+    """Make sure every composition among `names` is registered (worker processes start without them).
+    strict: an unreadable name is an error, else it is left alone."""
+    import compose
+    for x in names:
+        if x not in METHODS and compose.looks_like(x):
+            try:
+                register(x)
+            except compose.CompositionError as e:
+                if strict:
+                    raise SystemExit(f"{x}: {e}")
+
+
+def file_name(method):
+    """A name for files about one method (plots): built-in and add-on names as they are, with every
+    character other than letters and digits as "_"; compositions by compose.file_name (with a short
+    hash, so that two never share a file)."""
+    import compose
+    if method not in METHODS or "composition" not in METHODS[method].__dict__:
+        return "".join(ch if ch.isalnum() else "_" for ch in method)
+    return compose.file_name(method)
 
 
 
@@ -1985,6 +2028,16 @@ def select(include=None, exclude=None):
     lookup["all"] = list(METHODS)
 
     def resolve(names):
+        import compose
+        names = list(names)
+        for i, x in enumerate(names):                # compositions: registered under their canonical name
+            if x.lower() not in lookup and compose.looks_like(x):
+                try:
+                    k = register(x)
+                except compose.CompositionError as e:
+                    raise SystemExit(f"{x}: {e}")
+                lookup[k.lower()] = [k]
+                names[i] = k
         bad = [x for x in names if x.lower() not in lookup]
         if bad:
             raise SystemExit(f"unknown method(s) or group(s): {', '.join(bad)}. Methods: {', '.join(METHODS)}. "

@@ -879,6 +879,64 @@ _Xc = _run.carry_over(METHODS["Score"], np.array([[5.0, 2.0, 0.0], [0.0, 5.0, 3.
                       [(0, 0), (1, 0), (2, 0)], [(1, 0), (0, 0), (0, 1)], np.array([0, 1, 2]))
 assert _Xc.tolist() == [[2, 5, 0], [5, 0, 0]], _Xc            # B, A, A's clone; C left the race
 print("previous field ok")
+# Compositions (compose.py, docs/pipelines.md): written as compositions, Smith//Score, ESR, MMWV+Score
+# and Minimax give exactly the hand-written methods, their polls included
+import compose as _cp
+_comps = {"Smith//Score": 'smith >> "Score"', "ESR": 'buck(points) >> normalize >> "Score"',
+          "MMWV+Score": "best(share(score) - worst(wv) / n)", "Minimax": 'ballots("rank") >> best(-worst(margins))'}
+_rgc = np.random.default_rng(31)
+for _nm, _tx in _comps.items():
+    _h, _c = METHODS[_nm], _cp.composed(_cp.parse(_tx))
+    assert _c.ballot == _h.ballot, _nm
+    for _t in range(150):
+        _C, _nv = int(_rgc.integers(2, 7)), int(_rgc.integers(3, 25))
+        _Bc = (_h.sincere(_rgc.random((_nv, _C)), 0.0) if _h.ballot == "rank"
+               else _rgc.integers(0, _methods_mod.MAXS + 1, (_nv, _C)).astype(float))      # many ties
+        assert np.allclose(_h.tally(_Bc), _c.tally(_Bc)), (_nm, _Bc.tolist())
+        assert np.allclose(_h.poll_view().tally(_Bc), _c.poll_view().tally(_Bc)), (_nm, "poll", _Bc.tolist())
+# the canonical spelling: the same composition always has the same name, and reads back as itself
+assert _cp.canonical('buck(points)>>normalize>>"score"') == 'buck(points) >> normalize >> "Score"'
+for _tx in ['(best(score) | smith) >> "Score"', "best(score - (score - 1))", "best(-(share(score) + 1))",
+            'smith >> top(2, score) >> "Score"', "best(score) | smith & top(2, score)"]:
+    assert _cp.canonical(_cp.canonical(_tx)) == _cp.canonical(_tx), _tx
+# mistakes are caught with the parts' kinds named, and nothing outside the notation runs
+for _tx, _msg in [("top(2, smith)", "top needs values, smith is a set"),
+                  ('smith >> "Plurality"', "depends on the field"),           # first preferences among the field
+                  ('normalize >> best(levels)', "best needs values"),
+                  ('normalize >> "MJ"', "normalize does not provide"),
+                  ("smith >> score", "a composition ends in"),
+                  ('__import__("os")', "unknown part"), ('smith >> "Nope"', "unknown method")]:
+    try:
+        _cp.composed(_cp.parse(_tx))
+        raise AssertionError(f"accepted: {_tx}")
+    except _cp.CompositionError as _e:
+        assert _msg in str(_e), (_tx, str(_e))
+# a quoted method after a set reads its totals on the narrower field: Smith//Score's Smith set of two
+_Bs = np.array([[5, 4, 0], [5, 4, 0], [0, 5, 4], [4, 0, 5], [4, 5, 0]], float)
+assert np.allclose(_cp.composed(_cp.parse('smith >> "Score"')).tally(_Bs), METHODS["Smith//Score"].tally(_Bs))
+# top(k, ...) branches on a tie at the k-th place: A 10, B and C 5 each -> {A, B} or {A, C}, half each
+_st = _cp.State({"sum": np.array([10.0, 5.0, 5.0])}, [0, 1, 2], None, 3, False)
+assert sorted(map(tuple, (f for _, f in _cp.top(2, _cp.score).value(_st)))) == [(0, 1), (0, 2)]
+# selection: a composition named in --methods is registered under its canonical name, with a group and a
+# safe file name
+_sel = select(['smith>>"Score"', "Score"])
+assert 'smith >> "Score"' in _sel and _methods_mod.group_of('smith >> "Score"') == "rated"
+assert _methods_mod.group_of("best(share(score) - worst(wv) / n)") == "composed"
+assert _methods_mod.file_name('smith >> "Score"').startswith("smith-Score-")
+# in an add-on, a composition is a method like any other (a temporary add-on folder)
+import tempfile as _tf, os as _os
+with _tf.TemporaryDirectory() as _d:
+    with open(_os.path.join(_d, "mine.py"), "w") as _f:
+        _f.write('from compose import composed, smith\nMETHODS = {"My Smith//Score": composed(smith >> "Score")}\n')
+    _methods_mod._load_addons(_d)
+assert np.allclose(METHODS["My Smith//Score"].tally(_Bs), METHODS["Smith//Score"].tally(_Bs))
+for _k in [k for k, m in list(METHODS.items()) if "composition" in m.__dict__]:   # the method list as before
+    METHODS.pop(_k); _methods_mod.ADDONS.pop(_k, None)
+    for _g in _methods_mod.GROUPS.values():
+        if _k in _g:
+            _g.remove(_k)
+_methods_mod.GROUPS.pop(_methods_mod.COMPOSED_GROUP, None)
+print("compositions ok")
 # Laziness in the runoff of two-round ballots: a lazy voter who cares only about A and B ranks just
 # them in the runoff part, so a runoff between C and D gets no vote from them
 from ballots import fav_run_ballots as _frb

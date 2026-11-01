@@ -178,6 +178,43 @@ A real, separate runoff: voters come back and vote between the finalists, by the
 | Inverse-Borda | ranking | Borda; the sincere ballot ranks upside down |
 | Inverse-Score | 0–5 | Score; the sincere ballot scores upside down (the least liked gets the top score) |
 
+## Compositions: methods built from parts
+
+A method can also be written as a composition of parts, on the command line or in an add-on (compose.py; the plan and its reasons in [pipelines.md](pipelines.md)). It runs like any other method: `python run.py --methods 'smith >> "Score"' 'best(share(score) - worst(wv) / n)' Score`.
+
+A composition is a chain of steps (`>>`, read "then"): sets narrow the field, a transform changes a reading, and the last step decides. Readings pass through the steps: after `smith`, `"Score"` reads the same score totals, on the Smith set only. Readings that depend on which candidates are in (first preferences, rank points) are not taken from an earlier field: a composition that would need them after a set is refused with a message.
+
+| Part | Kind | Meaning |
+|---|---|---|
+| `score` | values | score totals (on rankings: rank points, so not after a set) |
+| `margins`, `wv` | pairs | pairwise margins; winning votes (the votes of the winner of a pair, 0 for the loser) |
+| `n` | number | the number of voters |
+| `levels`, `points` | per level | voters per score level (top level first); the same weighted by the level's score |
+| `share(values)` | values | values / (n × top score) |
+| `worst(pairs)` | values | each candidate's worst defeat: the largest value a rival has against them, 0 if none |
+| `smith` | set | the Smith set |
+| `best(values)` | set | everyone tied for the highest value |
+| `top(k, values)` | set | the k highest; a tie at the k-th place branches with equal weights |
+| `buck(levels)`, `buck(points)` | set | for every depth (the top 1, 2, … levels), the candidates ahead by voters or points from those levels, joined over the depths |
+| `a \| b`, `a & b` | set | union, intersection of two sets of the same field (an empty intersection narrows nothing) |
+| `normalize` | transform | every score ballot stretched over the current field (lowest there 0, highest the top score; not rounded); later steps read these scores |
+| `"Name"` | method | an existing method, on the current field and readings, if its totals can be read on a narrower field ([pipelines.md](pipelines.md), the feature table) |
+| `ballots("type")` | first step | the ballot type; default that of the quoted method, else score ballots |
+
+Values and pairs take `+ - * /` and `-` with each other and with numbers. A set at the end splits the win equally among its members (so `best(...)` at the end is "the highest wins, ties split"). Examples, each equal to the hand-written method in every count (tested):
+
+```
+smith >> "Score"                            Smith//Score
+buck(points) >> normalize >> "Score"        ESR
+best(share(score) - worst(wv) / n)          MMWV+Score
+ballots("rank") >> best(-worst(margins))    Minimax
+```
+
+- **Names.** A composition is stored under a canonical spelling (spaces and the method's own name spelled as in the lab), so `smith>>"score"` and `smith >> "Score"` are the same method. Files about one method (track plots) get a safe name with a short hash. Quote compositions on the command line, as above.
+- **Group.** The group of the final quoted method; compositions that end in a set or `best(...)` form the group `composed`.
+- **Polls.** A composition's polls are counted from its parts' poll views: `normalize` is read as nothing in a poll (the raw scores), a quoted method by its own poll view ([model.md](model.md), What a poll shows). For ESR written this way, the polls give the same winners as the hand-written ESR's stand-in (Score). The voters' poll arithmetic then also sees the score levels, which the stand-in does not publish, so individual voters can answer a little differently (in a trial, 2 of 1,440 values).
+- **Settings.** A composition takes the settings of its final quoted method (e.g. a fixed score range).
+
 ## Add-ons: methods in separate files
 
 A new method does not have to go into methods.py: put a Python file into the folder `addons/`, and its methods are loaded at start and used like the built-in ones, by name or group, in run.py, sweep.py and analyze.py. Delete the file to remove them; to share a method, share the file. Files starting with `_` are not loaded. `addons/_template.py` is a commented starting point; `addons/ids.py` (IDS, iterated dropped score) is a working example. [addons.md](addons.md) is a tutorial for writing one with little Python: a line-by-line walkthrough of IDS, and a new method (Bucklin) built step by step. A file defines:
@@ -186,7 +223,7 @@ A new method does not have to go into methods.py: put a Python file into the fol
 
 | Name | Required | Meaning |
 |---|---|---|
-| `METHODS` | yes | `{name: Method(ballot, decide, feats)}` (or `Method(ballot, full=tally)` for a rule that needs the whole ballot matrix); names must not clash with existing ones. Optional `settings={"max_score": X}` fixes the score range for this method, named `Name-X` (see [model.md](model.md), Score range) |
+| `METHODS` | yes | `{name: Method(ballot, decide, feats)}` (or `Method(ballot, full=tally)` for a rule that needs the whole ballot matrix, or `composed(...)` for a composition, see Compositions above: `from compose import composed, smith, best, score` and `"My method": composed(smith >> "Score")`); names must not clash with existing ones. Optional `settings={"max_score": X}` fixes the score range for this method, named `Name-X` (see [model.md](model.md), Score range) |
 | `FEATURES` | no | new per-voter ballot features, `{name: (function(B) -> array per voter, shape of the sum given C)}`; they are summed over voters and poll samples, which keeps tallies fast |
 | `BALLOTS` | no | new ballot types, `{name: ballots.Ballot(...)}`: honest ballots, strategic changes, exaggerations, implied values and the worst ballot (see ballots.py; rarely needed). A type that uses the score range sets `score_range=True` (one made with `dataclasses.replace` from the score ballot keeps it), so its methods join the `max-score` set |
 | `GROUP` | no | the group its methods join: an existing one (e.g. `rated`) or a new one; default `addons` |

@@ -59,7 +59,7 @@ import plots
 from metrics import pareto, FRONT_TOLERANCE, REF_POINTS
 from run import out_path, write_command, strategy_text, cand_text, width_text, check_folder, ANALYSIS_FILES, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
 from models import model_text, MODELS
-from methods import GROUPS, METHODS, select, group_of, sincerity_defined, current_name
+from methods import GROUPS, METHODS, select, group_of, sincerity_defined, current_name, file_name
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
 FRONT = ["VSE*", "WME*", "sincerity"]   # the axes dominance is judged on
@@ -857,9 +857,14 @@ MD_STARRED = re.compile(r"(?<![\\\w])(VSE|WME|CE|Low|Inverse-)\*(?!\*)")
 
 def md_stars(text):
     """Escape the asterisk of VSE*, WME*, CE* and Inverse-* outside code spans, so Markdown does not read
-    "VSE*, WME*" as emphasis."""
+    "VSE*, WME*" as emphasis; and | * _ in the names of compositions."""
     parts = text.split("`")
-    return "`".join(MD_STARRED.sub(r"\1\\*", p) if i % 2 == 0 else p for i, p in enumerate(parts))
+    text = "`".join(MD_STARRED.sub(r"\1\\*", p) if i % 2 == 0 else p for i, p in enumerate(parts))
+    # compositions (compose.py) may contain | * _, which Markdown reads as table cells or emphasis
+    for name in sorted((k for k, m in METHODS.items() if "composition" in m.__dict__), key=len, reverse=True):
+        if any(ch in name for ch in "|*_"):
+            text = text.replace(name, "".join("\\" + ch if ch in "|*_" else ch for ch in name))
+    return text
 
 
 def main():
@@ -995,7 +1000,7 @@ def main():
                    for key in keys]
         same = all(k in SAME_ELECTORATES for k in varying)
         for m in select(a.track):
-            fn = "track-" + "".join(ch if ch.isalnum() else "_" for ch in m) + "." + plots.ext()
+            fn = "track-" + file_name(m) + "." + plots.ext()
             if plots.track(conds_p, m, varying, PARAM_NAMES, os.path.join(a.out, fn), same, a.errorbars):
                 tracked.append((m, fn))
 

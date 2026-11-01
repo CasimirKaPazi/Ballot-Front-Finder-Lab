@@ -46,7 +46,7 @@ import numpy as np
 from scenario import Scenario
 from models import draw_electorate, model_text, MODELS
 from nomination import nominate, clone_setup, utilities, to_original
-from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined
+from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined, ensure
 from ballots import score_ballots
 from strategy import respond, strategy_types, default_poll_size, fidelity, implied_values
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, maximal_lottery, reference_points, FRONT_TOLERANCE
@@ -83,6 +83,7 @@ def one_election(job):
         dummy         --start previous: the previous election's ballots per method, else None
     A new run parameter only needs to be in PARAMS and be read from p here."""
     sc, p, e, rounds, names = job["sc"], job["p"], job["e"], job["rounds"], job["names"]
+    ensure(names)                                   # compositions: registered in this process too
     participation, dummy = job.get("participation", False), job.get("dummy")
     manipulating = job.get("manipulation", False)
     seed, samples, share = p["seed"], p["samples"], p["strategic"]
@@ -405,6 +406,7 @@ def previous_election(args):
     "previous-" streams), through the same number of poll rounds; returns its final ballots and its
     field (the entries (original, is_clone))."""
     sc, p, rounds, name = args
+    ensure([name])
     set_max_score(p["max_score"])
     set_lazy(p.get("lazy", 0.0))
     rng = np.random.default_rng([p["seed"], zlib.crc32(b"previous")])
