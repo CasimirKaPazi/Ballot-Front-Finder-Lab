@@ -34,6 +34,7 @@ VSE, WME, the random ballot and the best candidate are the same as without nomin
 change in VSE and WME is the effect of nomination on the outcome.
 """
 import numpy as np
+import methods as M
 from models import distances, utility
 from outcomes import value as outcome_value
 
@@ -113,7 +114,8 @@ def nominate(method, u, u_clone, cu, rng, exits=0, clones=0, rounds=ROUNDS):
         k = g.key()
         if k not in cache:
             e = g.entries()
-            cache[k] = (e, method.honest(utilities(e, u, u_clone)))
+            with M.candidates(M.candidate_utilities(cu, e)):      # for methods where candidates vote
+                cache[k] = (e, method.honest(utilities(e, u, u_clone)))
         return cache[k]
 
     def value(i, g):
@@ -146,5 +148,11 @@ def clone_setup(voters, cands, width, rng, voter_weights=None, cand_weights=None
     Distances and utilities as in models.py (with the model's dimension weights, if any)."""
     cpos = cands + rng.normal(0.0, CLONE_SD, cands.shape)
     u_clone = utility(distances(voters, cpos, voter_weights), width, form)
-    cu = utility(distances(cands, cands, cand_weights), width, form)
-    return u_clone, cu
+    return u_clone, cand_prefs(cands, width, cand_weights, form)
+
+
+def cand_prefs(cands, width, cand_weights=None, form="exp"):
+    """Candidates' utilities for every original: cu[i, d], candidate i's utility if d wins (by the same
+    utility as voters'; no random draw). Used by nomination, campaigns and the methods where candidates
+    cast or fill in votes (methods.candidate_utilities)."""
+    return utility(distances(cands, cands, cand_weights), width, form)

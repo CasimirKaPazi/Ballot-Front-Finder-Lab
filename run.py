@@ -45,8 +45,9 @@ import numpy as np
 
 from scenario import Scenario
 from models import draw_electorate, model_text, MODELS
-from nomination import nominate, clone_setup, utilities, to_original
-from methods import METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined, ensure
+from nomination import nominate, clone_setup, utilities, to_original, cand_prefs
+from methods import (METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined,
+                     ensure, set_candidates, candidates, candidate_utilities)
 from ballots import score_ballots
 from strategy import respond, strategy_types, default_poll_size, fidelity, implied_values
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, maximal_lottery, reference_points, FRONT_TOLERANCE
@@ -141,6 +142,9 @@ def one_election(job):
     # --campaign: candidates' utilities for every candidate (their own preferences), as in nomination
     cu_all = (clone_setup(voters, cands, sc.width, np.random.default_rng([seed, e, zlib.crc32(b"clones")]),
                           ele.voter_weights, ele.cand_weights, getattr(sc, "utility", "exp"))[1] if camp_on else None)
+    # the candidates' own preferences, for the methods where they cast or fill in votes (Asset, delegation)
+    cu_c = cand_prefs(cands, sc.width, ele.cand_weights, getattr(sc, "utility", "exp"))
+    full_field = [(d, 0) for d in range(C)]
     out = []
     for name in names:
         m = METHODS[name]
@@ -158,9 +162,11 @@ def one_election(job):
                 ents = field.entries()
                 uf, back = utilities(ents, u, u_clone), (lambda P, ents=ents: to_original(P, ents, C))
                 orig = np.array([d for d, _ in ents])
+            set_candidates(candidate_utilities(cu_c, ents if nominating else full_field))
             P_h = back(m.honest(uf))
             if nominating:
-                nstats = {**st, "nom_changed": int(np.abs(P_h - m.honest(u)).sum() > 1e-9)}
+                with candidates(candidate_utilities(cu_c, full_field)):
+                    nstats = {**st, "nom_changed": int(np.abs(P_h - m.honest(u)).sum() > 1e-9)}
             check = (lambda B: part.no_show(m, B, uf, u, back)) if participation else (lambda B: part.NAN)
             defined = sincerity_defined(name)          # blank for TRASH and the Inverse-* methods
             sincere_row = {**election_row(u, P_h, m_cand), **estats, "sincerity": 1.0 if defined else "",
@@ -211,6 +217,7 @@ def one_election(job):
                             "bold": cs_r.get("bold", "") if risk is not None else ""})
     set_voter_lazy(None)
     set_voter_approval(None)
+    set_candidates(None)
     return out
 
 
@@ -442,12 +449,14 @@ def previous_election(args):
             uf = utilities(ents, u, u_clone)
         orig = np.array([d for d, _ in ents])
         camp = {"share": phi, "cand_u": cu[np.ix_(orig, orig)]} if camp_on else None
+        set_candidates(candidate_utilities(cand_prefs(ele.cands, sc.width, ele.cand_weights, getattr(sc, "utility", "exp")), ents))
         B, _, _ = respond(m, uf, np.random.default_rng([p["seed"], zlib.crc32(b"previous-learning")]), rounds=rounds,
                           samples=p["samples"], poll_size=p["poll_size"], search=p["search"], strategic=strategic,
                           poll_error=p["poll_error"], aggressive=aggressive, adaptive=adaptive,
                           campaign=camp, risk=risk, individual=followers)
     set_voter_lazy(None)
     set_voter_approval(None)
+    set_candidates(None)
     return B, ents
 
 

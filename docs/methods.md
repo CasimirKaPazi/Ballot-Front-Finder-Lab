@@ -17,6 +17,7 @@ Every method belongs to exactly one group. Groups can be used wherever methods a
 | `median-based` | MJ, MAV, MCA (the grade a candidate reaches with a majority: median grade or Bucklin-like) |
 | `hybrid` | STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D (ratings combined with pairwise comparisons or runoffs) |
 | `positional` | Borda, Borda-ER, Dowdall |
+| `delegated` | Asset, Asset-foresight, Delegated 321 (the candidates cast their voters' votes, or fill in what voters leave blank; see Asset voting and delegation, below) |
 | `two-round` | TTR, Approval runoff, Approval cond. runoff, Score runoff (a real, separate runoff; see below) |
 | `references` | Random pair runoff, Random ballot, Anti-plurality, TRASH, Geometric median, Condorcet-random-drop, CW else Score loser, CL else Score winner (benchmarks and idealised rules, not proposals; not run unless named, e.g. `--methods all` or `--methods references STAR`, and hidden in the plots by default) |
 | `inverse` | Inverse-Plurality, Inverse-Approval, Inverse-Minimax, Inverse-IRV, Inverse-ER-IRV, Inverse-TTR, Inverse-Borda, Inverse-Score (tests of the strategy model, below; not run unless named; hidden in the plots by default) |
@@ -32,7 +33,7 @@ Example: `--methods condorcet STAR`, `--methods er-pairs`, `--methods max-score`
 
 ## Methods
 
-75 built-in methods, listed by group (see Groups and sets, above), plus any add-ons (see Add-ons, below); a run uses the `standard` set unless `--methods` names others. "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
+82 built-in methods, listed by group (see Groups and sets, above), plus any add-ons (see Add-ons, below); a run uses the `standard` set unless `--methods` names others. "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
 
 Pairwise preferences always come from the ballot itself, so equal ratings count as no preference. All ties are broken uniformly among the tied candidates and counted exactly.
 
@@ -142,6 +143,14 @@ The grade a candidate reaches with a majority of the voters: the median grade, o
 | Borda-ER | ranking, ties allowed | a point for every candidate ranked strictly below; ties score nothing. Equals Borda on strict rankings |
 | Dowdall | ranking | positional, 1, 1/2, 1/3, … points by rank (Nauru) |
 
+**delegated**
+
+| Method | Ballot | Rule |
+|---|---|---|
+| Asset | one name | asset voting, weakest first: each vote belongs to the candidate it names. The candidate holding the fewest votes is out and passes everything they hold, their own votes and those passed to them, to the first candidate on their own ranking still in; until one is left. Composed: `ballots("fav") >> repeat(proxy >> drop(firsts))` (until 2026-11-03 on rankings, of which only the first choice counted) |
+| Asset-foresight | one name | as Asset, but a candidate who is out passes their votes to whoever brings them the best result, assuming everyone after them passes on by their own ranking |
+| Delegated 321 | three grades | 3-2-1 voting, with what a lazy voter leaves blank filled from their favourite's own grades, at most OK. Without laziness (`--lazy 0`) the same as 321. Composed: `delegate >> "321"` |
+
 **two-round**
 
 A real, separate runoff: voters come back and vote between the finalists, by their sincere preference (see [model.md](model.md), Two-round elections). Not directly comparable with the one-ballot methods: the runoff is assumed sincere and turnout unchanged, and a second election has costs of its own.
@@ -178,6 +187,37 @@ A real, separate runoff: voters come back and vote between the finalists, by the
 | Inverse-TTR | two-round, plurality first round | round 1 as TTR, the sincere ballot marks the least liked. The runoff is a separate two-candidate vote in which voters vote by their real preference whatever the ballot means: the fixed runoff part of the ballot is the reversed ranking and the count reads it back, so the real majority decides. Only round 1 can be learned, as in TTR |
 | Inverse-Borda | ranking | Borda; the sincere ballot ranks upside down |
 | Inverse-Score | 0–5 | Score; the sincere ballot scores upside down (the least liked gets the top score) |
+
+## Asset voting and delegation
+
+In these methods the candidates take part in the count: they cast the votes given to them (asset voting), or fill in what a voter left blank (delegation). Both use the **candidates' own preferences**: a candidate sits in the issue space like a voter and values a winner by the same utility, as in strategic nomination ([model.md](model.md)); a clone values the field as its original does, and every candidate ranks themselves first. From these each candidate has their own sincere ballot of any type, complete (no laziness), approval at the default threshold. The methods need these preferences: run.py sets them for every field it counts on (`methods.set_candidates`).
+
+**Asset voting** goes back to Dodgson (1884), who let candidates pool the votes they received once the counts were announced. Simmons and Smith reinvented it as free negotiation among the candidates, Ford (2002) as weakest-first elimination with transfer lists published before the election. The published versions differ in when the candidates decide (lists committed before the election, or decisions after the count, with exact numbers), in the order (all at once, or the weakest first), in whose list a passed-on pile follows, and in whether piles can be split. The lab keeps one model and expresses the rest as compositions:
+
+- **No bargaining.** A candidate's only lever is who wins: positions are fixed, so promises of policy or office cannot be modelled. A candidate passes votes on by their own sincere ballot, the same for every count.
+- **What voters and candidates cast are separate.** The voters' ballot only says how their vote is divided among the candidates; the candidates then cast it with ballots of their own, of the type the count needs. Simmons' asset voting has voters name one candidate (one-name ballots: `ballots("fav")`); Smith's lets them divide their vote. Both are here (`methods.vote_shares`):
+  - one name, or a ranking: the whole vote to the first choice;
+  - approval: equal parts to every approved candidate, as a cumulative vote;
+  - scores and three grades: by the [Kotze-Pereira transformation](https://electowiki.org/wiki/Kotze-Pereira_transformation). A score ballot is read as one approval ballot per score level, each approving everyone scored at least that level and worth 1/5 of the vote (on 0–5), split equally among its approved. A ballot A 5, B 3 gives A 3/10 + 2/5 = 7/10 and B 3/10. A ballot whose highest score is 3 gives away only 3/5 of a vote: the levels nobody reaches go to no one.
+
+  Divided votes bring back an incentive for clones: a clone approved or scored like its original takes an equal part of every vote that includes the original, so the family's share grows. With one name or a ranking a clone gains nothing (a ranking has no tie at the top).
+- **Weakest first, by the holder's list** (Asset): the candidate holding the fewest votes is out, and their whole pile, including what was passed to them, follows their own ranking to the first candidate still in (Ford's delegative voting, rangevoting.org's "poorest first", candidate-directed IRV). As a composition: `ballots("fav") >> repeat(proxy >> drop(firsts))`, or with `held` (the votes each holds) for any candidates' ballot: `ballots("score") >> repeat(proxy("score") >> drop(held))` has voters divide by Kotze-Pereira and candidates who are out pass on in the same way, by their own score ballots.
+- **Weakest first, by the original candidate's list**: `ballots("fav") >> proxy >> repeat(drop(firsts))`. Every vote keeps following the ranking of the candidate it first went to: IRV on the candidates' rankings, weighted by their votes. The two differ only when a pile is passed on twice.
+- **All at once**: `proxy >> "X"` for any method X: every candidate casts all their votes at once with their own ballot, and X counts these weighted ballots. `ballots("fav") >> proxy >> "Minimax"` is the idealized negotiation: the candidates' Condorcet winner, each weighted by their votes (electowiki's Algorithmic Asset Voting, with candidates who follow their own preferences rather than their voters'). Without `ballots(...)` the voters use the ballot of the quoted method: `proxy >> "STAR"` has voters cast score ballots, divided by Kotze-Pereira, and the candidates STAR ballots.
+- **Foresight** (Asset-foresight): decisions after the count, with exact numbers. A candidate who is out tries every candidate still in and passes their votes to whoever brings them the best expected result, assuming everyone after them passes on sincerely (as candidates foresee honest voting in strategic nomination). A tie between choices keeps their own list's choice. With three candidates this never differs from Asset (passing to the favourite either makes them win, or the other wins either way); with more it can: a kingmaker whose favourite cannot win anyway passes to the second choice.
+
+Voters' strategy works as for any method: what their vote does depends on whom they name first. A voter can name someone else than their favourite when the favourite would pass the votes on badly. In a poll, only the first preferences are uncertain; what the candidates then do follows exactly from them.
+
+**Delegation** (Delegated 321, the part `delegate`): after electowiki's Delegated 3-2-1. Each candidate publishes their ratings of the others before the election; a voter who leaves candidates blank has the blanks filled from their favourite's ratings. In the lab the blanks are what a lazy voter does not care about (`--lazy`; see [model.md](model.md), Laziness): without laziness delegation changes nothing. A blank is always filled below everything the voter marked: on rankings the blanks are ranked after the voter's own ranking, in the favourite's order; on scores and grades a blank gets the favourite's value, but at most one level below the lowest value the voter gave. A bullet vote for one Good on 3-2-1 grades thus fills OK where the favourite rates a candidate OK or good, and bad elsewhere, as in Delegated 3-2-1. Delegation is a property of the ballots, so strategic voters start from the filled ballot like any other. Sincerity and fidelity are left blank for delegated methods: part of the honest ballot is the favourite's, which measured against the voter's own preferences would count as insincere.
+
+Two rules of Delegated 3-2-1 are left out:
+
+- **Conditional OK with reciprocity.** A candidate's conditional OK for another turns bad if the other rates them bad. It guards one candidate's support against being used by another, which matters when pre-ratings are strategic. Here pre-ratings are the candidates' sincere grades, so the guard would change nothing.
+- **Filled-in OK below explicit OK** in the final round. This only decides close finals.
+
+Delegation is also filled for voters who mark more than one candidate, so `delegate` works the same for every method. In Delegated 3-2-1, blanks count as bad once a voter rates two candidates Good.
+
+Sources: [electowiki, Asset voting](https://electowiki.org/wiki/Asset_voting); [electowiki, 3-2-1 voting, Delegated 3-2-1](https://electowiki.org/wiki/3-2-1_voting#Delegated_3-2-1); [rangevoting.org, Asset voting](https://www.rangevoting.org/Asset.html); [Bryan Ford, Single-Winner Delegative Voting](https://bford.info/log/2002/1021-DelegativeVoting/single.html).
 
 ## Compositions: methods built from parts
 

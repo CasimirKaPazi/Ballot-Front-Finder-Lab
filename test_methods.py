@@ -4,6 +4,7 @@ from methods import METHODS
 from metrics import election_row, worst_margins
 import methods as _methods_mod
 _methods_mod.APPROVAL_DEFAULT = 0.0   # the hand-built checks below use the threshold at the voter's mean (draw 0)
+_methods_mod.CAND_LINE = True         # hand-built profiles have no positions: candidates on a line (Asset, delegation)
 
 
 def profile(groups):
@@ -894,11 +895,15 @@ if "SCR" in METHODS:                               # the add-on, if present: two
     _comps["SCR"] = "(top(1, score) | challenger(top(1, score), margins)) >> runoff(score)"
     _comps["SCR "] = '("Score" | challenger("Score", margins)) >> runoff(score)'   # methods as sets
 _rgc = np.random.default_rng(31)
+_rgp = np.random.default_rng(32)                                # candidates' positions: their own stream
 for _nm, _tx in _comps.items():
     _h, _c = METHODS[_nm.strip()], _cp.composed(_cp.parse(_tx))
     assert _c.ballot == _h.ballot, _nm
     for _t in range(150):
         _C, _nv = int(_rgc.integers(2, 7)), int(_rgc.integers(3, 25))
+        _cpos = _rgp.normal(size=(_C, 2))                       # candidates' own preferences (Asset, delegation)
+        _methods_mod.set_candidates(_methods_mod.candidate_utilities(
+            np.exp(-np.sqrt(((_cpos[:, None] - _cpos[None]) ** 2).sum(-1))), [(i, 0) for i in range(_C)]))
         if _h.ballot == "score":                                                    # many ties
             _Bc = _rgc.integers(0, _methods_mod.MAXS + 1, (_nv, _C)).astype(float)
         elif _h.ballot == "score_run":                                              # round-1 scores, runoff ranking
@@ -908,6 +913,7 @@ for _nm, _tx in _comps.items():
             _Bc = _h.sincere(_rgc.random((_nv, _C)), _rgc.random(_nv) * 0.5)   # some laziness (truncation)
         assert np.allclose(_h.tally(_Bc), _c.tally(_Bc)), (_nm, _Bc.tolist())
         assert np.allclose(_h.poll_view().tally(_Bc), _c.poll_view().tally(_Bc)), (_nm, "poll", _Bc.tolist())
+_methods_mod.set_candidates(None)
 # the canonical spelling: the same composition always has the same name, and reads back as itself
 assert _cp.canonical('buck(points)>>normalize>>"score"') == 'buck(points) >> normalize >> "Score"'
 for _tx in ['(best(score) | smith) >> "Score"', "best(score - (score - 1))", "best(-(share(score) + 1))",
@@ -1558,3 +1564,104 @@ import shutil as _sh
 for _d in (_tmp, _other, _ok):                                   # only the folders this test made
     _sh.rmtree(_d)
 print("compare.py and output folders ok")
+
+# Asset voting and delegation (docs/methods.md, Asset voting): candidates cast or fill in votes
+import compose as _cpa
+_mm.set_lazy(0.0)
+
+
+def _line(xs):
+    """Candidates' utilities for positions on a line (as nomination.cand_prefs, width 1)."""
+    x = np.asarray(xs, float)
+    return _mm.candidate_utilities(np.exp(-np.abs(x[:, None] - x[None])), [(i, 0) for i in range(len(x))])
+
+
+def _firsts(counts):
+    """Strict rankings with these first preferences (the rest of each ranking does not matter here)."""
+    C = len(counts)
+    return np.array([[C - 1 if j == c else 0 for j in range(C)] for c, k in enumerate(counts) for _ in range(k)], float)
+
+
+with _mm.candidates(_line([0.6, 1.3, 2.8, 3.2])):
+    _B = _firsts([27, 23, 15, 33])
+    # weakest first, by the holder's own list: C (15) to D, B (23) to A, A 50 beats D 48
+    check("Asset: C to D, B to A, A wins", METHODS["Asset"].tally(_B), [1, 0, 0, 0])
+    # with foresight C sees that passing to D only lets A win, and passes to B instead: B 38, A out, B wins
+    check("Asset-foresight: C passes to B", METHODS["Asset-foresight"].tally(_B), [0, 1, 0, 0])
+    _ch = _cpa.composed(_cpa.parse('ballots("rank") >> repeat(proxy >> drop(firsts))'))
+    check("Asset as a composition", _ch.tally(_B), [1, 0, 0, 0])
+with _mm.candidates(_line([0.6, 1.5, 1.9, 2.8])):
+    # a pile passed on twice: B (9) to C, then C (19) is out. By the holder's list (proxy inside the repeat)
+    # C passes all 19 to D: D 39 beats A 38. By the original's list (proxy before the repeat) C's own 10
+    # go to D, but B's 9 follow B's list to A: A 47 beats D 30
+    _B = _firsts([38, 9, 10, 20])
+    check("Asset: B to C, C's 19 to D, D wins", METHODS["Asset"].tally(_B), [0, 0, 0, 1])
+    check("proxy before the repeat: B's votes by B's list, A wins",
+          _cpa.composed(_cpa.parse('ballots("rank") >> proxy >> repeat(drop(firsts))')).tally(_B), [1, 0, 0, 0])
+with _mm.candidates(_line([0.0, 3.0, 1.6])):
+    # proxy >> a Condorcet method: the candidates' ballots weighted by their votes; C (between A and B,
+    # closer to B) is everyone's second choice: C beats A 60:40 and B 65:35
+    _B = _firsts([40, 35, 25])
+    check("proxy >> Minimax: the weighted candidates' Condorcet winner",
+          _cpa.composed(_cpa.parse('proxy >> "Minimax"')).tally(_B), [0, 0, 1])
+    check("proxy >> Minimax in a poll",
+          _cpa.composed(_cpa.parse('proxy >> "Minimax"')).poll_view().tally(_B), [0, 0, 1])
+with _mm.candidates(_line([0.0, 0.5, 2.0, 2.4])):
+    # D (10) to C: C 30; B (25) to A: A 60 wins. Before: proxy once, then IRV on the candidates' rankings
+    _B = _firsts([35, 25, 20, 10])
+    check("Asset, four candidates", METHODS["Asset"].tally(_B), [1, 0, 0, 0])
+# delegation: a lazy voter's blanks from the favourite's own ballot, below what the voter marked
+with _mm.candidates(_line([0.0, 1.0, 3.0])):
+    _uv = np.array([[1.0, 0.5, 0.0]])                     # the voter likes A, then B
+    _mm.set_lazy(1.0)                                     # marks only A
+    assert np.allclose(METHODS["321"].sincere(_uv), [[2, 0, 0]])
+    # A pre-rates (its own grade ballot): A good, B OK, C bad; filled at most OK: B OK, C bad
+    assert np.allclose(METHODS["Delegated 321"].sincere(_uv), [[2, 1, 0]])
+    _d = _cpa.composed(_cpa.parse('delegate >> "321"'))
+    assert np.allclose(_d.sincere(_uv), [[2, 1, 0]]) and _d.delegate
+    # rankings: the blanks ranked after the voter's own ranking, in the favourite's order
+    _uv2 = np.array([[0.0, 1.0, 0.1]])                    # likes B; B's own order: B, A, C
+    assert np.allclose(_cpa.composed(_cpa.parse('delegate >> "Borda"')).sincere(_uv2), [[1, 2, 0]])
+    _mm.set_lazy(0.0)
+    assert np.allclose(METHODS["Delegated 321"].sincere(_uv), METHODS["321"].sincere(_uv))   # no laziness: no change
+for _tx, _msg in [('ballots("fav") >> proxy >> "Plurality"', "the candidates' ballots must order"),
+                  ('ballots("veto") >> proxy >> "Minimax"', "proxy needs voters' ballots"),
+                  ('ballots("fav") >> proxy("score") >> "Minimax"', "Minimax uses rank ballots"),
+                  ("best(held)", "needs a proxy before it"),
+                  ('delegate >> "Approval"', "delegate needs ballots"),
+                  ('smith >> delegate >> "Score"', "delegate comes first")]:
+    try:
+        _cpa.composed(_cpa.parse(_tx))
+        raise AssertionError(f"accepted: {_tx}")
+    except _cpa.CompositionError as _e:
+        assert _msg in str(_e), (_tx, str(_e))
+assert _cpa.composed(_cpa.parse('ballots("grade3") >> delegate >> "321"')).delegate
+# how a ballot divides its vote (methods.vote_shares): first choice, equal parts of approval, and
+# scores by the Kotze-Pereira transformation (one approval ballot per score level, each 1/5)
+assert np.allclose(_mm.vote_shares(np.array([[0, 1, 0.]]), "fav"), [[0, 1, 0]])
+assert np.allclose(_mm.vote_shares(np.array([[1, 1, 0, 1.]]), "approval"), [[1 / 3, 1 / 3, 0, 1 / 3]])
+assert np.allclose(_mm.vote_shares(np.array([[5, 3, 0.]]), "score"), [[3 / 10 + 2 / 5, 3 / 10, 0]])
+assert np.allclose(_mm.vote_shares(np.array([[3, 0, 0.]]), "score"), [[3 / 5, 0, 0]])   # top 3 of 5: 3/5 of a vote
+assert np.allclose(_mm.vote_shares(np.array([[2, 1, 0.]]), "grade3"), [[3 / 4, 1 / 4, 0]])
+with _mm.candidates(_line([0.0, 1.0, 3.0])):
+    # split votes, all at once: 4 voters approve A and C (2 votes each), 3 approve B alone; held A 2, B 3,
+    # C 2; the candidates' rankings A>B>C, B>A>C, C>B>A: B is the weighted Condorcet winner
+    _Ba = np.array([[1, 0, 1.]] * 4 + [[0, 1, 0.]] * 3)
+    check("approval split, proxy >> Minimax", _cpa.composed(_cpa.parse('ballots("approval") >> proxy >> "Minimax"')).tally(_Ba), [0, 1, 0])
+    # weakest first by what each holds: A and C tie at 2; either passes to B (A's and C's second): B wins
+    check("approval split, weakest first",
+          _cpa.composed(_cpa.parse('ballots("approval") >> repeat(proxy >> drop(held))')).tally(_Ba), [0, 1, 0])
+    # candidates passing on with score ballots split by Kotze-Pereira as well: the result is a lottery
+    _Pk = _cpa.composed(_cpa.parse('ballots("approval") >> repeat(proxy("score") >> drop(held))')).tally(_Ba)
+    assert abs(_Pk.sum() - 1) < 1e-9
+print("asset voting and delegation ok")
+# strategy types: the order a delegated ballot fills in from the favourite is not counted as burial
+from strategy import strategy_types as _stt
+with _mm.candidates(_line([0.0, 1.0, 3.0, 4.0])):
+    _mm.set_lazy(0.6)
+    _ud = np.array([[1.0, 0.0, 0.3, 0.2]])                # likes A, then C, D, B; A's own order: A, B, C, D
+    _Sd = _cpa.composed(_cpa.parse('delegate >> "Borda"')).sincere(_ud)
+    assert np.allclose(_Sd, [[3, 2, 1, 0]])                # B, C, D filled in A's order: two reversals
+    assert _stt(_Sd, _ud, None, _Sd)["burial"] == 0 and _stt(_Sd, _ud)["burial"] == 1
+    _mm.set_lazy(0.0)
+print("strategy types of delegated ballots ok")

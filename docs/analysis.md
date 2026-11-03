@@ -52,7 +52,7 @@ VSE, WME and CE use sincere ballots; VSE\*, WME\* and CE\* (in the CSV: VSE_lear
 
 *Exaggeration* (since 2026-10-30) counts, separately, the voters whose ballot differs from their sincere ballot without reversing any preference: candidates tied, left unranked, or given the lowest or highest score together with others. It is how a candidate is buried or raised as far as the format allows without a reversal: on score ballots the other leader and everyone liked no more at the lowest score, on truncatable rankings left unranked (under Borda, unranked candidates get no points, so this works as burial). Results files from before have no such column; the report shows —.
 
-The three are exclusive. For score ballots, "burial" includes small reversals among lower-rated candidates, so a high burial share can go with high sincerity.
+The three are exclusive. A reversal the sincere ballot already makes is not counted: on delegated methods ([methods.md](methods.md), Asset voting and delegation) the honest ballot ranks what the voter left blank in the favourite's order, which can go against the voter's own preferences without any strategy (since 2026-11-03; before, this showed as burial). For score ballots, "burial" includes small reversals among lower-rated candidates, so a high burial share can go with high sincerity.
 
 **Sincerity and fidelity.** Two separate questions about a learned ballot: does it go against the voter's own preferences, and how much does it tell about them?
 

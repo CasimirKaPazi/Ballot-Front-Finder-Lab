@@ -53,6 +53,7 @@ So `smith >> "Score"` is: the score ballots; `smith` narrows the field to the Sm
 | `po` | pairs | pairwise opposition: for A against B, the voters preferring A, whoever wins the pair |
 | `soft(f)` | pairs | soft margins (as Soft Minimax): per voter the score difference A − B, clipped to ±f of the score range and divided by f × range, summed over voters. 0 < f ≤ 1. With small f every difference counts as a full vote (majority margins); with f = 1 the score differences themselves, so the best worst soft margin is the Score winner |
 | `n` | number | the number of voters |
+| `held` | values | after `proxy`: the votes each candidate of the field holds. `repeat(proxy("score") >> drop(held))` is weakest first with candidates who pass on by their score ballots |
 | `levels` | per level | voters per score level and candidate, top level first (score ballots) |
 | `points` | per level | the same, each level weighted by its score (the top level of 0–5 counts 5 per voter, the next 4, ...) |
 | `approvals(k)` | values | voters scoring a candidate at least k (score ballots) |
@@ -84,7 +85,7 @@ A set narrows the field. A tie inside a set branches: each way the tie can go is
 | `challenger(set, pairs)` | the strongest challengers of a set: the candidates outside it with the largest value (of the pairs) against one of its members. Ties branch. Nobody with a positive value: an empty set |
 | `bottom_two(order, pairs)` | one round of bottom-two runoff: the two lowest by the order meet, and the loser of the match is out (pairs: a positive value means the row candidate wins). A tie in the match is split; `bottom_two(order, pairs, tiebreak)` gives it to the higher tiebreak value first |
 | `btr(order, pairs)` | the bottom-two climb on a fixed order: the field ordered high to low, the lowest two meet, the winner meets the next one up, and so on; the last winner is the set. A tie in a match is split; with a tiebreak, `btr(order, pairs, tiebreak)`, it goes to the higher tiebreak value and, when those tie too, to the candidate higher in the order (as BTR-score). Tied orders: every order of the tied candidates, equally |
-| `repeat(steps)` | the steps (sets and transforms) again and again, until one candidate is left or a round changes nothing. Each round starts from the readings before the repeat, so a `normalize` inside stretches the ballots over the field left, every round |
+| `repeat(steps)` | the steps (sets and transforms) again and again, until one candidate is left or a round changes nothing. Each round starts from the readings before the repeat, so a `normalize` inside stretches the ballots over the field left, every round. Only what `proxy` does carries over from round to round: it changes who holds the votes, not how they are read |
 | `"Name"` | an existing method, used as a set: the set of its winner on the current field (a tie in its result branches with the method's weights) |
 | `a \| b`, `a & b` | the union and the intersection of two sets of the same field. An empty set narrows nothing. The same part twice in one set expression takes the same branch of a tie |
 
@@ -99,6 +100,7 @@ A set narrows the field. A tie inside a set branches: each way the tie can go is
 | Part | Meaning |
 |---|---|
 | `normalize` | every score ballot stretched over the current field: its lowest candidate there 0, its highest the top score, the rest in proportion; not rounded. A ballot that rates the whole field alike counts 0 for all. Later steps read these scores (`score`, and a quoted method's score totals). Pairwise readings are unchanged, since stretching keeps each ballot's order |
+| `proxy`, `proxy("type")` | asset voting ([methods.md](methods.md), Asset voting and delegation): every vote is given to candidates of the current field as the voter's ballot divides it (`methods.vote_shares`: one name or a ranking to the first choice; approval in equal parts to the approved, as a cumulative vote; scores and grades by the Kotze-Pereira transformation), and from then on the candidates cast it, each with their own sincere ballot of the type given. A bare `proxy` takes the ballot type of the composition's last quoted method, else rankings; the candidates' type must order more than one candidate (not one name, veto or two-round). The electorate is then the candidates, each weighted by the votes they hold, and every later reading counts their ballots. A candidate who is out of the field still holds their votes, and the readings follow that candidate's own ballot among the field. Inside a `repeat` the holdings carry over: a proxy in a later round passes everything a candidate out of the field holds on as their own ballot divides a vote, and candidates in the field keep what they hold. So `repeat(proxy >> drop(firsts))` passes piles by the holder's list, and `proxy >> repeat(drop(firsts))` by the list of the candidate a vote first went to. In a poll only the holdings come from the poll; what the candidates' ballots then give is counted exactly |
 
 ### Last steps
 
@@ -115,6 +117,8 @@ A set narrows the field. A tie inside a set branches: each way the tie can go is
 `ballots("type")` as the first step sets the ballot type (the types are listed in ballots.py: `score`, `rank`, `weak`, `strict`, `trunc`, `fav`, `approval`, `score_run`, ...). Without it: with a `runoff`, the two-round ballot whose first round fits the first quoted method (score runoff ballots for a method on score ballots, approval runoff for approval, two-round plurality for one name; score runoff ballots without a quoted method); otherwise the ballot type of the first quoted method; otherwise score ballots.
 
 On two-round ballots, a quoted method of the first round's type counts the round-1 marks: `"DMS"` on score runoff ballots is DMS on the round-1 scores.
+
+`delegate` as the first step (or right after `ballots(...)`) makes the ballots delegated: what a lazy voter leaves blank is filled from their favourite's own ballot, below everything the voter marked ([methods.md](methods.md), Asset voting and delegation). On rankings (`rank`, `weak`), scores and three grades; without laziness (`--lazy 0`) it changes nothing. `delegate >> "321"` is Delegated 321, `delegate >> "Score"` delegated Score.
 
 ## Polls
 
@@ -166,6 +170,8 @@ repeat(normalize >> drop(score))                         INS
 ballots("rank") >> repeat(bottom_two(firsts, margins))   BTR-IRV
 btr(score, margins, score)                               BTR-score
 btr(score, margins + n * diff(share(score)))             MARS
+ballots("fav") >> repeat(proxy >> drop(firsts))          Asset
+delegate >> "321"                                        Delegated 321
 ("Score" | challenger("Score", margins)) >> runoff(score)                  SCR (the add-on)
 ```
 

@@ -135,8 +135,13 @@ def strategy_types(B, u, leaders=None, sincere=None):
                    (a candidate buried or raised as far as the format allows without a reversal);
                    only with `sincere`, the voters' sincere ballots (since 2026-10-30)
     The four are exclusive; sincere voters count in none. leaders: the last poll round's two
-    leaders (since 2026-10-28; None: by the mean alone, as before)."""
-    rev = ((B[:, :, None] > B[:, None, :]) & (u[:, :, None] < u[:, None, :])).any(axis=(1, 2))
+    leaders (since 2026-10-28; None: by the mean alone, as before). With `sincere`, a reversal the
+    sincere ballot already makes is not counted (delegated methods: the order filled in from the
+    favourite is no strategy; other methods' sincere ballots never reverse a preference)."""
+    R = (B[:, :, None] > B[:, None, :]) & (u[:, :, None] < u[:, None, :])
+    if sincere is not None:
+        R &= ~(sincere[:, :, None] > sincere[:, None, :])
+    rev = R.any(axis=(1, 2))
     top = B >= B.max(axis=1, keepdims=True)
     fav_top = top[np.arange(len(B)), u.argmax(axis=1)]
     best_top = np.where(top, u, -np.inf).max(axis=1)

@@ -19,7 +19,7 @@ methods.py ("# composed: ..."), e.g.
 
 Parts:
     readings   score (totals; on two-round ballots the round-1 marks), firsts (first preferences among
-               the field, rankings), margins, wv (winning votes), po (pairwise opposition), soft(f)
+               the field, rankings), held (after proxy: the votes each candidate holds), margins, wv (winning votes), po (pairwise opposition), soft(f)
                (soft margins, 0 < f <= 1), n (voters), levels (voters per score level, top first),
                points (the same times the level's score), approvals(k) (voters scoring at least k)
     arithmetic share(values) = values / (n x top score); worst(pairs) (each candidate's worst defeat);
@@ -29,12 +29,16 @@ Parts:
                bottom-two runoff), btr(order, pairs[, tiebreak]) (the bottom-two climb: the winner),
                repeat(steps) (until one is left or nothing changes); a | b, a & b. Ties branch; the
                same part twice in one set expression takes the same branch
-    transforms normalize (score ballots stretched over the current field, not rounded)
+    transforms normalize (score ballots stretched over the current field, not rounded); proxy,
+               proxy("type") (asset voting: every vote given to candidates as the voter's ballot
+               divides it, and cast from then on by them with their own ballots of the type; inside a
+               repeat, the votes of candidates who are out are passed on round by round)
     final      "Name": an existing method on the current field and readings; runoff, runoff(values):
                a separate runoff by the runoff rankings of two-round ballots; a set at the end splits
                the win equally
     first      ballots("type"): the ballot type (default: that of the quoted method; score runoff
-               ballots with runoff; else score)
+               ballots with runoff; else score); delegate (what lazy voters leave blank is filled from
+               their favourite's own ballot)
     chaining   >> ("then")
 
 composed(expr) turns a composition into an ordinary Method (methods.py): ballot type, features,
@@ -234,7 +238,10 @@ def _wrap(p, prec):
 
 def _need(f, ctx):
     """Feature f in this context: from totals if it can be read on the current field, else marked for
-    the exact fallback (ballots restricted to the field)."""
+    the exact fallback (ballots restricted to the field). After proxy every reading comes from the
+    candidates' ballots, so nothing is needed from the voters' totals."""
+    if ctx.get("proxied"):
+        return set()
     if ctx["narrowed"] and not restrictable(f, ctx["ballot"]):
         if not recastable(ctx["ballot"]):
             raise CompositionError(f"{f} depends on the field, and {ctx['ballot']} ballots cannot be "
@@ -369,6 +376,25 @@ class Firsts(Reading):
 
 
 firsts = Firsts()
+
+
+class Held(Part):
+    """After proxy: the votes each candidate of the field holds (what they will cast)."""
+    kind = "values"
+
+    def text(self):
+        return "held"
+
+    def check(self, ctx):
+        if not ctx.get("proxied"):
+            raise CompositionError("held reads the votes the candidates hold: it needs a proxy before it")
+        return set()
+
+    def value(self, st):
+        return np.asarray(st.W, float)[st.field]
+
+
+held = Held()
 
 
 class Const(Part):
@@ -707,13 +733,20 @@ class Repeat(Set):
         return f"repeat({self.inner.text()})"
 
     def check(self, ctx):
-        c = {**ctx, "narrowed": True}                            # every round after the first is on a narrower field
+        # every round after the first is on a narrower field; with a proxy inside, the voters' ballots
+        # are only read in the first round (later rounds count the candidates' ballots)
+        has_proxy = any(isinstance(p, Proxy) for p in _walk(self.inner))
+        c = {**ctx} if has_proxy else {**ctx, "narrowed": True}
         feats = set()
         for p in self.inner.steps:
             feats |= p.check(c)
             if p.kind == "transform":
-                c["normalized"] = True
+                p.after(c)
+            elif p.kind == "set":
+                c["narrowed"] = True
         ctx["fallback"] |= c["fallback"]
+        if c.get("proxied"):                                     # proxy changes the ballots for good
+            ctx.update(proxied=True, normalized=False, poll=False, ballot=c["ballot"])
         return feats
 
     def branches(self, st, memo):
@@ -725,11 +758,11 @@ class Repeat(Set):
                 nxt = []
                 for w, s_ in res:
                     if p.kind == "transform":
-                        nxt.append((w, State(s_.s, s_.field, tuple(s_.field), s_.C, s_.poll, s_.ballot, s_.B, s_.exact, s_.shared)))
+                        nxt.append((w, p.transform(s_)))
                     else:
                         for wb, F, _ in p.branches(s_, {}):
                             F = F or list(s_.field)
-                            nxt.append((w * wb, State(s_.s, F, s_.norm, s_.C, s_.poll, s_.ballot, s_.B, s_.exact, s_.shared)))
+                            nxt.append((w * wb, s_.but(field=F)))
                 res = nxt
             return res
 
@@ -740,8 +773,8 @@ class Repeat(Set):
             for wb, s_ in once(state):
                 if s_.field == state.field:                      # nothing changed: done
                     out.append((w * wb, list(s_.field), memo))
-                else:
-                    go(State(s_.s, s_.field, st.norm, st.C, st.poll, st.ballot, st.B, st.exact, st.shared), w * wb)
+                else:                       # the next round: normalize again, but proxy's ballots carry over
+                    go(s_.but(norm=st.norm if s_.W is None else None), w * wb)
 
         go(st, 1.0)
         return out
@@ -749,7 +782,8 @@ class Repeat(Set):
 
 def repeat(x):
     """The steps (sets and transforms) again and again, until one candidate is left or a round changes
-    nothing; each round starts from the readings before the repeat (a normalize inside acts per round)."""
+    nothing; each round starts from the readings before the repeat (a normalize inside acts per round),
+    except that the ballots proxy gives carry over (a proxy inside passes votes on round by round)."""
     return Repeat(_part(x))
 
 
@@ -811,8 +845,99 @@ class Normalize(Part):
             raise CompositionError(f"normalize needs score ballots, not {ctx['ballot']}")
         return set()
 
+    def after(self, ctx):
+        ctx["normalized"] = True
+
+    def transform(self, st):
+        return st.but(norm=tuple(st.field))
+
 
 normalize = Normalize()
+
+
+VOTER_SHARES = ("fav", "rank", "strict", "weak", "trunc", "trunc3", "approval", "score", "grade3")
+CAND_BALLOTS = ("rank", "strict", "weak", "trunc", "trunc3", "approval", "score", "grade3")
+
+
+class Proxy(Part):
+    """Asset voting: every vote is given to candidates, and from then on cast by them, each with
+    their own sincere ballot (methods.candidate_ballots, from the candidates' utilities over the
+    field). The voters' ballots say how their vote is divided among the current field
+    (methods.vote_shares): one name or a ranking give it to the first choice; approval splits it
+    equally among the approved (a cumulative vote); scores and grades split it by the Kotze-Pereira
+    transformation. The candidates' ballots are of the type given, proxy("score"); a bare proxy
+    takes the ballot type of the composition's last quoted method, else rankings. The electorate is
+    then the candidates, each weighted by the votes they hold, and every later reading counts their
+    ballots (exactly, also in a poll: only who holds how much comes from the poll). A candidate who is
+    out still holds their votes until a later proxy: then everything a candidate out of the field
+    holds is passed on as their own ballot divides a vote among the field, and candidates in the field
+    keep what they hold. Inside a repeat this carries over from round to round."""
+    kind = "transform"
+
+    def __init__(self, ptype=None):
+        if ptype is not None and ptype not in CAND_BALLOTS:
+            raise CompositionError(f"proxy: the candidates' ballots must order more than one candidate "
+                                   f"({', '.join(CAND_BALLOTS)}), not {ptype!r}")
+        self.ptype = ptype
+
+    def __call__(self, ptype):
+        return Proxy(ptype)
+
+    def text(self):
+        return "proxy" if self.ptype is None else f'proxy("{self.ptype}")'
+
+    def _type(self, ctx_or_st):
+        pt = self.ptype or (ctx_or_st["proxy_type"] if isinstance(ctx_or_st, dict) else ctx_or_st.pt)
+        return pt or "rank"
+
+    def check(self, ctx):
+        b, pt = ctx["ballot"], self._type(ctx)
+        if pt not in CAND_BALLOTS:
+            raise CompositionError(f"proxy: the candidates' ballots must order more than one candidate "
+                                   f"({', '.join(CAND_BALLOTS)}), not {pt} (give the type: proxy(\"rank\"))")
+        if ctx.get("proxied"):
+            return set()
+        if b not in VOTER_SHARES:
+            raise CompositionError(f"proxy needs voters' ballots that give a vote to candidates ({', '.join(VOTER_SHARES)}), "
+                                   f"not {b}")
+        return firsts.check(ctx) if b in FIRSTS or b == "fav" else _need(M.SHARE_FEATURE[b], ctx)
+
+    def after(self, ctx):
+        ctx.update(proxied=True, normalized=False, poll=False, ballot=self._type(ctx))
+
+    def transform(self, st):
+        pt = self._type(st)
+        K = M.candidate_ballots(pt, st.C)
+        F = list(st.field)
+        W = np.zeros(st.C)
+        if st.W is None:                                       # the voters' votes, divided among the field
+            b = st.ballot
+            W[F] = np.asarray(firsts.value(st) if b in FIRSTS or b == "fav" else st.get(M.SHARE_FEATURE[b]), float)
+        else:                                                  # candidates out pass on what they hold
+            inn = np.zeros(st.C, bool)
+            inn[F] = True
+            W[inn] = st.W[inn]
+            out = np.flatnonzero(~inn & (st.W > M.EPS))
+            if len(out):
+                sh = M.vote_shares(restrict_ballots(K[out], F, pt), pt)
+                W[F] += st.W[out] @ sh
+        return State({}, F, None, st.C, False, pt, K, True, None, W, pt=st.pt)
+
+
+proxy = Proxy()
+
+
+class Delegate(Part):
+    """Delegation: what a lazy voter leaves blank is filled from their favourite's own ballot, below
+    everything the voter marked (methods.delegate_fill). A property of the ballots, so it comes first
+    (after ballots(...), if given); it changes nothing without laziness (--lazy)."""
+    kind = "ballots"
+
+    def text(self):
+        return "delegate"
+
+
+delegate = Delegate()
 
 
 class Ballots(Part):
@@ -986,8 +1111,8 @@ class Chain(Part):
             if p.kind not in ("set", "transform", "ballots"):
                 raise CompositionError(f"{p.text()} is {_kind_name(p)}: only sets and transforms can come "
                                        "before >>")
-            if p.kind == "ballots" and i > 0:
-                raise CompositionError("ballots(...) comes first")
+            if p.kind == "ballots" and i > 0 and not (isinstance(p, Delegate) and i == 1 and isinstance(flat[0], Ballots)):
+                raise CompositionError(f"{p.text()} comes first" + (" (after ballots(...))" if isinstance(p, Delegate) else ""))
         self.steps = flat
         self.kind = "chain"
 
@@ -997,12 +1122,20 @@ class Chain(Part):
 
 # ---------- the state while counting ----------
 class State:
-    __slots__ = ("s", "field", "norm", "C", "poll", "ballot", "B", "cache", "exact", "shared")
+    __slots__ = ("s", "field", "norm", "C", "poll", "ballot", "B", "cache", "exact", "shared", "W", "pt")
 
-    def __init__(self, s, field, norm, C, poll, ballot, B=None, exact=False, shared=None):
+    def __init__(self, s, field, norm, C, poll, ballot, B=None, exact=False, shared=None, W=None, pt=None):
         self.s, self.field, self.norm, self.C, self.poll = s, field, norm, C, poll
         self.ballot, self.B, self.cache, self.exact = ballot, B, {}, exact
         self.shared = {} if shared is None else shared       # readings on the whole field, for one count
+        self.W = W                  # after proxy: B are the candidates' ballots, W the votes each holds
+        self.pt = pt                # the candidates' ballot type of a bare proxy (proxy_type)
+
+    def but(self, **kw):
+        """The same state with some slots changed (and nothing cached)."""
+        a = {k: getattr(self, k) for k in ("s", "field", "norm", "C", "poll", "ballot", "B", "exact", "shared", "W", "pt")}
+        a.update(kw)
+        return State(**a)
 
     def get(self, f):
         """Feature f's sum on the field: from the totals where it can be read there, else from the
@@ -1016,14 +1149,17 @@ class State:
                                                   (restrictable(f, self.ballot) or (f == "sum" and norm is not None))))):
             x = restrict(self.s, f, self.field, self.C, norm)
         else:
+            W = None if self.W is None else self.W[:, None]    # after proxy: each ballot weighted
             if f == "sum" and norm is not None:          # the ballots stretched over the field normalize saw
                 Bn = normalize_ballots(self.B[:, list(norm)])
                 pos = {c: i for i, c in enumerate(norm)}
-                x = Bn[:, [pos[c] for c in self.field]].sum(axis=0)
+                Bn = Bn[:, [pos[c] for c in self.field]]
+                x = (Bn if W is None else Bn * W).sum(axis=0)
             else:
                 Bf = self.B if len(self.field) == self.C else restrict_ballots(self.B, self.field, self.ballot)
                 k = len(self.field)
-                x = M.FEATURES[f][0](Bf).reshape(len(Bf), -1).astype(float).sum(axis=0).reshape(M.FEATURES[f][1](k))
+                X = M.FEATURES[f][0](Bf).reshape(len(Bf), -1).astype(float)
+                x = (X if W is None else X * W).sum(axis=0).reshape(M.FEATURES[f][1](k))
                 x = x if x.shape else float(x)
         self.cache[f] = x
         return x
@@ -1050,7 +1186,8 @@ def _final(expr):
 def check(expr, ballot, poll=False):
     """Static check of the whole composition: (features needed from totals, features that need the
     exact fallback)."""
-    ctx = {"ballot": ballot, "narrowed": False, "normalized": False, "poll": poll, "fallback": set()}
+    ctx = {"ballot": ballot, "narrowed": False, "normalized": False, "poll": poll, "fallback": set(),
+           "proxy_type": proxy_type(expr)}
     feats = set()
     _final(expr)
     for p in _steps(expr):
@@ -1060,11 +1197,18 @@ def check(expr, ballot, poll=False):
         if p.kind == "set":
             ctx["narrowed"] = True
         elif p.kind == "transform":
-            ctx["normalized"] = True
+            p.after(ctx)
     return feats, ctx["fallback"]
 
 
-def evaluate(expr, s, C, ballot, poll=False, B=None, exact=False):
+def proxy_type(expr):
+    """The candidates' ballot type of a bare proxy: that of the composition's last quoted method,
+    else rankings."""
+    quoted = [p for p in _walk(expr) if isinstance(p, Quoted)]
+    return quoted[-1].method.ballot if quoted else "rank"
+
+
+def evaluate(expr, s, C, ballot, poll=False, B=None, exact=False, pt=None):
     """Winner probabilities (C,) of the composition from the summed features s (and the ballots B for
     the exact fallback; exact: every reading on a narrower field from the ballots, for the tests)."""
     P = np.zeros(C)
@@ -1073,7 +1217,7 @@ def evaluate(expr, s, C, ballot, poll=False, B=None, exact=False):
     def go(i, st, w):
         p = steps[i]
         if p.kind == "transform":
-            go(i + 1, State(st.s, st.field, tuple(st.field), C, poll, ballot, B, exact, st.shared), w)
+            go(i + 1, p.transform(st), w)
         elif p.kind == "set":
             for wb, F, _ in p.branches(st, {}):
                 if not F:
@@ -1081,11 +1225,11 @@ def evaluate(expr, s, C, ballot, poll=False, B=None, exact=False):
                 if i == len(steps) - 1:                  # a set at the end: the win split equally
                     P[F] += w * wb / len(F)
                 else:
-                    go(i + 1, State(st.s, F, st.norm, C, poll, ballot, B, exact, st.shared), w * wb)
+                    go(i + 1, st.but(field=F), w * wb)
         else:                                           # a quoted method or a runoff
             P[st.field] += w * p.lottery(st)
 
-    go(0, State(s, list(range(C)), None, C, poll, ballot, B, exact), 1.0)
+    go(0, State(s, list(range(C)), None, C, poll, ballot, B, exact, pt=pt or proxy_type(expr)), 1.0)
     return P
 
 
@@ -1108,7 +1252,7 @@ def ballot_of(expr):
     first round is that of the first quoted method (score runoff ballots without one); else the ballot
     of the first quoted method, else score ballots."""
     steps = _steps(expr)
-    if steps[0].kind == "ballots":
+    if isinstance(steps[0], Ballots):
         return steps[0].name
     parts = _walk(expr)
     quoted = [p for p in parts if isinstance(p, Quoted)]
@@ -1136,6 +1280,7 @@ def composed(expr, ballot=None):
     ballot = ballot or ballot_of(expr)
     feats, fallback = check(expr, ballot)
     feats = tuple(sorted(feats))
+    pt = proxy_type(expr)
     pfeats, pfallback = check(expr, ballot, poll=True)
     parts = _walk(expr)
     finals = [p for p in _steps(expr) if isinstance(p, Quoted)]
@@ -1145,7 +1290,7 @@ def composed(expr, ballot=None):
         poll = None                     # the lab's default poll reading (score totals or first preferences)
     elif fallback or set(pfeats) != set(feats) or any(isinstance(p, Normalize) for p in parts) or \
             any(p.method.poll_view() is not p.method for p in parts if isinstance(p, Quoted)):
-        poll = (tuple(sorted(pfeats)), lambda s: evaluate(expr, s, _C_of(s), ballot, poll=True))
+        poll = (tuple(sorted(pfeats)), lambda s: evaluate(expr, s, _C_of(s), ballot, poll=True, pt=pt))
     if fallback:                        # counted from the ballots (features of the field as needed)
         inner = M.Method(ballot, None, feats) if feats else None
 
@@ -1155,20 +1300,26 @@ def composed(expr, ballot=None):
             if inner is not None:
                 inner._C = C
                 s = inner.unpack(inner.features(B).sum(axis=0))
-            return evaluate(expr, s, C, ballot, B=B)
+            return evaluate(expr, s, C, ballot, B=B, pt=pt)
         m = M.Method(ballot, full=full, settings=settings, poll=poll)
     else:
-        m = M.Method(ballot, lambda s: evaluate(expr, s, _C_of(s), ballot), feats, settings=settings, poll=poll)
+        m = M.Method(ballot, lambda s: evaluate(expr, s, _C_of(s), ballot, pt=pt), feats, settings=settings, poll=poll)
+    if any(isinstance(p, Delegate) for p in _steps(expr)):
+        if ballot not in M.DELEGABLE:
+            raise CompositionError(f"delegate needs ballots where a voter leaves candidates blank and a blank can "
+                                   f"be filled below what they marked ({', '.join(M.DELEGABLE)}), not {ballot}")
+        m.delegate = True
     m.__dict__["composition"] = expr
     return m
 
 
 # ---------- reading the text ----------
 NAMES = {"score": score, "margins": margins, "wv": wv, "po": po, "n": n, "levels": levels, "points": points,
-         "firsts": firsts, "smith": smith, "normalize": normalize, "runoff": runoff, "random_ballot": random_ballot}
+         "firsts": firsts, "smith": smith, "normalize": normalize, "runoff": runoff, "random_ballot": random_ballot,
+         "proxy": proxy, "delegate": delegate, "held": held}
 CALLS = {"share": share, "worst": worst, "total": total, "diff": diff, "best": best, "top": top, "buck": buck,
          "drop": drop, "btr": btr, "bottom_two": bottom_two, "repeat": repeat, "ballots": ballots, "challenger": challenger, "soft": soft,
-         "approvals": approvals, "runoff": runoff}
+         "approvals": approvals, "runoff": runoff, "proxy": proxy}
 
 
 def parse(text):

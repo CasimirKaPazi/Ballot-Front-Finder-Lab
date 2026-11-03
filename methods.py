@@ -101,6 +101,100 @@ def approval_of(voters):
     return APPROVAL_DEFAULT if VOTER_APPROVAL is None else float(VOTER_APPROVAL[voters].mean())
 
 
+# ---------- candidates' own preferences (asset voting and delegation: docs/methods.md, Asset voting) ----------
+CAND_U = None     # candidates' utilities over the current field (entries x entries), set_candidates, or None
+SELF = 1e-6       # a candidate's own entry counts this much above the best other (their own clone: 1)
+
+
+def candidate_utilities(cu, entries):
+    """The candidates' utilities over a field: cu[i, d] is original i's utility if original d wins
+    (nomination.clone_setup); entries (original, is_clone) as nomination.Field.entries. A clone values
+    the field as its original does (the same platform); every entry puts itself first (SELF)."""
+    o = np.array([d for d, _ in entries])
+    return cu[np.ix_(o, o)] + SELF * np.eye(len(o))
+
+
+def set_candidates(U):
+    """The candidates' utilities for the current field (candidate_utilities), or None. Methods where
+    candidates cast or fill in votes (Asset, Delegated 321, the composition parts proxy and delegate)
+    read them; run.py sets them for every field it counts on. Call with None when the election is done."""
+    global CAND_U
+    CAND_U = None if U is None else np.asarray(U, float)
+
+
+@contextmanager
+def candidates(U):
+    """Within the block, the candidates' utilities U (set_candidates); afterwards the previous ones."""
+    old = CAND_U
+    set_candidates(U)
+    try:
+        yield
+    finally:
+        set_candidates(old)
+
+
+CAND_LINE = False  # tests only: without set_candidates, the candidates stand on a line in index order
+_LINES = {}
+
+
+def cand_u(C):
+    """The candidates' utilities for a field of C entries; an error without them (with CAND_LINE, for
+    tests on hand-made profiles: candidates on a line in index order, utility 1 - distance / C)."""
+    if CAND_U is None and CAND_LINE:
+        if C not in _LINES:
+            i = np.arange(C)
+            _LINES[C] = 1 - np.abs(i[:, None] - i[None]) / C + SELF * np.eye(C)
+        return _LINES[C]
+    if CAND_U is None or CAND_U.shape != (C, C):
+        raise ValueError("this method needs the candidates' preferences over the field (methods.set_candidates)"
+                         + ("" if CAND_U is None else f": they are set for {len(CAND_U)} candidates, not {C}"))
+    return CAND_U
+
+
+def candidate_ballots(ballot, C):
+    """Every candidate's own sincere ballot of a type on the current field (C x C, row = candidate):
+    complete (no laziness), approval at the default threshold. Cached per field, type and score range."""
+    U = cand_u(C)
+    key = (id(U), ballot, MAXS)
+    hit = _CAND_BALLOTS.get(key)
+    if hit is None or hit[0] is not U:
+        b = BALLOTS[ballot]
+        K = b.sincere(U, 0.0, APPROVAL_DEFAULT) if b.approval else b.sincere(U, 0.0)
+        if len(_CAND_BALLOTS) > 64:
+            _CAND_BALLOTS.clear()
+        _CAND_BALLOTS[key] = hit = (U, np.asarray(K, float))
+    return hit[1]
+
+
+_CAND_BALLOTS = {}
+DELEGABLE = ("rank", "weak", "score", "grade3")   # ballot types where a voter can leave candidates blank
+
+
+def delegate_fill(B, u, lazy, ballot):
+    """Delegation: what a voter leaves blank (the candidates a lazy voter does not care about,
+    ballots.cares) is filled from their favourite's own ballot (candidate_ballots), always below every
+    candidate the voter marked: on rankings the blanks are ranked after the voter's own ranking, in the
+    favourite's order; on scores and grades a blank gets the favourite's value, but at most one level
+    below the lowest value the voter gave (on 3-2-1 grades: OK if the favourite rates the candidate OK
+    or good, else bad, as Delegated 3-2-1)."""
+    from ballots import cares
+    C = B.shape[1]
+    K = candidate_ballots(ballot, C)
+    blank = ~cares(u, lazy)
+    fav = u.argmax(axis=1)
+    out = np.array(B, float)
+    for v in np.flatnonzero(blank.any(axis=1)):
+        bl = blank[v]
+        k = K[fav[v]]
+        if ballot in ("rank", "weak"):
+            order = np.flatnonzero(bl)[np.argsort(-k[bl], kind="stable")]
+            out[v, order] = np.arange(len(order) - 1, -1, -1)       # below the marked: points k-1 ... 0
+        else:
+            cap = out[v, ~bl].min() - 1
+            out[v, bl] = np.clip(np.minimum(k[bl], cap), 0, None)
+    return out
+
+
 def set_max_score(m):
     """Set the score range 0..m for every method on "score" ballots (Score, STAR, MJ, ARA, ...).
     grade3 methods (MCA, 321) keep their three grades. Call it in every process before tallying."""
@@ -1584,6 +1678,105 @@ def d_321(s):
     return P
 
 
+def vote_shares(B, ballot):
+    """How a ballot of a type divides one vote among the candidates of its columns (asset voting,
+    compose.proxy): rankings and one name: the first choice (a tie at the top split; a ranking with
+    nobody ranked gives nobody anything); approval: equal parts to every approved candidate (as a
+    cumulative vote); scores and grades by the Kotze-Pereira transformation: the ballot read as one
+    approval ballot per score level (approving everyone scored at least that level), each worth
+    1 / top score of the vote and split equally among its approved; a level nobody reaches is not
+    given to anyone (a ballot whose highest score is 3 of 5 gives away 3/5 of a vote).
+    Returns (voters x candidates), each row summing to at most 1."""
+    B = np.asarray(B, float)
+    b = BALLOTS[ballot]
+    if ballot in ("fav", "rank", "strict", "weak", "trunc", "trunc3"):
+        A = B >= B.max(axis=1, keepdims=True)
+        if ballot != "strict":
+            A &= B > 0
+        levels = [A]
+    else:
+        top = 1 if ballot == "approval" else 2 if ballot == "grade3" else MAXS if b.score_range else None
+        if top is None:
+            raise ValueError(f"no vote shares for {ballot} ballots")
+        levels = [B >= t for t in range(1, top + 1)]
+    out = np.zeros_like(B)
+    for A in levels:
+        k = A.sum(axis=1, keepdims=True)
+        out += np.where(k > 0, A / np.where(k > 0, k, 1), 0.0)
+    return out / len(levels)
+
+
+SHARE_FEATURE = {"approval": "app_split", "score": "kp_split", "grade3": "kp_split3"}
+FEATURES.update({
+    "app_split": (lambda B: vote_shares(B, "approval"), lambda C: (C,)),
+    "kp_split": (lambda B: vote_shares(B, "score"), lambda C: (C,)),
+    "kp_split3": (lambda B: vote_shares(B, "grade3"), lambda C: (C,)),
+})
+
+
+def asset_lottery(w, foresight=False):
+    """Asset voting, weakest first (docs/methods.md, Asset voting). w: each candidate's votes (each
+    voter names one). The candidate holding the fewest votes is out (ties branch with equal weights; those
+    holding nothing all go at once, which changes nothing), and everything they hold goes to the
+    first candidate on their own ranking who is still in (candidate_ballots): a candidate passes on
+    their own votes and those passed to them, by their own list. Until one is left.
+    foresight: a candidate who is out gives their votes to whoever brings them the best result, by
+    their own utilities, assuming everyone after them passes on sincerely (as candidates foresee
+    honest voting in strategic nomination); a tie between choices keeps their own list's choice."""
+    w = np.asarray(w, float)
+    C = len(w)
+    U = cand_u(C)
+    K = candidate_ballots("rank", C)
+    order = [list(np.argsort(-K[c], kind="stable")) for c in range(C)]
+    memo = {}
+
+    def run(mask, W, fs):
+        key = (mask, W.tobytes(), fs)
+        if key in memo:
+            return memo[key]
+        alive = [c for c in range(C) if mask >> c & 1]
+        P = np.zeros(C)
+        if len(alive) == 1:
+            P[alive[0]] = 1.0
+        else:
+            empty = [c for c in alive if W[c] <= EPS]
+            if empty and len(empty) < len(alive):     # nothing to pass on: out together
+                P = run(mask & ~sum(1 << c for c in empty), W, fs)
+            else:
+                v = W[alive]
+                low = [c for c in alive if W[c] <= v.min() + EPS]
+                for a in low:
+                    m2 = mask & ~(1 << a)
+                    W2 = W.copy()
+                    W2[a] = 0.0
+                    r = next(c for c in order[a] if m2 >> c & 1)
+                    if fs and W[a] > EPS:
+                        def given(x):
+                            W3 = W2.copy()
+                            W3[x] += W[a]
+                            return float(U[a] @ run(m2, W3, False))
+                        best = given(r)
+                        for x in order[a]:
+                            if m2 >> x & 1 and x != r:
+                                val = given(x)
+                                if val > best + 1e-12:
+                                    r, best = x, val
+                    W2[r] += W[a]
+                    P = P + run(m2, W2, fs) / len(low)
+        memo[key] = P
+        return P
+
+    return run((1 << C) - 1, w, bool(foresight))
+
+
+def d_asset(s):
+    return asset_lottery(s["first_split"])
+
+
+def d_asset_foresight(s):
+    return asset_lottery(s["first_split"], foresight=True)
+
+
 def d_mmpo(s):
     """MMPO (minimax pairwise opposition): the winner's largest opposition, the most voters ranking
     some rival above it (whether or not that rival wins the pair), is smallest."""
@@ -1625,6 +1818,8 @@ class Method:
     settings: dict = None            # settings this method fixes for itself (SETTINGS), e.g. {"max_score": 10}
     poll: tuple = None               # (features, decision): how voters count a poll, if not as the method does
                                      # (poll_view; set in POLL below)
+    delegate: bool = False           # delegation: what lazy voters leave blank is filled from their favourite's
+                                     # own ballot (delegate_fill; needs the candidates' preferences)
 
     def applied(self):
         """Context in which this method's own settings are in force (none: the run's settings).
@@ -1709,9 +1904,10 @@ class Method:
                 raise ValueError("per-voter approval draws need one row per voter; pass approval= for other rows")
         with self.applied():
             lz = lazy if b.lazy and not self.inverse else 0.0                  # Inverse-*: never lazy
-            if b.approval:
-                return b.sincere(self.pref(u), lz, approval)
-            return b.sincere(self.pref(u), lz)
+            B = b.sincere(self.pref(u), lz, approval) if b.approval else b.sincere(self.pref(u), lz)
+            if self.delegate and np.any(np.asarray(lz) > 0):
+                B = delegate_fill(B, self.pref(u), lz, self.ballot)
+            return B
 
     def honest(self, u):
         return self.tally(self.sincere(u))
@@ -1799,6 +1995,12 @@ METHODS = {
     "ARA-Top": M_("score", ara("maxs"), ("maxs", "gt")),        # only the top score counts as approval
     "Score+": M_("score", d_score_plus, ("sum", "excess", "keepnorm")),
     "321": M_("grade3", d_321, ("n", "ge2", "eq0", "sum", "gt")),
+    # delegation: votes cast or filled in by the candidates (docs/methods.md, Asset voting)
+    # composed: ballots("fav") >> repeat(proxy >> drop(firsts))
+    "Asset": M_("fav", d_asset, ("first_split",)),
+    "Asset-foresight": M_("fav", d_asset_foresight, ("first_split",)),
+    # composed: delegate >> "321"
+    "Delegated 321": M_("grade3", d_321, ("n", "ge2", "eq0", "sum", "gt"), delegate=True),
     # composed: best(share(score) - worst(wv) / n)
     "MMWV+Score": M_("score", d_mmwv_plus_score, ("n", "sum", "gt")),
     "MMWVxScore": M_("score", d_mmwv_times_score, ("n", "sum", "gt")),
@@ -1878,6 +2080,8 @@ GROUPS = {
     "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "MARS-T", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore", "STLR", "Soft Minimax",
                "Soft Minimax-40", "Soft Minimax-L", "Soft Minimax-D"],
     "positional": ["Borda", "Borda-ER", "Dowdall"],
+    # candidates cast their voters' votes (asset voting) or fill in what voters leave blank (delegation)
+    "delegated": ["Asset", "Asset-foresight", "Delegated 321"],
     # a real, separate runoff: voters come back and vote between the finalists (model.md, Two-round
     # elections); a class of its own, as the runoff is assumed sincere and turnout unchanged
     "two-round": ["TTR", "Approval runoff", "Approval cond. runoff", "Score runoff"],
@@ -2010,8 +2214,11 @@ def sincerity_defined(method):
     """Sincerity and fidelity are left undefined (blank) for methods whose honest ballot works against
     the voter's own interest: TRASH (the candidate ranked lower wins) and the Inverse-* methods (honest
     voting elects the worst candidate). There, what a ballot says and whom it helps point opposite
-    ways, so moving away from the honest ballot is not a cost of strategy."""
-    return method != "TRASH" and not (method in METHODS and METHODS[method].inverse) \
+    ways, so moving away from the honest ballot is not a cost of strategy. Also for delegated methods
+    (Method.delegate): there the honest ballot is partly the favourite's (what the voter left blank),
+    so measured against the voter's own preferences it would show the favourite's choices as
+    insincere."""
+    return method != "TRASH" and not (method in METHODS and (METHODS[method].inverse or METHODS[method].delegate)) \
         and not method.startswith("Inverse-")
 
 
