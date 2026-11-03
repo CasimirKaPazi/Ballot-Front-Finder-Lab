@@ -55,7 +55,7 @@ from ballots import BALLOTS
 CAND0 = {"sum", "app", "run_sum", "maxs", "pos", "upper", "ge1", "ge2", "eq0", "grades"}   # axis 0 is the candidate
 CAND1 = {"levels"}                                                                     # axis 1 is the candidate
 PAIR = {"gt", "runoff_gt", "round1_gt", "excess", "soft20", "soft40", "levelled", "diffhist"}   # axes 0, 1
-AMONG = {"firsts", "firsts_eq", "firsts_ex", "lasts", "keepnorm", "nscore_sub"}       # per subset, among it
+AMONG = {"firsts", "firsts_eq", "firsts_ex", "lasts", "keepnorm", "nscore_sub", "rb_sub"}   # per subset, among it
 SCALAR = {"n"}
 # after normalize: features that keep their meaning (order among candidates, or already stretched per
 # subset); "sum" becomes the normalized scores
@@ -883,6 +883,57 @@ class Quoted(Part):
         return [(float(P[i]), [st.field[i]], {**memo, key: [st.field[i]]}) for i in np.flatnonzero(P > 1e-12)]
 
 
+class RandomBallot(Set):
+    """A ballot drawn at random, then a candidate of the current field in proportion to what it gives
+    them: on score, grade and approval ballots and single marks the values themselves (on two-round
+    ballots the round-1 marks); on rankings the first preference among the field. A ballot that gives
+    the field nothing is drawn again. As the last step its lottery; as a set, a branch per candidate
+    with the lottery's weights. In a poll: in proportion to the totals (score totals, first preferences
+    and transfers on rankings)."""
+    def text(self):
+        return "random_ballot"
+
+    def _feat(self, b):
+        if b in FIRSTS:
+            return FIRSTS[b]
+        if b == "veto":
+            raise CompositionError("random_ballot needs ballots that give candidates something, not veto ballots")
+        return r1("rb_sub") if b in TWO_ROUND else "rb_sub"
+
+    def check(self, ctx):
+        b = ctx["ballot"]
+        if b in FIRSTS:
+            return firsts.check(ctx)
+        f = self._feat(b)
+        if ctx["poll"]:
+            return _need(r1("sum") if b in TWO_ROUND else "sum", ctx)
+        return _need(f, ctx)
+
+    def lottery(self, st):
+        b = st.ballot
+        if b in FIRSTS:
+            v = firsts.value(st)
+        elif st.poll:
+            v = st.get(r1("sum") if b in TWO_ROUND else "sum")
+        else:
+            f = self._feat(b)
+            if not st.exact and f in st.s:
+                v = st.s[f][int(sum(1 << c for c in st.field))][st.field]
+            else:
+                v = st.get(f)[-1]
+        return M.lottery_of(v)
+
+    def branches(self, st, memo):
+        key = self.text()
+        if key in memo:
+            return [(1.0, memo[key], memo)]
+        P = self.lottery(st)
+        return [(float(P[i]), [st.field[i]], {**memo, key: [st.field[i]]}) for i in np.flatnonzero(P > 1e-12)]
+
+
+random_ballot = RandomBallot()
+
+
 class Runoff(Part):
     kind = "final"
 
@@ -1114,7 +1165,7 @@ def composed(expr, ballot=None):
 
 # ---------- reading the text ----------
 NAMES = {"score": score, "margins": margins, "wv": wv, "po": po, "n": n, "levels": levels, "points": points,
-         "firsts": firsts, "smith": smith, "normalize": normalize, "runoff": runoff}
+         "firsts": firsts, "smith": smith, "normalize": normalize, "runoff": runoff, "random_ballot": random_ballot}
 CALLS = {"share": share, "worst": worst, "total": total, "diff": diff, "best": best, "top": top, "buck": buck,
          "drop": drop, "btr": btr, "bottom_two": bottom_two, "repeat": repeat, "ballots": ballots, "challenger": challenger, "soft": soft,
          "approvals": approvals, "runoff": runoff}

@@ -363,6 +363,16 @@ def _nscore_sub(B):
     return out.reshape(n, -1)
 
 
+def _rb_sub(B):
+    """For every subset S: the voter's share of a random-ballot lottery among S, their ballot's values
+    on S divided by their sum (score, grades, approval, a single mark); 0 if they give S nothing."""
+    n, C = B.shape
+    m = masks(C)[None]
+    V = np.where(m, np.clip(B, 0, None)[:, None, :], 0.0)
+    tot = V.sum(axis=2, keepdims=True)
+    return np.where(tot > 0, V / np.where(tot > 0, tot, 1), 0.0).reshape(n, -1)
+
+
 def _soft_margins(B, frac):
     """Soft pairwise margins: per voter, the score difference a - b clipped to +-frac x MAXS and divided
     by that, so a difference of frac of the range or more counts as a full vote for one side and smaller
@@ -466,6 +476,7 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "acquiesce": (lambda B: _coalitions(B, False), lambda C: (2 ** C,)),
     "levelled": (_levelled, lambda C: (C, C)),
     "nscore_sub": (_nscore_sub, lambda C: (2 ** C, C)),
+    "rb_sub": (_rb_sub, lambda C: (2 ** C, C)),
     "diffhist": (_diff_hist, lambda C: (C, C, 2 * MAXS + 1)),
     **{f"soft{int(f * 100)}": ((lambda f: lambda B: _soft_margins(B, f))(f), lambda C: (C, C)) for f in (0.2, 0.4)},
     "firsts_ex": (_firsts_ex, lambda C: (2 ** C, C)),
@@ -634,6 +645,19 @@ def first_among(s, alive, key="firsts"):
 # ---------- decisions from summed features ----------
 def d_sum(s):
     return uniform_max(s["sum"])
+
+
+def lottery_of(v):
+    """A lottery in proportion to non-negative values (all 0: uniform)."""
+    v = np.clip(np.asarray(v, float), 0, None)
+    return v / v.sum() if v.sum() > 0 else np.full(len(v), 1 / len(v))
+
+
+def d_random_ballot(s):
+    """Random ballot on score ballots: a ballot drawn at random, then a candidate in proportion to the
+    scores it gives (a ballot giving nobody anything is drawn again)."""
+    sub = s["rb_sub"]
+    return lottery_of(sub[len(sub) - 1])
 
 
 def d_copeland(s):
@@ -1760,6 +1784,7 @@ METHODS = {
     # composed: buck(points) >> normalize >> "Score"
     "ESR": M_("score", d_esr, ("levels", "nscore_sub")),
     "Geometric median": M_("score", full=t_geometric_median),
+    "Random ballot": M_("score", d_random_ballot, ("rb_sub",)),
     # hybrid
     "STAR": M_("score", d_star, ("sum", "gt")),
     # composed: top(2, score) >> runoff(score)
@@ -1831,6 +1856,7 @@ POLL = {
     "Soft Minimax-D": (("soft20",), soft_minimax("soft20")),
     "Condorcet-random-drop": (("gt",), d_minimax),   # the Condorcet winner, else the nearest reading (Minimax)
     "Geometric median": (("sum",), d_sum),           # the mean, as the nearest reading of the totals
+    "Random ballot": (("sum",), lambda s: lottery_of(s["sum"])),   # in proportion to the score totals
 }
 for _n, _pv in POLL.items():
     METHODS[_n] = dataclasses.replace(METHODS[_n], poll=_pv)
@@ -1856,7 +1882,7 @@ GROUPS = {
     # elections); a class of its own, as the runoff is assumed sincere and turnout unchanged
     "two-round": ["TTR", "Approval runoff", "Approval cond. runoff", "Score runoff"],
     # benchmarks and idealised rules, not proposals (Geometric median and Condorcet-random-drop since 2026-10-26)
-    "references": ["Random pair runoff", "Anti-plurality", "TRASH", "Geometric median", "Condorcet-random-drop",
+    "references": ["Random pair runoff", "Random ballot", "Anti-plurality", "TRASH", "Geometric median", "Condorcet-random-drop",
                    "CW else Score loser", "CL else Score winner"],
     "inverse": ["Inverse-Plurality", "Inverse-Approval", "Inverse-Minimax", "Inverse-IRV", "Inverse-ER-IRV", "Inverse-TTR",
                 "Inverse-Borda", "Inverse-Score"],

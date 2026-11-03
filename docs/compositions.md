@@ -90,6 +90,8 @@ A set narrows the field. A tie inside a set branches: each way the tie can go is
 
 **`bottom_two` or `btr`.** With a fixed order and no ties, `repeat(bottom_two(order, pairs))` and `btr(order, pairs)` elect the same candidate. They differ in two ways: with `repeat`, the order is read again on the field left each round (BTR-IRV recounts first preferences after each elimination); and with ties in the order, a climb and repeated eliminations give the ties different weights. BTR-score and MARS climb; BTR-IRV eliminates round by round.
 
+**A set's own zero point.** A set that narrows the field to good candidates lifts every method that follows it, and a random ballot among the set shows by how much: `smith >> random_ballot` or `buck(points) >> random_ballot` is the baseline of that set, as the random ballot is the zero of VSE and WME for the whole field. Methods after the set then spread again between this new zero and the same best candidate, so comparing `smith >> "X"` with `smith >> random_ballot` shows what X adds within the Smith set. (The pattern repeats only once for the Smith set: the Smith set of the Smith set is itself.)
+
 **Methods as sets.** `("DMS" | "ESR") >> runoff(score)` is a runoff between the DMS winner and the ESR winner (the same candidate: no runoff needed). `("Score" | challenger("Score", margins)) >> runoff(score)` is SCR: the Score winner and their strongest challenger meet in a runoff.
 
 ### Transforms
@@ -105,6 +107,7 @@ A set narrows the field. A tie inside a set branches: each way the tie can go is
 | `"Name"` | an existing method, on the current field and readings: its winner lottery |
 | `runoff` | a separate runoff between the finalists, decided by the runoff rankings of two-round ballots; a tie is split. With more than two finalists (a tie before the runoff), those who win most runoffs win, ties split |
 | `runoff(values)` | the same, but a tie goes to the higher value (as Score runoff and Approval runoff: `runoff(score)`) |
+| `random_ballot` | a ballot drawn at random, then a candidate of the field in proportion to what the ballot gives them: on score, grade and approval ballots and single marks the values themselves (on two-round ballots the round-1 marks), on rankings the first preference among the field; a ballot giving the field nothing is drawn again. Not on veto ballots. In a poll, in proportion to the totals. The built-in method `"Random ballot"` is the same on score ballots |
 | a set | a composition may end in a set: the win is split equally among its members, so `best(values)` at the end means "the highest wins, ties split" |
 
 ### Ballot type

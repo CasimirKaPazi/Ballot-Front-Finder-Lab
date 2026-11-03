@@ -18,7 +18,7 @@ Every method belongs to exactly one group. Groups can be used wherever methods a
 | `hybrid` | STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D (ratings combined with pairwise comparisons or runoffs) |
 | `positional` | Borda, Borda-ER, Dowdall |
 | `two-round` | TTR, Approval runoff, Approval cond. runoff, Score runoff (a real, separate runoff; see below) |
-| `references` | Random pair runoff, Anti-plurality, TRASH, Geometric median, Condorcet-random-drop, CW else Score loser, CL else Score winner (benchmarks and idealised rules, not proposals; not run unless named, e.g. `--methods all` or `--methods references STAR`, and hidden in the plots by default) |
+| `references` | Random pair runoff, Random ballot, Anti-plurality, TRASH, Geometric median, Condorcet-random-drop, CW else Score loser, CL else Score winner (benchmarks and idealised rules, not proposals; not run unless named, e.g. `--methods all` or `--methods references STAR`, and hidden in the plots by default) |
 | `inverse` | Inverse-Plurality, Inverse-Approval, Inverse-Minimax, Inverse-IRV, Inverse-ER-IRV, Inverse-TTR, Inverse-Borda, Inverse-Score (tests of the strategy model, below; not run unless named; hidden in the plots by default) |
 
 **Sets** are selection names across groups (not plot panels):
@@ -158,6 +158,7 @@ A real, separate runoff: voters come back and vote between the finalists, by the
 | Method | Ballot | Rule |
 |---|---|---|
 | Random pair runoff | ranking | two random ballots; same first choice wins, else majority runoff between the two |
+| Random ballot | 0–5 | a ballot drawn at random, then a candidate in proportion to the scores it gives (a ballot giving nobody anything is drawn again). On honest ballots close to the random ballot that is the zero of VSE and WME, which draws the voter's favourite. Mainly a last step for compositions: after a set, the set's own zero point (`smith >> "Random ballot"`); the composition part `random_ballot` does the same on every ballot type ([compositions.md](compositions.md)). Polled in proportion to the score totals |
 | Anti-plurality | veto (one name against) | fewest vetoes wins; sincere: against the least liked |
 | TRASH | ranking | "This Random Acronym Sounds Honest": the plurality runner-up and the anti-plurality runner-up (second fewest last places) meet in a runoff, and the one ranked lower by more voters wins; if both are the same candidate, it wins. A deliberately bad reference |
 | Geometric median | 0–5 | the geometric median of the score ballots, taken as vectors over the candidates (the point with the smallest total Euclidean distance to all ballots; at most 20 Weiszfeld iterations from the mean); the candidate with the highest coordinate wins. The mean would be Score, the coordinate-wise median a median grade. Each ballot pulls with the same force however far away it is, so exaggerating in the same direction adds no pull. No feature sums, so polls use smaller samples, as for Condorcet-random-drop |

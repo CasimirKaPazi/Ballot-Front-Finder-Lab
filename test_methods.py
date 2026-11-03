@@ -981,6 +981,16 @@ for _t in range(60):                               # against the two winners on 
                 else:
                     _methods_mod.runoff(_Pq, _Mr, _a, _b, _wa * _wb, tiebreak=_S1.sum(0))
     assert np.allclose(_cq.tally(_Bq), _Pq), _Bq.tolist()
+# Random ballot: a ballot drawn at random, a candidate in proportion to its scores; as a composition part it
+# works on any ballot type, on rankings by first preferences among the field
+_Brb = np.array([[5, 3, 0], [0, 5, 5], [2, 0, 0.0]])
+assert np.allclose(METHODS["Random ballot"].tally(_Brb), np.array([1.625, 0.875, 0.5]) / 3)
+assert np.allclose(_cp.composed(_cp.parse("random_ballot")).tally(_Brb), METHODS["Random ballot"].tally(_Brb))
+assert np.allclose(_cp.composed(_cp.parse('buck(points) >> "Random ballot"')).tally(_Brb),
+                   _cp.composed(_cp.parse("buck(points) >> random_ballot")).tally(_Brb))
+_Rrb = np.array([[2, 1, 0], [0, 2, 1], [1, 0, 2], [2, 0, 1.0]])     # strict rankings, A beats B and C
+_crb = _cp.composed(_cp.parse('ballots("rank") >> top(2, firsts) >> random_ballot'))
+assert np.allclose(_crb.tally(_Rrb), [0.625, 0.125, 0.25]), _crb.tally(_Rrb)   # {A, B}: A 3/4; {A, C}: half each
 # soft margins for any fraction: 0.2 and 0.4 are the lab's features, another gets its feature on first use
 _c3 = _cp.composed(_cp.parse("best(-worst(soft(.3)))"))
 assert _c3.feats == ("soft30",) and _cp.canonical("best(-worst(soft(.3)))") == "best(-worst(soft(0.3)))"
