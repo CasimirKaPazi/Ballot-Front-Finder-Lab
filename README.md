@@ -11,7 +11,7 @@ A simulator for comparing single-winner voting methods: plurality, runoffs, IRV,
 1. **An electorate.** Voters and candidates are points in an issue space (by default six issues, with voters gathered in clumps within clumps). A voter likes a candidate less the farther away they are. Each election draws a new electorate ([model](docs/model.md), Electorates).
 2. **Honest ballots.** Each voter fills in the method's ballot sincerely: a name, a ranking, approvals or scores, depending on the method ([model](docs/model.md), Ballots and sincere voting).
 3. **Poll rounds.** Polls show the totals a real poll could publish, from a sample of the electorate. Each voter reads how close the race is and, if enough is at stake for them (by default each one adaptive), compromises, buries or stays sincere, judging by simple arithmetic on the poll totals what their move would do if others like them did the same; everyone answers the same poll at once, and the next poll shows the new ballots ([model](docs/model.md), Strategy engine).
-4. **Optionally**, candidates may withdraw or field clones beforehand (Strategic nomination), and a diagnostic checks whether some voters would do better by staying home (Participation; both in [model](docs/model.md)).
+4. **Candidates** may withdraw or field clones before the vote when that helps them (Strategic nomination, on by default), and optionally a diagnostic checks whether some voters would do better by staying home (Participation; both in [model](docs/model.md)).
 
 **What is measured.** Two efficiencies, both 0 for a random ballot and 100 for the best candidate of each election ([analysis](docs/analysis.md), Axes):
 
@@ -42,7 +42,7 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 - Who strategises: by default adaptive voters, who strategise in a round when the race between the two leaders matters enough to them, so attack and defence come from the same rule; or a fixed share of always-strategic voters, as in other simulations.
 - Laziness: truncated rankings and fewer approvals or scores, each voter with their own cut.
 - Honest approval fitted to real approval elections: each voter approves above a personal threshold between their mean and their favourite, so approvals stay few as the field grows ([model](docs/model.md), Honest approval).
-- Also: strategic nomination (candidates withdraw or field clones), a first poll from a previous election (does a method let the electorate leave a strategic state?), a check of the no-show paradox, and a manipulation test (how often and how badly an informed coalition can manipulate from honest ballots, one- and two-sided).
+- Also: strategic nomination (candidates withdraw or field clones; on by default), a first poll from a previous election (does a method let the electorate leave a strategic state?), a check of the no-show paradox, and a manipulation test (how often and how badly an informed coalition can manipulate from honest ballots, one- and two-sided).
 
 **Measures** ([analysis](docs/analysis.md))
 - VSE and WME with the same reference points (random ballot and best candidate), with honest and with strategic ballots, plus Condorcet efficiency and how often the winner is a poor candidate (below the median candidate), which averages hide.

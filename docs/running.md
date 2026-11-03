@@ -81,8 +81,8 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--strategic` | 0 | share of voters who always vote strategically (see [model.md](model.md), Partial strategy) |
 | `--adaptive` | the rest | share of voters who decide each poll round whether to vote strategically, by how much the race between the two leaders matters to them (`--strategic` + `--adaptive` ≤ 1, sweep.py skips other combinations; see [model.md](model.md), Partial strategy); left out: everyone not in `--strategic` (1 − `--strategic`) |
 | `--max-score` | 5 | score ballots range over 0–max (see [model.md](model.md), Score range) |
-| `--exits` | 0 | 1: candidates may withdraw and re-enter strategically (see [model.md](model.md), Strategic nomination) |
-| `--clones` | 0 | most clones in the race at once, fielded strategically; 0 = none (see [model.md](model.md), Strategic nomination) |
+| `--exits` | 1 | 1: candidates may withdraw and re-enter strategically (the default since 2026-11-03); 0: the field as drawn (see [model.md](model.md), Strategic nomination) |
+| `--clones` | 2 | most clones in the race at once, fielded strategically (the default since 2026-11-03); 0 = none (see [model.md](model.md), Strategic nomination) |
 | `--start` | honest | what the first poll shows: `honest` ballots, or `previous`: the result of a previous election (see [model.md](model.md), Starting information) |
 | `--participation` | off | also check participation (no-show paradox) on sincere and learned ballots (see [model.md](model.md), Participation); slower |
 | `--manipulation` | off | also test coalition manipulation from honest ballots, one- and two-sided (see [model.md](model.md), Manipulation test) |

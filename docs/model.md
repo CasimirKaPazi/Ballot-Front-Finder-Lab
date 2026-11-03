@@ -253,7 +253,7 @@ Run time grows with the number of groups.
 
 ## Strategic nomination
 
-`--exits 1` and `--clones N` let the candidates of the initial draw change the field before the vote (`nomination.py`; after Green-Armytage 2014, "Strategic voting and nomination", *Social Choice and Welfare* 42, with clones added). Nobody new enters.
+`--exits 1` and `--clones N` let the candidates of the initial draw change the field before the vote (`nomination.py`; after Green-Armytage 2014, "Strategic voting and nomination", *Social Choice and Welfare* 42, with clones added). Nobody new enters. Since 2026-11-03 this is the default (`--exits 1 --clones 2`): candidates who would lose by standing, or gain by a copy of themselves or an ally, do act on it, so a fixed field is the less realistic assumption. `--exits 0 --clones 0` gives the field as drawn.
 
 - **Moves.** Exit (at least two original candidates stay in), re-entry after an exit, fielding a clone of any original in the race (themselves included; at most one clone per original and N in the race), withdrawing a clone they fielded. A clone is a copy at a small random offset (0.01 per dimension), so voters rank the clone next to their original and split between the two.
 - **Who moves and why.** Candidates sit in the issue space and value a winner like a voter at their position (exp(−distance/width); themselves 1). A clone counts exactly as their original. A candidate makes a move only if it strictly improves their expected utility under the method's result with **sincere** ballots on the new field: candidates foresee honest voting, not learned strategy.

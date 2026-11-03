@@ -66,8 +66,8 @@ def main():
     ap.add_argument("--adaptive", type=float, nargs="+", default=[None],
                     help="default: everyone not in --strategic, per condition")
     ap.add_argument("--max-score", type=int, nargs="+", default=[5])
-    ap.add_argument("--exits", type=int, nargs="+", default=[0], choices=[0, 1])
-    ap.add_argument("--clones", type=int, nargs="+", default=[0])
+    ap.add_argument("--exits", type=int, nargs="+", default=[1], choices=[0, 1])
+    ap.add_argument("--clones", type=int, nargs="+", default=[2])
     ap.add_argument("--poll-size", type=int, nargs="+", default=[0])
     ap.add_argument("--search", type=int, nargs="+", default=[None],
                     help="default: 1 for the ranking groups, 0 with --individual 1, per condition")

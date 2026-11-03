@@ -827,10 +827,12 @@ def parser():
                          "the rest always vote sincerely. Default: everyone not in --strategic")
     ap.add_argument("--max-score", type=int, default=5,
                     help="score ballots range over 0..max (Score, STAR, MJ, ARA, ...; MCA and 321 keep 3 grades)")
-    ap.add_argument("--exits", type=int, default=0, choices=[0, 1],
-                    help="1: candidates may withdraw and re-enter strategically (see nomination.py)")
-    ap.add_argument("--clones", type=int, default=0,
-                    help="most clones in the race at once, fielded strategically (0 = none; see nomination.py)")
+    ap.add_argument("--exits", type=int, default=1, choices=[0, 1],
+                    help="1 (default since 2026-11-03): candidates may withdraw and re-enter strategically; 0: the "
+                         "field as drawn (see nomination.py)")
+    ap.add_argument("--clones", type=int, default=2,
+                    help="most clones in the race at once, fielded strategically (default 2 since 2026-11-03; "
+                         "0 = none; see nomination.py)")
     ap.add_argument("--start", default="honest", choices=["honest", "previous"],
                     help="what the first poll shows: honest ballots, or the result of a previous election (one "
                          "dummy election under the same settings, its candidates relabelled at random)")

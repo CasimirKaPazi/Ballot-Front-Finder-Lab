@@ -9,4 +9,8 @@ output/
 
 # Other
 .~*
-ignore_*
+
+# Addons, keep IDS as example
+addons/
+!addons/_template.py
+!addons/ids.py
