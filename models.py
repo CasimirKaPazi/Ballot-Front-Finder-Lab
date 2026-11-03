@@ -23,6 +23,15 @@ None = every dimension counts alike). A model's own parameters are fields of the
                 often from one social group). Both act after all random draws, so the voters (and
                 the candidates' draws) are the same for every setting.
 
+Random streams (since 2026-11-03): every model draws from separate streams, derived from the
+election's stream (Streams): one for what the electorate is made of (cluster centres, noise, issue
+bundles, fields), and for the persons one stream per kind of draw, voters and candidates apart. Each
+voter's draws are the next ones in those streams, so the first n voters of a larger electorate are the
+electorate of n voters, and the candidates are the same whatever the number of voters (and the first
+C candidates of a larger field the field of C). So tests that change the number of voters or of
+candidates compare the same elections, voters and candidates added. (Before, every count gave
+unrelated electorates.)
+
 MODEL "clusters": voter clusters in a space of `dims` dimensions.
     Cluster centres are drawn N(0, 1) per dimension; cluster sizes vary (Dirichlet weights, so some
     elections have a dominant cluster); voters and candidates are drawn around their cluster's
@@ -61,7 +70,8 @@ the --cluster-* options do not apply.
        the bundle's weight, each further one a Beta(1.5, 3) fraction of the one before, again down to
        ks_cut. So the number of bundles and dimensions varies by election; few issues matter much.
     2. Factions, per bundle and independently across bundles (cross-cutting cleavages): a Chinese
-       restaurant process over voters and candidates; person i starts a new faction with probability
+       restaurant process over candidates, then voters (so the candidates do not depend on the number
+       of voters; the voters do depend on the number of candidates); person i starts a new faction with probability
        alpha / (i + alpha), else joins the faction of a random earlier person (ks_alpha = 1.5). A few
        large factions and a tail of small ones; their number is not fixed.
     3. Each faction, per bundle: a position, N(0, c) per dimension with c ~ Beta(3, 1.5), and a caring
@@ -75,8 +85,9 @@ the --cluster-* options do not apply.
 
 MODEL "field": opinions as scale-free fields over a social space, built from what is known about how
 opinions arise and spread, rather than from imposed clusters or decay laws (docs/model.md, Electorates):
-    - People live on a two-dimensional social space (a 64 x 64 torus: who meets whom), placed by a
-      Levy flight, so they are clustered at all scales (towns, neighbourhoods, circles).
+    - People live on a two-dimensional social space (a 64 x 64 torus: who meets whom), at places of a
+      Levy flight (FIELD_PLACES = 1000 steps, drawn at random from it), so they are clustered at all
+      scales (towns, neighbourhoods, circles).
     - Each issue is a Gaussian random field over that space with power spectrum k^-2: correlations that
       decay with the logarithm of distance, the signature found in real vote statistics (Borghesi &
       Bouchaud 2010), i.e. structure at every scale without a characteristic one.
@@ -111,6 +122,22 @@ from typing import Callable
 import numpy as np
 
 
+import zlib
+
+
+class Streams:
+    """Named random streams of one election, derived from its stream: the same name gives the same
+    stream, whatever was drawn from another."""
+    def __init__(self, rng):
+        self.base = int(rng.integers(2 ** 63))
+        self.cache = {}
+
+    def __call__(self, name):
+        if name not in self.cache:
+            self.cache[name] = np.random.default_rng([self.base, zlib.crc32(name.encode())])
+        return self.cache[name]
+
+
 @dataclass
 class Model:
     """One electorate model: draw(sc, rng) -> (voters, cands, voter_weights, cand_weights), positions
@@ -121,18 +148,36 @@ class Model:
 
 
 def _draw_clusters(sc, rng):
-    centres = rng.normal(0.0, 1.0, (sc.n_clusters, sc.dims))
+    st = Streams(rng)
+    S = st("structure")
+    centres = S.normal(0.0, 1.0, (sc.n_clusters, sc.dims))
     # Cluster sizes vary: Dirichlet weights, so some elections have a dominant cluster
-    weights = rng.dirichlet(np.ones(sc.n_clusters))
-    vc = rng.choice(sc.n_clusters, sc.n_voters, p=weights)
-    voters = centres[vc] + rng.normal(0.0, sc.spread, (sc.n_voters, sc.dims))
-    # Candidates are drawn from the same distribution as voters
-    cc = rng.choice(sc.n_clusters, sc.n_cands, p=weights)
-    cands = centres[cc] + rng.normal(0.0, sc.spread, (sc.n_cands, sc.dims))
+    weights = S.dirichlet(np.ones(sc.n_clusters))
+    order = None
     if sc.zipf:
         rank = np.arange(1, sc.dims + 1)
         # each cluster: its own slightly shuffled order of dimensions, then scale 1/rank
-        order = np.argsort(rank[None, :] + rng.normal(0.0, 0.1 * sc.dims, (sc.n_clusters, sc.dims)), axis=1)
+        order = np.argsort(rank[None, :] + S.normal(0.0, 0.1 * sc.dims, (sc.n_clusters, sc.dims)), axis=1)
+    sal = None
+    if getattr(sc, "salience", "none") == "cluster":
+        # each cluster weighs the issues 1, 1/2, 1/3, ... in its own random order; scaled so that the
+        # mean squared weight is 1, which leaves the expected distance in an isotropic space unchanged
+        sal = np.empty((sc.n_clusters, sc.dims))
+        P = st("salience")                      # its own stream: positions are the same with and without
+        for k in range(sc.n_clusters):
+            sal[k, P.permutation(sc.dims)] = 1.0 / np.arange(1, sc.dims + 1) ** getattr(sc, "salience_exponent", 1.0)
+        sal = sal / np.sqrt((sal ** 2).mean(axis=1, keepdims=True))
+
+    def persons(kind, m):
+        # each person: a cluster (in proportion to the weights) and an offset, the next draws of the streams
+        c = np.searchsorted(np.cumsum(weights), st(kind + "-cluster").random(m) * weights.sum())
+        c = np.minimum(c, sc.n_clusters - 1)
+        return c, centres[c] + st(kind + "-offset").normal(0.0, sc.spread, (m, sc.dims))
+
+    vc, voters = persons("voters", sc.n_voters)
+    cc, cands = persons("cands", sc.n_cands)
+    if sc.zipf:
+        rank = np.arange(1, sc.dims + 1)
         own = np.empty((sc.n_clusters, sc.dims))
         own[np.arange(sc.n_clusters)[:, None], order] = 1.0 / rank[None, :]
         centres_z = centres / rank                                  # centres: global order
@@ -146,14 +191,7 @@ def _draw_clusters(sc, rng):
         f = np.sqrt((np.pi ** 2 / 6) / per_dim.sum())
         voters, cands = voters * f, cands * f
     vw = cw = None
-    if getattr(sc, "salience", "none") == "cluster":
-        # each cluster weighs the issues 1, 1/2, 1/3, ... in its own random order (drawn after all other
-        # draws, so positions are the same with and without salience); scaled so that the mean squared
-        # weight is 1, which leaves the expected distance in an isotropic space unchanged
-        sal = np.empty((sc.n_clusters, sc.dims))
-        for k in range(sc.n_clusters):
-            sal[k, rng.permutation(sc.dims)] = 1.0 / np.arange(1, sc.dims + 1) ** getattr(sc, "salience_exponent", 1.0)
-        sal = sal / np.sqrt((sal ** 2).mean(axis=1, keepdims=True))
+    if sal is not None:
         vw, cw = sal[vc], sal[cc]
     return voters, cands, vw, cw
 
@@ -168,24 +206,28 @@ def _draw_ks(sc, rng):
     """Quinn's hierarchical model, written from the description of vse-sim's KSModel (published
     parameters; see docs/model.md, Electorates). Persons = voters, then candidates, drawn alike."""
     pos, W = _ks_structure(sc, rng)[:2]
-    nv = sc.n_voters
-    return pos[:nv], pos[nv:], W[:nv], W[nv:]
+    nc = sc.n_cands
+    return pos[nc:], pos[:nc], W[nc:], W[:nc]
 
 
 def _draw_ks_quinn(sc, rng):
     """As close to vse-sim's KSModel as this lab allows: as ks, but with one random offset per person
     and bundle, shared by all dimensions of the bundle (as vse-sim's code does), and without ks_shared."""
     pos, W = _ks_structure(sc, rng, quinn=True)[:2]
-    nv = sc.n_voters
-    return pos[:nv], pos[nv:], W[:nv], W[nv:]
+    nc = sc.n_cands
+    return pos[nc:], pos[:nc], W[nc:], W[:nc]
 
 
 def _ks_structure(sc, rng, quinn=False):
-    """The ks draw: positions (n, D) and weights of all persons (voters, then candidates), and each
+    """The ks draw: positions (n, D) and weights of all persons (candidates, then voters: so the
+    candidates do not depend on the number of voters, and the first voters of a larger electorate are
+    the electorate of fewer; each bundle draws from streams of its own), and each
     bundle's faction of every person (list of arrays) and the number of dimensions of each bundle
     (for the tests and show_electorates.py). quinn=True: the ks-quinn
     variant (one offset per person and bundle; ks_shared ignored)."""
     n = sc.n_voters + sc.n_cands
+    st = Streams(rng)
+    S = st("structure")
     shared = None                          # ks_shared: the factions of the first bundle, for all bundles
     factions = []
     # 1. Issue bundles and their dimensions, with decaying importance
@@ -196,15 +238,15 @@ def _ks_structure(sc, rng, quinn=False):
         while w > sc.ks_cut:
             dim_w.append(w)
             k += 1
-            w *= rng.beta(*KS_DIM_DECAY)
+            w *= S.beta(*KS_DIM_DECAY)
         bundles.append(k)
-        bw *= rng.beta(*KS_BUNDLE_DECAY)
+        bw *= S.beta(*KS_BUNDLE_DECAY)
     dim_w = np.array(dim_w)
     D = len(dim_w)
     pos = np.empty((n, D))
     care = np.empty((n, D))
     start = 0
-    for k in bundles:
+    for b, k in enumerate(bundles):
         # 2. Factions in this bundle, independently of other bundles (Chinese restaurant process:
         #    each person starts a new faction with probability alpha / (i + alpha), else joins the
         #    faction of a random earlier person). ks_shared = 1: the same factions in every bundle
@@ -214,8 +256,9 @@ def _ks_structure(sc, rng, quinn=False):
         else:
             fac = np.empty(n, dtype=int)
             nf = 0
+            draws = st(f"factions-{b}").random(n)            # one draw per person, in order
             for i in range(n):
-                r = (i + sc.ks_alpha) * rng.random()
+                r = (i + sc.ks_alpha) * draws[i]
                 if r > i:
                     fac[i] = nf
                     nf += 1
@@ -227,16 +270,18 @@ def _ks_structure(sc, rng, quinn=False):
         # 3. Each faction: a position (spread sqrt(c) for a random c) and a caring level
         means = np.empty((nf, k))
         caring = np.empty(nf)
+        F = st(f"faction-positions-{b}")                     # faction by faction, in order of appearance
         for f in range(nf):
-            c = rng.beta(*KS_CARING)
-            means[f] = rng.normal(0.0, np.sqrt(c), k)
-            caring[f] = rng.beta(*KS_CARING)
+            c = F.beta(*KS_CARING)
+            means[f] = F.normal(0.0, np.sqrt(c), k)
+            caring[f] = F.beta(*KS_CARING)
         # 4. Persons: around their faction's position, the tighter the more the faction cares
         #    (an own offset per dimension; vse-sim uses one offset for all dimensions of a bundle)
+        O = st(f"offsets-{b}")
         if quinn:   # vse-sim: the offset is read by bundle number, so one per person for all of its dimensions
-            noise = np.repeat(rng.normal(0.0, 1.0, (n, 1)), k, axis=1)
+            noise = np.repeat(O.normal(0.0, 1.0, (n, 1)), k, axis=1)
         else:
-            noise = rng.normal(0.0, 1.0, (n, k))
+            noise = O.normal(0.0, 1.0, (n, k))
         pos[:, start:start + k] = means[fac] + noise * np.sqrt(1 - caring[fac])[:, None]
         care[:, start:start + k] = caring[fac][:, None]
         start += k
@@ -261,6 +306,8 @@ NOISE_STEP = 0.15        # sampling: Metropolis step size per dimension (the fin
 def _draw_noise(sc, rng):
     """Voters and candidates where a fresh fractal noise is high (see the module docstring)."""
     n, D = sc.n_voters + sc.n_cands, sc.dims
+    st = Streams(rng)
+    rng = st("structure")                   # the noise and the cloud of points: the same for any count
     k, phase, amp = [], [], []
     for o in range(NOISE_OCTAVES):
         d = rng.normal(size=(NOISE_WAVES, D))
@@ -273,7 +320,7 @@ def _draw_noise(sc, rng):
     def noise(Y):
         return (amp * np.cos(Y @ k.T + phase)).sum(axis=1)
 
-    M = max(NOISE_PARTICLES, 2 * n)
+    M = max(NOISE_PARTICLES, 2 * n)         # more than 1000 persons: a larger cloud (other electorates)
     Y = rng.normal(size=(M, D))
     f = noise(Y)
     for step in range(1, NOISE_STEPS + 1):
@@ -289,8 +336,10 @@ def _draw_noise(sc, rng):
             Y[ok], f[ok] = Z[ok], fz[ok]
     Y = Y - Y.mean(axis=0)
     Y = Y * np.sqrt((np.pi ** 2 / 6) / (Y ** 2).sum(axis=1).mean())          # total variance pi^2/6
-    X = Y[rng.choice(M, n, replace=False)]
-    return X[:sc.n_voters], X[sc.n_voters:], None, None
+    # distinct points: voters from the front of one random order of the cloud, candidates from its back,
+    # so either count can grow without changing the others
+    order = st("persons").permutation(M)
+    return Y[order[:sc.n_voters]], Y[order[::-1][:sc.n_cands]], None, None
 
 
 # MODEL "field": opinions as scale-free fields over a social space (see the module docstring)
@@ -298,6 +347,7 @@ FIELD_GRID = 64          # the social space: a 64 x 64 torus
 FIELD_EXPONENT = 2.0     # power spectrum k^-2 in two dimensions: logarithmically decaying correlations
 FIELD_SHARED = 0.4       # share of each opinion's variance that is shared with one's surroundings
 FIELD_LEVY = 1.0         # where people live: a Levy flight with P(step > x) ~ 1/x (clustered at all scales)
+FIELD_PLACES = 1000      # the flight's length: people live at places drawn from it (more people: longer)
 
 
 def _fields(rng, n):
@@ -322,19 +372,29 @@ def _levy_cells(rng, n):
 
 
 def _draw_field(sc, rng):
-    """Opinions as scale-free fields over a social space (see the module docstring)."""
-    n, D = sc.n_voters + sc.n_cands, sc.dims
-    cell = _levy_cells(rng, n)
-    F = _fields(rng, D)[:, cell[:, 0], cell[:, 1]].T                       # (n, D): the surroundings' view
-    Z = np.sqrt(FIELD_SHARED) * F + np.sqrt(1 - FIELD_SHARED) * rng.normal(size=(n, D))
+    """Opinions as scale-free fields over a social space (see the module docstring). People live at
+    places of one Levy flight of FIELD_PLACES steps (the same for any count up to that), voters taken
+    from the front of a random order of its places, candidates from the back."""
+    nv, nc, D = sc.n_voters, sc.n_cands, sc.dims
+    st = Streams(rng)
+    S = st("structure")
+    places = _levy_cells(S, max(FIELD_PLACES, nv + nc))
+    order = st("persons").permutation(len(places))
+    cell = places[np.r_[order[:nv], order[::-1][:nc]]]                      # voters, then candidates
+    n = nv + nc
+    F = _fields(S, D)[:, cell[:, 0], cell[:, 1]].T                         # (n, D): the surroundings' view
+    own = np.vstack([st("voters-own").normal(size=(nv, D)), st("cands-own").normal(size=(nc, D))])
+    Z = np.sqrt(FIELD_SHARED) * F + np.sqrt(1 - FIELD_SHARED) * own
     X = np.tanh(sc.field_kappa * Z)                                         # saturating, as a spin
-    X = X / np.sqrt((X ** 2).mean()) * np.sqrt((np.pi ** 2 / 6) / D)        # fixed total variance pi^2/6
+    # fixed total variance pi^2/6: scaled by the expected square of tanh(kappa Z), Z ~ N(0, 1) (the
+    # fields and the own part have variance 1 together), so the scale does not depend on who is drawn
+    z, w = np.polynomial.hermite_e.hermegauss(80)
+    X = X / np.sqrt((w * np.tanh(sc.field_kappa * z) ** 2).sum() / w.sum()) * np.sqrt((np.pi ** 2 / 6) / D)
     W = None
     if sc.field_salience > 0:                                               # what people care about: a field too
-        H = _fields(rng, D)[:, cell[:, 0], cell[:, 1]].T
+        H = _fields(st("salience"), D)[:, cell[:, 0], cell[:, 1]].T
         W = np.exp(sc.field_salience * H)
         W = W / np.sqrt((W ** 2).mean(axis=1, keepdims=True))
-    nv = sc.n_voters
     return X[:nv], X[nv:], (None if W is None else W[:nv]), (None if W is None else W[nv:])
 
 

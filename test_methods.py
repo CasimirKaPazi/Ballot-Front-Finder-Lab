@@ -1196,6 +1196,15 @@ for _e in range(20):
     assert _el.u.shape == (51, 5) and (_el.u > 0).all() and (_el.u <= 1).all()
     assert np.allclose(np.linalg.norm(_el.voter_weights, axis=1), 1)            # weights normalised per person
     assert _el.voters.shape[1] == _el.voter_weights.shape[1] == _el.cands.shape[1]
+# nested electorates: the first 49 voters of 199 are the electorate of 49, and the candidates do not depend on
+# the number of voters (nor, except in the ks models, the voters on the number of candidates)
+for _mn in ("noise", "clusters", "field", "ks", "ks-quinn"):
+    _x = _md.draw_electorate(Scenario(n_voters=49, n_cands=6, model=_mn), np.random.default_rng([5, 1]))
+    _y = _md.draw_electorate(Scenario(n_voters=199, n_cands=6, model=_mn), np.random.default_rng([5, 1]))
+    _z = _md.draw_electorate(Scenario(n_voters=49, n_cands=9, model=_mn), np.random.default_rng([5, 1]))
+    assert np.allclose(_x.voters, _y.voters[:49]) and np.allclose(_x.cands, _y.cands), _mn
+    assert np.allclose(_x.cands, _z.cands[:6]), _mn
+    assert _mn.startswith("ks") or np.allclose(_x.voters, _z.voters), _mn
 _a = _md.draw_electorate(_sk, np.random.default_rng([3, 0])).u
 assert np.array_equal(_a, _md.draw_electorate(_sk, np.random.default_rng([3, 0])).u)   # reproducible
 # ks parameters do not touch the clusters model
