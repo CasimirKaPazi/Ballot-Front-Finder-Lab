@@ -132,6 +132,7 @@ def source_name(p):
 # be present; a file without them is too old and has to be regenerated.
 ADDED_COLUMNS = {
     "model": ("clusters", "2026-10-14, electorate models: older runs used the clusters model"),
+    "cands_vote": ("0", "2026-11-03, candidates who vote: older runs had candidates apart from the voters"),
     "ks_alpha": ("1.5", "2026-10-14, parameters of the ks model (not used by older runs)"),
     "ks_cut": ("0.2", "2026-10-14, parameters of the ks model (not used by older runs)"),
     "ks_shared": ("0", "2026-10-14, parameters of the ks model (not used by older runs)"),
@@ -745,7 +746,7 @@ POINT_KEYS = {"rb": "random ballot", "rc": "random candidate", "ml": "maximal lo
 PARAM_NAMES = {"campaign": "campaigns", "coordination": "coordination share", "individual": "individual voters", "risk": "risk by satisfaction",
                "risk_tolerance": "risk tolerance", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error",
-               "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion",
+               "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion", "cands_vote": "candidates vote",
                "cand_shift": "candidate shift", "lazy": "laziness", "model": "electorate model",
                "ks_alpha": "ks faction alpha", "ks_cut": "ks cut",
                "ks_shared": "ks shared factions", "clusters": "cluster count", "spread": "cluster spread", "zipf": "cluster Zipf",
@@ -1135,7 +1136,7 @@ def main():
               f"{r['elections']} elections (seeds {', '.join(r['seeds'])}"
               + (f"; {r['cover']}" if r["cover"] else "") + f"), {r['with_cw']} with a Condorcet winner. "
               f"{p['voters']} voters, {p['cands']} candidates, {model_text(p)}, "
-              f"{width_text(p)}{cand_text(p['cand_dispersion'], p['cand_shift'])}; {strategy_text(p, p['voters'])}, "
+              f"{width_text(p)}{cand_text(p['cand_dispersion'], p['cand_shift'], p.get('cands_vote', 0))}; {strategy_text(p, p['voters'])}, "
               f"strategic share {p['strategic']}"
               + (f", adaptive share {p['adaptive']}" if float(p.get('adaptive') or 0) > 0 else "")
               + f", scores 0..{p['max_score']}"

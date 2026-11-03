@@ -586,8 +586,8 @@ print("inverse methods ok")
 
 # Candidate dispersion and shift change only the candidates; voters are the same draws
 from scenario import electorate_positions as _ep
-a = _ep(Scenario(n_voters=31, n_cands=5), np.random.default_rng(9))
-b = _ep(Scenario(n_voters=31, n_cands=5, cand_dispersion=0.5, cand_shift=1.0), np.random.default_rng(9))
+a = _ep(Scenario(n_voters=31, n_cands=5, cands_vote=0), np.random.default_rng(9))      # candidates apart: moved
+b = _ep(Scenario(n_voters=31, n_cands=5, cand_dispersion=0.5, cand_shift=1.0, cands_vote=0), np.random.default_rng(9))
 assert np.array_equal(a[1], b[1])
 c0 = a[1].mean(axis=0)
 want = c0 + 0.5 * (a[2] - c0); want[:, 0] += 1.0 * a[1][:, 0].std()
@@ -1211,6 +1211,36 @@ for _mn in ("noise", "clusters", "field", "ks", "ks-quinn"):
     assert np.allclose(_x.voters, _y.voters[:49]) and np.allclose(_x.cands, _y.cands), _mn
     assert np.allclose(_x.cands, _z.cands[:6]), _mn
     assert _mn.startswith("ks") or np.allclose(_x.voters, _z.voters), _mn
+# candidates who vote (--cands-vote 1): the candidates are the first voters, and the voters depend on neither
+# count of candidates; a candidate's preferences are their own row as a voter (nomination.cand_prefs)
+from nomination import cand_prefs as _cpf
+for _mn in ("noise", "clusters", "field", "ks", "ks-quinn"):
+    _x = _md.draw_electorate(Scenario(n_voters=49, n_cands=5, model=_mn, cands_vote=1), np.random.default_rng([5, 1]))
+    _y = _md.draw_electorate(Scenario(n_voters=99, n_cands=10, model=_mn, cands_vote=1), np.random.default_rng([5, 1]))
+    assert np.allclose(_x.voters, _y.voters[:49]) and np.allclose(_x.cands, _y.cands[:5]), _mn
+    assert np.allclose(_y.cands, _y.voters[:10]) and np.allclose(_y.u[np.arange(10), np.arange(10)], 1), _mn
+    assert np.allclose(_cpf(_y.cands, 0.7, _y.cand_weights), _y.u[:10]), _mn
+try:
+    _md.draw_electorate(Scenario(cands_vote=1, n_voters=3, n_cands=4), np.random.default_rng(1))
+    raise AssertionError("accepted more candidates than voters")
+except ValueError:
+    pass
+# bias by who stands (models.standing): on a Gaussian electorate the exponential tilt gives candidates
+# shifted by `shift` SDs and scaled by `dispersion`; nested in the number of candidates
+_G = np.random.default_rng(8).normal(size=(200000, 3))
+_dr = np.random.default_rng(9).random(len(_G))
+for _s, _d in ((1.0, 0.5), (1.0, -1.0), (0.6, 0.0), (0.6, 0.4)):
+    _i = _md.standing(_G, 3000, _s, _d, _dr)
+    assert len(_i) == 3000 and len(set(_i.tolist())) == 3000
+    assert abs(_G[_i, 0].mean() - _d) < 0.06, (_s, _d, _G[_i, 0].mean())
+    assert abs(_G[_i, 1].std() - _s) < 0.06 * _s, (_s, _d, _G[_i, 1].std())
+    assert np.array_equal(_md.standing(_G, 2000, _s, _d, _dr), _i[:2000])
+# spreading out is cut off at STAND_SPREAD SDs: wider than the voters, but less than asked
+_w = [_G[_md.standing(_G, 3000, _s, 0.0, _dr), 1].std() for _s in (1.5, 2.0)]
+assert 1.2 < _w[0] < _w[1] < 2.0, _w
+assert np.array_equal(_md.standing(_G[:50], 6, 1.0, 0.0, _dr[:50]), np.arange(6))       # unbiased: the first voters
+_f = _md.standing(_G[:20], 6, 0.3, 0.0, _dr[:20])                                       # too few stand: filled
+assert len(_f) == 6 and len(set(_f.tolist())) == 6
 _a = _md.draw_electorate(_sk, np.random.default_rng([3, 0])).u
 assert np.array_equal(_a, _md.draw_electorate(_sk, np.random.default_rng([3, 0])).u)   # reproducible
 # ks parameters do not touch the clusters model
@@ -1312,7 +1342,7 @@ print("field model ok")
 
 # noise model: reproducible, positive utilities, distinct people, total variance pi^2/6; strength 0 is a
 # Gaussian blob (variance spread evenly over the dimensions), a high strength concentrates it on fewer directions
-_sn = Scenario(n_voters=301, n_cands=5, dims=6, model="noise")
+_sn = Scenario(n_voters=301, n_cands=5, dims=6, model="noise", cands_vote=0)   # candidates apart: distinct people
 _n1 = _md.draw_electorate(_sn, np.random.default_rng(41))
 assert np.array_equal(_n1.u, _md.draw_electorate(_sn, np.random.default_rng(41)).u)
 assert (_n1.u > 0).all() and _n1.voter_weights is None

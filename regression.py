@@ -63,6 +63,8 @@ CONDITIONS = [
     ("individual-previous", {"individual": 1, "search": 0, "start": "previous"}),
     ("individual-previous-nomination", {"individual": 1, "search": 0, "start": "previous", "exits": 1, "clones": 1,
                                         "rounds": 1}),       # the previous ballots carried to another field
+    ("cands-vote", {"voters": 9, "cands": 5, "cands_vote": 1, "exits": 1, "clones": 1, "rounds": 1}),   # candidates are voters
+    ("cands-vote-biased", {"cands_vote": 1, "cand_shift": 0.5, "cand_dispersion": 0.7}),   # who stands, biased
 ]
 ELECTIONS = 2
 

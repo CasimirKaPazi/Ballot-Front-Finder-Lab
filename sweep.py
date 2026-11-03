@@ -60,6 +60,8 @@ def main():
                          "quadratic -(distance / width)^2")
     ap.add_argument("--cand-dispersion", type=float, nargs="+", default=[1.0])
     ap.add_argument("--cand-shift", type=float, nargs="+", default=[0.0])
+    ap.add_argument("--cands-vote", type=int, nargs="+", default=[1], choices=[0, 1],
+                    help="1 (default): the candidates are voters (run.py --cands-vote); 0: apart from the voters")
     ap.add_argument("--rounds", type=int, nargs="+", default=[3])
     ap.add_argument("--samples", type=int, nargs="+", default=[5])
     ap.add_argument("--strategic", type=float, nargs="+", default=[0.0])

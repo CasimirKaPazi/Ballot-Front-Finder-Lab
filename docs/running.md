@@ -65,6 +65,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--utility` | `exp` | utility of distance: `exp` = exp(−distance / width), `linear` = −distance / width, `quadratic` = −(distance / width)² (see [model.md](model.md)) |
 | `--cand-dispersion` | 1.0 | candidates' distance from the electorate's centre × this (< 1 clustered, > 1 spread out); see [model.md](model.md), Candidates unlike the electorate |
 | `--cand-shift` | 0.0 | candidates moved along the main dimension by this many voter SDs; see [model.md](model.md), Candidates unlike the electorate |
+| `--cands-vote` | 1 | the candidates are voters too, chosen among the `--voters` (without bias the first `--cands`); 0: drawn apart from the voters (until 2026-11-03); see [model.md](model.md), Candidates who vote |
 | `--seed` | 1 | random seed; election e uses the stream (seed, e), so all methods face the same electorates |
 | `--rounds` | 3 | poll rounds before the vote (0 = everyone sincere); see [model.md](model.md), Strategy engine. Three rounds take voters past the first answer to the honest poll, which leans on the modelling of sincere ballots, toward the state they settle in |
 | `--samples` | 5 | polls per round (they stand for the uncertainty; 10 until 2026-10-26) |

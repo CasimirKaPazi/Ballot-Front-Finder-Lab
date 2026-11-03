@@ -332,6 +332,11 @@ def check_params(a, error):
     for k in ("strategic", "adaptive", "aggressive", "lazy"):
         if any(v is not None and not 0 <= v <= 1 for v in vals(k)):
             error(f"--{k} must be between 0 and 1")
+    if any(d <= 0 for d in vals("cand_dispersion")):
+        error("--cand-dispersion must be above 0")
+    if 1 in vals("cands_vote"):
+        if max(vals("cands")) > min(vals("voters")):
+            error("--cands-vote 1: at most as many candidates as voters")
     # (sweep.py skips the combinations that break this; here only all of them breaking is an error;
     # an --adaptive left out (None) adapts to the others, see resolve_adaptive)
     given = [v for v in vals("adaptive") if v is not None]
@@ -364,9 +369,12 @@ def check_params(a, error):
         error("--risk is for the ranking groups: add --individual 0")
 
 
-def cand_text(disp, shift):
+def cand_text(disp, shift, vote=0):
     """', candidates: ...' when they are not drawn like the voters, else ''."""
     parts = ([f"dispersion {disp}"] if float(disp) != 1.0 else []) + ([f"shift {shift}"] if float(shift) != 0.0 else [])
+    if int(vote or 0):
+        parts = [p + " (by who stands)" for p in parts]
+        parts.insert(0, "voters who stand")
     return f", candidates: {', '.join(parts)}" if parts else ""
 
 
@@ -401,10 +409,11 @@ def strategy_text(p, n):
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "utility", "cand_dispersion", "cand_shift", "rounds", "samples",
           "strategic", "adaptive", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search",
-          "start", "seed", "campaign", "risk", "risk_tolerance", "coordination", "individual"]
+          "start", "seed", "campaign", "risk", "risk_tolerance", "coordination", "individual", "cands_vote"]
 # Run parameters added later, with the value that gives the earlier behaviour: filled in where a caller
 # leaves them out (simulate), so callers written before them keep working
-LATER_PARAMS = {"campaign": 0.0, "risk": 0, "risk_tolerance": 0.1, "coordination": 0.25, "individual": 0}
+LATER_PARAMS = {"campaign": 0.0, "risk": 0, "risk_tolerance": 0.1, "coordination": 0.25, "individual": 0,
+                "cands_vote": 0}
 
 
 def previous_election(args):
@@ -544,7 +553,8 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
                   p.get("ks_cut", 0.2), p.get("ks_shared", 0), salience=p.get("salience", "none"),
                   salience_exponent=p.get("salience_exponent", 1.0), fixed_variance=p.get("fixed_variance", 0),
                   field_kappa=p.get("field_kappa", 1.5), field_salience=p.get("field_salience", 0.0),
-                  noise_strength=p.get("noise_strength", 3.0), utility=p.get("utility", "exp"))
+                  noise_strength=p.get("noise_strength", 3.0), utility=p.get("utility", "exp"),
+                  cands_vote=int(p.get("cands_vote", 0)))
     todo = [e for e in range(elections) if e not in set(skip)]
     jobs = [{"sc": sc, "p": p, "e": e, "rounds": rounds, "names": names, "participation": participation,
              "manipulation": manipulation} for e in todo]
@@ -786,9 +796,15 @@ def parser():
                          "quadratic = -(distance / width)^2, each further unit costs more")
     ap.add_argument("--cand-dispersion", type=float, default=1.0,
                     help="candidates' distance from the electorate's centre x this (< 1: clustered in the centre, "
-                         "> 1: spread out; Merrill 1984); voters unchanged")
+                         "> 1: spread out; Merrill 1984): with --cands-vote 1 by who stands, else by moving them")
     ap.add_argument("--cand-shift", type=float, default=0.0,
-                    help="candidates moved along the first (main) dimension by this many voter SDs; voters unchanged")
+                    help="candidates shifted along the first (main) dimension by this many voter SDs: with "
+                         "--cands-vote 1 by who stands, else by moving them")
+    ap.add_argument("--cands-vote", type=int, default=1, choices=[0, 1],
+                    help="1 (default since 2026-11-03): the candidates are voters too, chosen among the --voters "
+                         "(99 voters with 6 candidates are 99 people, 6 of whom stand): without bias the first "
+                         "--cands voters; --cand-dispersion and --cand-shift then select who stands. 0: candidates "
+                         "are drawn apart from the voters, and those two move them")
     ap.add_argument("--rounds", type=int, default=3,
                     help="poll rounds before the vote (0 = everyone votes sincerely); see strategy.py")
     ap.add_argument("--samples", type=int, default=5,
@@ -923,7 +939,7 @@ def main():
 
     lines = []
     lines.append(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {model_text(a)}, "
-          f"{width_text(a)}{cand_text(a.cand_dispersion, a.cand_shift)}; {strategy_text(a, a.voters)}, "
+          f"{width_text(a)}{cand_text(a.cand_dispersion, a.cand_shift, a.cands_vote)}; {strategy_text(a, a.voters)}, "
           f"strategic share {a.strategic}, adaptive share {p['adaptive']}, scores 0..{a.max_score}"
           f"{f', nomination: exits {a.exits}, clones {a.clones}' if a.exits or a.clones else ''}; seed {a.seed}")
     lines.append(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")

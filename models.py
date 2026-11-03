@@ -15,7 +15,12 @@ None = every dimension counts alike). A model's own parameters are fields of the
                 quadratic: -(distance / width)^2: each further unit costs more (risk aversion); far
                 voters count most. Total utility is then best for the candidate nearest the voters'
                 mean (exp: a dense group nearby, the mode; linear: the spatial median).
-    candidates  optionally transformed relative to the electorate: cand_dispersion scales their
+    candidates who vote (cands_vote=1, the default): the candidates are voters, so they are part of
+                the n voters. The model then draws n persons only, and the voters do not depend on C.
+                A candidate's preferences are their own row as a voter. Without bias the candidates are
+                the first C voters (so they do not depend on n either); cand_dispersion and cand_shift
+                then select who stands rather than move anyone (standing).
+    candidates  (cands_vote=0) optionally transformed relative to the electorate: cand_dispersion scales their
                 distances from the voters' mean position (Merrill 1984's relative candidate
                 dispersion: < 1 clusters them toward the centre, > 1 spreads them out), and
                 cand_shift moves them all along the first (most important) dimension by that many
@@ -117,11 +122,12 @@ form clumps within clumps at every scale, without a number of clusters, a Zipf l
       for clusters.
     Candidates are drawn like voters.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 import numpy as np
 
 
+import copy
 import zlib
 
 
@@ -448,6 +454,48 @@ def utility(d, width, form="exp"):
     return np.exp(-d / width)
 
 
+STAND_CAP = 3.0    # biased standing: voters at least this many SDs out in the favoured direction always stand
+STAND_SPREAD = 2.0  # dispersion above 1: voters farther out than this many SDs on average over the dimensions always stand
+
+
+def standing(voters, C, dispersion=1.0, shift=0.0, draws=None):
+    """Which voters stand (candidates who vote, --cands-vote 1): indices of C voters. Without bias
+    (dispersion 1, shift 0) the first C. With bias, the voters are taken in order and each stands with
+    probability p (their draw in `draws`, one per voter from their own stream, below p), until C
+    stand; p = min(1, w / w_ref) with the selection weight
+        log w = (shift / dispersion^2) z_1 - (1 / dispersion^2 - 1) |z|^2 / 2,
+    z the voter's position standardised by the electorate's mean and SD per dimension. For a Gaussian
+    electorate this is exact: the candidates are distributed as the voters shifted by `shift` SDs on
+    the first dimension and scaled by `dispersion` around the centre, as --cand-shift and
+    --cand-dispersion move drawn candidates (an exponential tilt). w_ref is the largest weight where
+    it is bounded (dispersion < 1); with dispersion 1 the weight STAND_CAP SDs out toward `shift`, and
+    with dispersion above 1 the weight STAND_SPREAD SDs out on every dimension: voters beyond always
+    stand (the tilt is cut off there). If fewer than C stand, the rest of the field are
+    the voters with the largest weights. Unbiased, the candidates do not depend on the number of
+    voters; biased, only through the electorate's mean and SD (and if the field had to be filled)."""
+    n, D = voters.shape
+    if dispersion <= 0:
+        raise ValueError("candidate dispersion must be above 0")
+    if dispersion == 1.0 and shift == 0.0:
+        return np.arange(C)
+    z = (voters - voters.mean(axis=0)) / np.where(voters.std(axis=0) > 1e-12, voters.std(axis=0), 1.0)
+    a, b = shift / dispersion ** 2, 0.5 * (1 / dispersion ** 2 - 1)
+    logw = a * z[:, 0] - b * (z ** 2).sum(axis=1)
+    if dispersion < 1:                                   # bounded: its maximum
+        ref = a ** 2 / (4 * b)
+    elif dispersion == 1:
+        ref = abs(a) * STAND_CAP
+    else:                                                # grows outwards: the weight at the cap
+        ref = abs(a) * STAND_CAP - b * STAND_SPREAD ** 2 * D
+    p = np.minimum(1.0, np.exp(logw - ref))
+    yes = np.flatnonzero(draws < p)
+    if len(yes) >= C:
+        return yes[:C]
+    taken = set(yes.tolist())
+    rest = [i for i in np.argsort(-logw, kind="stable") if i not in taken]
+    return np.sort(np.r_[yes, rest[:C - len(yes)]]).astype(int)
+
+
 @dataclass
 class Electorate:
     """One election's electorate: utilities u[v, c], positions and dimension weights (None: all alike)."""
@@ -456,10 +504,22 @@ class Electorate:
     cands: np.ndarray
     voter_weights: np.ndarray = None
     cand_weights: np.ndarray = None
+    cand_voters: np.ndarray = None   # candidates who vote: the voter each candidate is (None: apart)
 
 
 def draw_electorate(sc, rng):
-    """The electorate of one election under the scenario's model (sc.model, default "noise")."""
+    """The electorate of one election under the scenario's model (sc.model, default "noise"). With
+    sc.cands_vote, the candidates are sc.n_cands of the voters (the model draws voters only; standing).
+    Their draws to stand come from a stream of their own, derived from the election's stream."""
+    if getattr(sc, "cands_vote", 0):
+        if sc.n_cands > sc.n_voters:
+            raise ValueError("candidates who vote: at most as many candidates as voters")
+        voters, _, vw, _ = MODELS[getattr(sc, "model", "clusters")].draw(replace(sc, n_cands=0), rng)
+        stand = np.random.default_rng([int(copy.deepcopy(rng).integers(2 ** 63)), zlib.crc32(b"stand")])
+        idx = standing(voters, sc.n_cands, sc.cand_dispersion, sc.cand_shift, stand.random(len(voters)))
+        cands, cw = voters[idx].copy(), (None if vw is None else vw[idx].copy())
+        u = utility(distances(voters, cands, vw), sc.width, getattr(sc, "utility", "exp"))
+        return Electorate(u, voters, cands, vw, cw, cand_voters=idx)
     voters, cands, vw, cw = MODELS[getattr(sc, "model", "clusters")].draw(sc, rng)
     if sc.cand_dispersion != 1.0 or sc.cand_shift != 0.0:
         centre = voters.mean(axis=0)
