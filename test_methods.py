@@ -872,6 +872,21 @@ _strat = [_ind.obvious("fav", c, 0) for c in (0, 1, 2)]
 _recs, _bal = _ind.plan(_pl, _pl.poll_view(), _uc, _sc, _Fc, _rc, _strat, 0.25, _cu)
 assert _recs[1][0] == (("top", 1),) and _recs[1][1][1] > 0, _recs             # B's chance rises
 assert (_bal[(("top", 1),)][36:90].argmax(axis=1) == 1).all()       # B's and T's supporters: B
+# one rule (individual.answer): a move is made if its value, the gain in expected outcome as a share of the
+# voter's range, exceeds the voter's cost; a voter expects a share of their camp to do the same (bloc)
+_ua = np.array([[1.0, 0.3, 0.2, 0.0]] * 40 + [[0.0, 1.0, 0.4, 0.2]] * 30 + [[0.0, 0.8, 1.0, 0.2]] * 20
+               + [[0.2, 0.0, 0.4, 1.0]] * 9)
+assert np.allclose(_ind.bloc(_ua, 0.25)[[0, 40, 70, 90]], [1 + 0.25 * 39, 1 + 0.25 * 29, 1 + 0.25 * 19, 1 + 0.25 * 8])
+_sa = _pl.sincere(_ua)
+_ra = _ind.Reading(_pl.poll_view(), "fav", _pl.poll_view().features(_sa).sum(axis=0), 4, 99, 245, 2.0)
+assert (_ra.A, _ra.B, _ra.T) == (0, 1, 2)
+_na, _act = _ind.answer(_pl, _pl.poll_view(), _ua, _sa.copy(), _sa, _ra, threshold=np.zeros(99), followers=0.25)
+assert (_na[70:90].argmax(axis=1) == 1).all() and _act[70:90].all()      # T's camp compromises for B
+assert (_na[:70] == _sa[:70]).all() and not _act[:70].any()               # A's and B's camps stay
+_nb, _ = _ind.answer(_pl, _pl.poll_view(), _ua, _sa.copy(), _sa, _ra, threshold=np.full(99, 0.99), followers=0.25)
+assert (_nb == _sa).all()                                                 # a high cost: nobody moves
+# chances can be projected past an even race: a candidate whose closeness goes below 0 leads
+assert _ind._chances(np.array([-10.0]), np.array([np.inf]), 5.0)[1][0] > 0.9
 print("individual voters ok")
 # --start previous on another field (run.carry_over): the previous ballots, relabelled, cast again on this
 # election's field; a candidate who was not in the previous election (a new clone) gets nothing

@@ -132,6 +132,7 @@ def source_name(p):
 # be present; a file without them is too old and has to be regenerated.
 ADDED_COLUMNS = {
     "model": ("clusters", "2026-10-14, electorate models: older runs used the clusters model"),
+    "honesty": ("none", "2026-11-04, cost of voting insincerely (individual voters): older runs used a stake threshold and a worth test instead"),
     "cands_vote": ("0", "2026-11-03, candidates who vote: older runs had candidates apart from the voters"),
     "ks_alpha": ("1.5", "2026-10-14, parameters of the ks model (not used by older runs)"),
     "ks_cut": ("0.2", "2026-10-14, parameters of the ks model (not used by older runs)"),
@@ -743,7 +744,7 @@ def label(key, varying, first):
 
 
 POINT_KEYS = {"rb": "random ballot", "rc": "random candidate", "ml": "maximal lottery", **REF_POINTS}   # --points
-PARAM_NAMES = {"campaign": "campaigns", "coordination": "coordination share", "individual": "individual voters", "risk": "risk by satisfaction",
+PARAM_NAMES = {"honesty": "honesty cost", "campaign": "campaigns", "coordination": "coordination share", "individual": "individual voters", "risk": "risk by satisfaction",
                "risk_tolerance": "risk tolerance", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error",
                "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion", "cands_vote": "candidates vote",
@@ -1166,10 +1167,12 @@ def main():
         L += [""]
         if float(p.get("adaptive") or 0) > 0:
             ad = r["adapted"]
-            L += [f"**Adaptive voters** (a share {p['adaptive']} of the electorate, strategic in a round when the race "
-                  "between the two leaders matters enough to them): the share of them voting strategically in the "
-                  "reported round, per method, averaged over elections. A method whose leading candidates are both "
-                  "broadly acceptable gives fewer voters a reason to strategise.", "",
+            why = ("strategic in a round when their best move gains more than their cost of voting insincerely"
+                   if int(p.get("individual") or 0) else
+                   "strategic in a round when the race between the two leaders matters enough to them")
+            L += [f"**Adaptive voters** (a share {p['adaptive']} of the electorate, {why}): the share of them voting "
+                  "strategically in the reported round, per method, averaged over elections. A method whose leading "
+                  "candidates are both broadly acceptable gives fewer voters a reason to strategise.", "",
                   "| Method | Adaptive voters strategic |", "|---|---|"]
             for j in np.argsort(-np.nan_to_num(ad, nan=-1), kind="stable"):
                 L.append(f"| {r['methods'][j]} | {'—' if np.isnan(ad[j]) else f'{ad[j]:.1%}'} |")

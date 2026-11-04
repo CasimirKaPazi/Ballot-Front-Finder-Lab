@@ -11,23 +11,25 @@ once per round instead of the ranking groups.
   that change. The runner-up B is the closest candidate, the next place T the next closest.
 - The chance of a candidate c behind: Phi(-k_c / sigma), sigma = poll_error x the sampling error of a
   two-way split, in voters (n x 0.5 / sqrt(poll size)); A has the rest (B and T only).
-- The stake: |u(A) - u(B)| rescaled to the voter's range, times 4 P(A) P(B) (1 for a 50/50 race, 0 for
-  a sure one). A voter strategises in a round if their stake exceeds their personal threshold (always
-  strategic voters: threshold 0; sincere voters never).
-- A strategising voter compares their sincere ballot with compromise for one of the poll's places
-  (A, B, T; supporting it as far as the format allows: obvious), burial of one (it and everyone liked
-  no more to the bottom, where the format allows; strict rankings: it last: burial) and both
-  (compromise for one, burial of another; for a voter preferring A, compromise for T with burial of B
-  is the push-over), by simple arithmetic on the poll: the change of their own ballot (from what they voted in
-  the last round) is worth so many voters switching from A to c (its projection on one switching
+- A voter compares their sincere ballot with compromise for one of the poll's places (A, B, T;
+  supporting it as far as the format allows: obvious), burial of one (it and everyone liked no more
+  to the bottom, where the format allows; strict rankings: it last: burial) and both (compromise for
+  one, burial of another; for a voter preferring A, compromise for T with burial of B is the
+  push-over), by simple arithmetic on the poll: the change of their own ballot (from what they voted
+  in the last round) is worth so many voters switching from A to c (its projection on one switching
   voter's change of the totals), for the runner-up and the next place, and how each of these races
   moves with the other (Reading.cross, a scenario table read from the poll: a runoff method can put B
   out when T passes it, which makes a push-over pay; under a Condorcet method T beating A can make a
-  cycle that B wins, which makes burial of A pay); with f voters doing the same
-  (their boldness: 1 = only themselves, up to --coordination of the electorate), c needs that many
-  times fewer (or more) voters, and the chances follow. They take the ballot with the best expected
-  outcome for them. Nobody recounts the poll with their ballot changed: what a move does under a
-  method is for the results to show, not for voters to foresee.
+  cycle that B wins, which makes burial of A pay). They expect f voters to do the same: themselves
+  and --coordination of their camp, the voters with the same favourite (bloc); c needs that many
+  times fewer (or more) voters, below 0 c leads, and the chances follow.
+- A move's value is its gain in expected outcome over the sincere ballot, as a share of the voter's
+  utility range (a promise weighted by trust: judge). The voter makes the most valuable move if its
+  value exceeds their cost of voting insincerely (threshold: 0 for always strategic voters, their
+  draw x --honesty for adaptive ones, never for sincere ones), else votes sincerely. Nobody recounts
+  the poll with their ballot changed: what a move does under a method is for the results to show,
+  not for voters to foresee. (Until 2026-11-04: a stake gate, a boldness per voter and a test against
+  the poll's uncertainty, chained; docs/model.md, Individual voters.)
 """
 from math import erf, isfinite, sqrt
 
@@ -40,6 +42,9 @@ from ballots import BALLOTS
 STEPS_FULL = 14      # bisection steps for the closeness of a candidate, over 0 .. n voters
 GRID = (-24, -12, -6, -2, 0, 2, 6, 12, 24)   # scenario table: voters switching between A and another
 STEPS_TABLE = 10     # bisection steps in the table (0.1 voter)
+ALL_RACES = False    # True: value moves in the races against every candidate who can win, not only B and T,
+                     # with cross-effects on B and T from each (a trial of 2026-11-04, docs/journal.md: it found no
+                     # burial against the Condorcet methods either, changed other methods, and took 35% longer)
 
 
 def _Phi(x):
@@ -124,13 +129,22 @@ def _closeness(count, T, c, C, delta, lo, hi, steps):
 
 
 def _chances(kB, kT, sigma):
+    pA, (pB, pT) = _chances_many([kB, kT], sigma)
+    return pA, pB, pT
+
+
+def _chances_many(ks, sigma):
+    """Chances of the candidates behind A, from their closeness (one array per race, rows alike):
+    Phi(-k / sigma) each, scaled down together if they add up to more than 1; A has the rest."""
+    if not ks:
+        return np.ones(1), []
     sg = float(sigma)                         # plain floats: the same numbers, much faster than numpy scalars
-    pB = np.array([_Phi(-x / sg) if isfinite(x) else 0.0 for x in np.atleast_1d(kB).astype(float).tolist()])
-    pT = np.array([_Phi(-x / sg) if isfinite(x) else 0.0 for x in np.atleast_1d(kT).astype(float).tolist()])
-    tot = pB + pT
+    ps = [np.array([_Phi(-x / sg) if isfinite(x) else 0.0 for x in np.atleast_1d(k).astype(float).tolist()])
+          for k in ks]
+    tot = sum(ps)
     scale = np.where(tot > 1, 1 / np.maximum(tot, 1e-12), 1.0)
-    pB, pT = pB * scale, pT * scale
-    return 1 - pB - pT, pB, pT
+    ps = [p * scale for p in ps]
+    return 1 - sum(ps), ps
 
 
 class Reading:
@@ -156,15 +170,16 @@ class Reading:
         self.B = order[0] if order and np.isfinite(ks[order[0]]) else None
         self.T = order[1] if len(order) > 1 and np.isfinite(ks[order[1]]) else None
         self.k = ks
-        kB = ks[self.B] if self.B is not None else np.inf
-        kT = ks[self.T] if self.T is not None else np.inf
-        pA, pB, pT = _chances(kB, kT, self.sigma)
+        # the races a move is valued in: A against B and T, or (ALL_RACES) against every candidate who
+        # can win by voters switching from A
+        self.races = [c for c in (self.B, self.T) if c is not None]
+        if ALL_RACES:
+            self.races += [c for c in order if c not in self.races and np.isfinite(ks[c])]
+        pA, ps = _chances_many([ks[c] for c in self.races], self.sigma)
         self.P = np.zeros(C)
         self.P[A] = pA[0]
-        if self.B is not None:
-            self.P[self.B] = pB[0]
-        if self.T is not None:
-            self.P[self.T] = pT[0]
+        for c, p in zip(self.races, ps):
+            self.P[c] = p[0]
         # How each race moves with the other (the cross-effects): a scenario table read from the poll, for
         # x voters switching from A to d (x < 0: from d to A), the closeness of c again (c, d = B, T and T,
         # B). Plurality: voters leaving A for T bring B closer as well; a runoff method: T passing B in the
@@ -172,8 +187,9 @@ class Reading:
         # cycle that B wins (burial of A under T). The table covers the scale of the moves voters imagine.
         self.grid = np.array([x for x in GRID if abs(x) <= n], float)
         self.curve = {}
+        pairs = [(c, d) for c in (self.B, self.T) if c is not None for d in self.races if d != c]
         if self.B is not None and self.T is not None:
-            for c, d in ((self.B, self.T), (self.T, self.B)):
+            for c, d in pairs:
                 rows = T[None] + self.grid[:, None] * self.delta[d][None]
                 kc = _closeness(count, rows, c, C, self.delta[c], np.zeros(len(rows)),
                                 np.full(len(rows), float(n)), STEPS_TABLE)
@@ -253,48 +269,29 @@ def trust(memory, v, move):
     return min([memory["trust"].get((v, a), (1.0, 1))[0] for a in aims(move)] or [1.0])
 
 
-def _eu(r, U, kB, kT, C):
-    """Expected outcome for each row of utilities U, with closeness kB and kT."""
-    pA, pB, pT = _chances(np.maximum(kB, 0), np.maximum(kT, 0), r.sigma)
-    P = np.zeros((len(U), C))
-    P[:, r.A] = pA
-    P[:, r.B] += pB
-    if r.T is not None:
-        P[:, r.T] += pT
-    return (P * U).sum(axis=1)
-
-
-def _noise(r, U, C):
-    """How much a voter's expected outcome could be off because the poll is: the change if it were off by
-    its standard error (sigma voters) in the race with B and in the race with T, half the spread of
-    plus and minus, the two races combined as independent errors."""
-    k = len(U)
-    kB = np.full(k, min(r.k[r.B], float(r.n)))
-    kT = np.full(k, min(r.k[r.T], float(r.n)) if r.T is not None else np.inf)
-    eB = np.abs(_eu(r, U, kB + r.sigma, kT, C) - _eu(r, U, kB - r.sigma, kT, C)) / 2
-    eT = (np.abs(_eu(r, U, kB, kT + r.sigma, C) - _eu(r, U, kB, kT - r.sigma, C)) / 2
-          if r.T is not None else np.zeros(k))
-    return np.sqrt(eB ** 2 + eT ** 2)
-
-
 def _value(r, S, U, C):
     """Chances and expected outcome after a change S of the poll totals (rows, one per row of U): its
-    worth in voters switching from A to each of B and T (projection on delta), with the cross-effects
-    (Reading.cross). Returns (P, EU): winner chances per row, and the expected outcome of U."""
-    races = [c for c in (r.B, r.T) if c is not None]
+    worth in voters switching from A to each candidate of the races (projection on delta), with the
+    cross-effects on B and T (Reading.cross: each other race's switches move their closeness, added
+    up). Returns (P, EU): winner chances per row, and the expected outcome of U."""
+    races = r.races
     s = {c: (S @ r.delta[c]) / max(float(r.delta[c] @ r.delta[c]), 1e-12) for c in races}
     k = {}
     for c in races:
-        others = [d for d in races if d != c]
-        base = r.cross(c, others[0], s[others[0]]) if others else np.full(len(S), r.k[c])
-        k[c] = np.where(np.isfinite(r.k[c]) | (base < r.n), base, np.inf) - s[c]
-    kT = k[r.T] if r.T is not None else np.full(len(S), np.inf)
-    pA, pB, pT = _chances(np.maximum(k[r.B], 0), np.maximum(kT, 0), r.sigma)
+        if c in (r.B, r.T):
+            k0 = min(r.k[c], float(r.n))
+            base = np.full(len(S), k0)
+            for d in races:
+                if d != c and (c, d) in r.curve:
+                    base = base + (r.cross(c, d, s[d]) - k0)
+            k[c] = np.where(np.isfinite(r.k[c]) | (base < r.n), base, np.inf) - s[c]
+        else:
+            k[c] = r.k[c] - s[c]
+    pA, ps = _chances_many([k[c] for c in races], r.sigma)
     P = np.zeros((len(S), C))
     P[:, r.A] = pA
-    P[:, r.B] += pB
-    if r.T is not None:
-        P[:, r.T] += pT
+    for c, p in zip(races, ps):
+        P[:, c] += p
     return P, (P * U).sum(axis=1)
 
 
@@ -367,26 +364,39 @@ def plan(method, count, u, sincere, F_cur, r, strategies, share, cand_u, memory=
     return recs, {m: ballots[m] for m, _ in recs.values()}
 
 
+def bloc(u, share):
+    """How many voters each voter expects to vote as they do: themselves and a share `share`
+    (--coordination) of the others whose favourite is theirs (a camp acts alike; the poll is all a voter
+    knows, but the size of their own camp they can judge)."""
+    fav = u.argmax(axis=1)
+    camp = np.bincount(fav, minlength=u.shape[1])[fav]
+    return 1.0 + share * (camp - 1)
+
+
 def answer(method, count, u, B, sincere, reading, *, threshold, followers, memory=None, rng=None, search=0,
            campaign=None):
-    """One round. threshold: per voter (0 = always strategic, inf = never); followers: per voter, how
-    many voters they expect to vote as they do (1 = only themselves). Returns the new ballots and the
-    voters strategic this round (bool).
+    """One round. threshold: per voter, the cost of voting insincerely, as a share of their own
+    utility range (0 = always strategic, inf = never); followers: per voter, how many voters they
+    expect to vote as they do, or a number: the share --coordination of their camp (bloc). Returns the
+    new ballots and the voters who vote strategically this round (bool).
 
-    A strategic voter compares their sincere ballot with compromise for one of the poll's places (A, B,
-    T), burial of one, and both (different places): for each ballot X, the change of their own ballot (from what they voted in the last
-    round) is worth w_c = (change . delta_c) / |delta_c|^2 switching voters in the race between the poll
-    winner A and c (delta_c: one voter switching from A to c), for the runner-up B and the next place T;
-    with f voters making it, c needs k_c - f w_c switching voters, and the chances follow (_chances).
-    With rng and search, each voter also tries `search` random variations of the move they hold
-    (discovery). The voter takes the ballot with the best expected outcome for them, a move's promise weighted by
-    their trust in it (judge; memory: {"last": ..., "trust": ...}, kept across the rounds), if its gain
-    over the sincere ballot is more than the poll's own uncertainty could account for (_noise).
+    A voter compares their sincere ballot with compromise for one of the poll's places (A, B, T),
+    burial of one, and both (different places): for each ballot X, the change of their own ballot (from
+    what they voted in the last round) is worth w_c = (change . delta_c) / |delta_c|^2 switching voters
+    in the race between the poll winner A and c (delta_c: one voter switching from A to c), for the
+    runner-up B and the next place T; with f voters making it, c needs k_c - f w_c switching voters
+    (below 0: c leads), and the chances follow (_chances, with the poll's uncertainty). With rng and
+    search, each voter also tries `search` random variations of the move they hold (discovery). A
+    move's value is its gain in the voter's expected outcome over the sincere ballot, as a share of
+    their utility range, a promise weighted by their trust in it (judge; memory: {"last": ...,
+    "trust": ...}, kept across the rounds). The voter makes the most valuable move if its value exceeds
+    their cost, else votes sincerely.
     campaign: None (off) or {"share": --coordination, "cand_u": candidates' utilities}: every candidate
-    may recommend a move (plan); each strategic voter considers the recommendation of the candidate they like most among
-    those campaigning, valued by what it promises if followed as planned (their expected outcome now,
-    plus the change of the winner chances the candidate worked out), provided their own part alone (with their boldness) does not cost them more
-    than the poll's uncertainty. The voters following each candidate are counted in memory["follow"]."""
+    may recommend a move (plan); each voter considers the recommendation of the candidate they like most
+    among those campaigning, valued by what it promises if followed as planned (their expected outcome
+    now, plus the change of the winner chances the candidate worked out), provided their own part alone
+    (with their followers) does not harm them. The voters following each candidate are counted in
+    memory["follow"]."""
     n, C = u.shape
     r = reading
     if memory is not None:
@@ -398,16 +408,15 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
         return newB, np.zeros(n, bool)
     lo_u, hi_u = u.min(axis=1), u.max(axis=1)
     span = np.where(hi_u > lo_u, hi_u - lo_u, 1.0)
-    stake = np.abs(u[:, r.A] - u[:, r.B]) / span * 4 * r.P[r.A] * r.P[r.B]
-    active = stake > threshold
+    able = np.isfinite(threshold)                                  # sincere voters never move
     if memory is not None:                                         # voters who sit this round out vote
-        for v in [v for v in memory.get("held", {}) if not active[v]]:   # sincerely: their move is let go
+        for v in [v for v in memory.get("held", {}) if not able[v]]:   # sincerely: their move is let go
             memory["held"].pop(v)
     places = [c for c in (r.A, r.B, r.T) if c is not None]
     F_cur = count.features(B)
-    V = np.flatnonzero(active)
+    V = np.flatnonzero(able)
     if not len(V):
-        return newB, active
+        return newB, np.zeros(n, bool)
     lazy, appr = mv.own_params(V)
     lazy = np.atleast_1d(lazy) if np.ndim(lazy) else lazy
     appr = np.atleast_1d(appr) if np.ndim(appr) else appr
@@ -441,16 +450,14 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
                               np.atleast_1d(appr[i] if np.ndim(appr) else appr))[0] for i, v in enumerate(V)]
             options.append(np.array(rows))
             keys.append(ks)
-    f = followers[V]
+    f = (bloc(u, float(followers)) if np.ndim(followers) == 0 else np.asarray(followers, float))[V]
     eu = []
     for X in options:
         D = count.features(X) - F_cur[V]                           # the change of each voter's own ballot,
         eu.append(_value(r, f[:, None] * D, u[V], C)[1])           # made by f voters (worth and cross-effects)
-    noise = _noise(r, u[V], C)
     # Campaigns: each voter considers the recommendation of the candidate they like most among those
     # campaigning, valued by what it promises if followed as planned (the candidate's chances with the
-    # campaign), if their own part, made by f voters as any move, does not cost them more than the poll's
-    # uncertainty could account for.
+    # campaign), if their own part, made by f voters as any move, does not harm them.
     camp_of = None
     if campaign is not None:
         recs, rec_ballots = plan(method, count, u, sincere, F_cur, r, uniq, campaign["share"], campaign["cand_u"],
@@ -463,7 +470,7 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
             promise = u[V] @ r.P + np.array([float(recs[int(c)][1] @ u[v]) for c, v in zip(camp_of, V)])
             options.append(X)
             keys.append([recs[int(c)][0] + (("campaign", int(c)),) for c in camp_of])
-            eu.append(np.where(own >= eu[0] - noise, promise, -np.inf))
+            eu.append(np.where(own >= eu[0] - 1e-12, promise, -np.inf))
     EU = np.stack(eu)
     before = u[V] @ r.P                                            # expected outcome keeping one's ballot
     if memory is not None:                                         # promises weighted by trust in the move
@@ -472,11 +479,11 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
             gain = EU[j] - before
             EU[j] = before + np.where(gain > 0, rho * gain, gain)  # trust discounts promises, never makes
                                                                    # a harmful move look good
-    # Worth acting on: a move's gain over the sincere ballot must exceed what the poll's own uncertainty
-    # could account for: the change in the voter's expected outcome if the poll were off by its standard
-    # error (sigma voters) in the race with B, and in the race with T (combined as independent errors).
-    EU[1:] = np.where(EU[1:] - EU[0][None] > noise[None], EU[1:], -np.inf)
+    # The most valuable move, made if its value (gain over the sincere ballot, as a share of the voter's
+    # utility range) exceeds the voter's cost of voting insincerely
     best = np.argmax(EU, axis=0)                                   # ties: the first (sincere first)
+    value = (EU[best, np.arange(len(V))] - EU[0]) / span[V]
+    best = np.where(value > threshold[V], best, 0)
     for j, X in enumerate(options):
         sel = best == j
         newB[V[sel]] = X[sel]
@@ -491,4 +498,6 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
                         memory["follow"][keys[j][i][-1][1]] += 1
                 else:
                     memory.setdefault("held", {}).pop(v, None)
+    active = np.zeros(n, bool)
+    active[V[best > 0]] = True
     return newB, active

@@ -175,7 +175,7 @@ def default_poll_size(n):
 
 def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strategic=None, poll_error=2.0,
             report=None, aggressive=None, start=None, adaptive=None, activated=None, campaign=None, risk=None,
-            cstats=None, leaders=None, individual=False):
+            cstats=None, leaders=None, individual=False, honesty=0.3):
     """Poll rounds (see the module docstring). Returns ballots of the last round, whether it
     settled (same as the round before), and mean sincerity (all voters).
     report: a list of round numbers; then `rounds` is ignored, the rounds run up to the highest,
@@ -205,23 +205,23 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strateg
         snaps = {}
         _respond(method, u, rng, max(want), samples, poll_size, search, strategic, poll_error, aggressive,
                  lambda r, res: snaps.__setitem__(r, res) if r in want else None, start, adaptive, activated,
-                 campaign, risk, cstats, leaders, individual)
+                 campaign, risk, cstats, leaders, individual, honesty)
         return [snaps[int(r)] for r in report]
     return _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive,
                     start=start, adaptive=adaptive, activated=activated, campaign=campaign, risk=risk, cstats=cstats,
-                    leaders=leaders, individual=individual)
+                    leaders=leaders, individual=individual, honesty=honesty)
 
 
 def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive=None,
              snapshot=None, start=None, adaptive=None, activated=None, campaign=None, risk=None, cstats=None,
-             leaders=None, individual=False):
+             leaders=None, individual=False, honesty=0.3):
     n, C = u.shape
     sincere = method.sincere(u)
     B = sincere.copy()
     fixed = np.ones(n, bool) if strategic is None else np.asarray(strategic, bool).copy()
     q = None if adaptive is None else np.asarray(adaptive, float)
     adapt = np.zeros(n, bool) if q is None else ~np.isnan(q) & ~fixed
-    q_adapt = np.where(adapt, np.nan_to_num(q, nan=np.inf), np.inf)
+    q_adapt = np.where(adapt, np.nan_to_num(q, nan=np.inf), np.inf) if q is not None else np.full(n, np.inf)
     n_adaptive = int(adapt.sum())
     active = fixed.copy()
 
@@ -284,8 +284,10 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
     individual = None if individual is False else individual
     if individual is not None:                 # the average of the polls, each voter alone (individual.py)
         import individual as _ind
-        thr = np.where(fixed, 0.0, np.where(adapt, q_adapt, np.inf))
-        fol = np.ones(n) if individual is True else np.asarray(individual, float)   # followers each voter expects
+        # each voter's cost of voting insincerely (a share of their utility range): always strategic 0,
+        # adaptive their personal draw x --honesty, sincere never
+        thr = np.where(fixed, 0.0, np.where(adapt, q_adapt * honesty, np.inf))
+        fol = 0.0 if individual is True else individual   # --coordination (a share of each camp), or followers per voter
         ind_memory = {"last": {}, "trust": {}}  # what each voter's move promised, and their trust in moves
         # discovery draws from its own stream (spawned, so the polls stay those of the run without it)
         ind_rng = np.random.default_rng(rng.bit_generator.seed_seq.spawn(1)[0])

@@ -135,10 +135,9 @@ def one_election(job):
     # --risk: each voter's personal risk threshold (own stream, the same for every method; docs/campaigns.md)
     risk = ({"threshold": np.random.default_rng([seed, e, zlib.crc32(b"risk")]).random(len(u)),
              "kappa": p.get("risk_tolerance", 0.1)} if risky else None)
-    # --individual: each voter's boldness (own stream, the same for every method): the number of voters they
-    # expect to vote as they do, from 1 (only themselves) up to --coordination of the electorate
-    followers = (1 + np.random.default_rng([seed, e, zlib.crc32(b"bold")]).random(len(u))
-                 * max(0.0, phi * len(u) - 1)) if individual else None
+    # --individual: each voter expects themselves and --coordination of their camp (the voters with the same
+    # favourite, on the field they face) to vote as they do (individual.bloc)
+    followers = phi if individual else None
     # --campaign: candidates' utilities for every candidate (their own preferences), as in nomination
     cu_all = (clone_setup(voters, cands, sc.width, np.random.default_rng([seed, e, zlib.crc32(b"clones")]),
                           ele.voter_weights, ele.cand_weights, getattr(sc, "utility", "exp"))[1] if camp_on else None)
@@ -195,7 +194,7 @@ def one_election(job):
             res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
                           poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0,
                           adaptive=adaptive, activated=act, campaign=camp, risk=risk, cstats=cst,
-                          leaders=lead, individual=followers if individual else None)
+                          leaders=lead, individual=followers if individual else None, honesty=float(p.get("honesty", 0.3)))
             sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
             sincere_row.update(ties(m, m.sincere(uf), P_h))
             sincere_row.update(manip.manipulation(m, m.sincere(uf), uf, u, back) if manipulating else manip.NAN)
@@ -359,6 +358,8 @@ def check_params(a, error):
         error("--poll-error must be 0 or more")
     if any(v not in (0, 1) for v in vals("campaign")):
         error("--campaign must be 0 (off) or 1 (on; it plans with --coordination, the share until 2026-10-29)")
+    if any(v < 0 for v in vals("honesty")):
+        error("--honesty must be at least 0")
     if any(not 0 <= v <= 1 for v in vals("coordination")):
         error("--coordination must be between 0 (one voter) and 1")
     if max(vals("campaign")) > 0 and min(vals("coordination")) == 0:
@@ -393,8 +394,8 @@ def strategy_text(p, n):
     ps = int(g("poll_size")) or default_poll_size(int(n))
     if int(g("individual")):
         return (f"{g('rounds')} poll round(s), the average of {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
-                f"individual voters (stake by closeness; compromise or burial, expecting 1 to "
-                f"{g('coordination')} of the voters to do the same)"
+                f"individual voters (compromise or burial if it gains more than a cost up to {g('honesty')} of their "
+                f"utility range, expecting {g('coordination')} of their camp to do the same)"
                 + ((f", campaigns (planned with {g('coordination')} of the audience)") if float(g("campaign")) > 0 else "")
                 + (f", laziness {g('lazy')}" if float(g("lazy")) > 0 else ""))
     return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
@@ -409,11 +410,11 @@ def strategy_text(p, n):
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "utility", "cand_dispersion", "cand_shift", "rounds", "samples",
           "strategic", "adaptive", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search",
-          "start", "seed", "campaign", "risk", "risk_tolerance", "coordination", "individual", "cands_vote"]
+          "start", "seed", "campaign", "risk", "risk_tolerance", "coordination", "individual", "cands_vote", "honesty"]
 # Run parameters added later, with the value that gives the earlier behaviour: filled in where a caller
 # leaves them out (simulate), so callers written before them keep working
 LATER_PARAMS = {"campaign": 0.0, "risk": 0, "risk_tolerance": 0.1, "coordination": 0.25, "individual": 0,
-                "cands_vote": 0}
+                "cands_vote": 0, "honesty": 0.3}
 
 
 def previous_election(args):
@@ -430,8 +431,7 @@ def previous_election(args):
     u = ele.u
     phi = float(p.get("coordination", 0.25))
     individual = bool(int(p.get("individual", 0)))
-    followers = (1 + np.random.default_rng([p["seed"], zlib.crc32(b"previous-bold")]).random(len(u))
-                 * max(0.0, phi * len(u) - 1)) if individual else None
+    followers = phi if individual else None
     exits, clones = int(p.get("exits", 0)), int(p.get("clones", 0))
     camp_on = float(p.get("campaign", 0.0)) > 0
     if camp_on or exits or clones:                 # clones' positions and candidates' preferences
@@ -462,7 +462,7 @@ def previous_election(args):
         B, _, _ = respond(m, uf, np.random.default_rng([p["seed"], zlib.crc32(b"previous-learning")]), rounds=rounds,
                           samples=p["samples"], poll_size=p["poll_size"], search=p["search"], strategic=strategic,
                           poll_error=p["poll_error"], aggressive=aggressive, adaptive=adaptive,
-                          campaign=camp, risk=risk, individual=followers)
+                          campaign=camp, risk=risk, individual=followers, honesty=float(p.get("honesty", 0.3)))
     set_voter_lazy(None)
     set_voter_approval(None)
     set_candidates(None)
@@ -829,8 +829,12 @@ def parser():
                          "boldness) vote as they do (individual.py); --aggressive does not apply, --search: random "
                          "variations per voter and round (default 0)")
     ap.add_argument("--coordination", type=float, default=0.25,
-                    help="with --individual: the largest following a bold voter expects (share of the electorate); "
-                         "with --campaign: the share of their audience a candidate plans with")
+                    help="with --individual: the share of their camp (the voters with the same favourite) a voter "
+                         "expects to vote as they do; with --campaign: the share of their audience a candidate plans with")
+    ap.add_argument("--honesty", type=float, default=0.3,
+                    help="with --individual: an adaptive voter's cost of voting insincerely is a personal share, uniform "
+                         "from 0 to this, of their utility range; they make a move only if it gains more (0.3 gives "
+                         "about the strategic voting measured under Plurality)")
     ap.add_argument("--risk", type=int, default=0, choices=[0, 1],
                     help="ranking groups (--individual 0) only: 1 = each voter is careful or bold by their "
                          "satisfaction with the polls, instead of the fixed --aggressive split (docs/campaigns.md)")
