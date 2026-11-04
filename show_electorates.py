@@ -353,6 +353,8 @@ def main():
                     help="utility of distance, as in run.py; several values are compared side by side")
     ap.add_argument("--cand-dispersion", type=float, default=1.0)
     ap.add_argument("--cand-shift", type=float, default=0.0)
+    ap.add_argument("--cands-vote", type=int, default=1, choices=[0, 1],
+                    help="1 (default): the candidates are voters, chosen among them; 0: drawn apart (run.py --cands-vote)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--sav", action="store_true",
                     help="also map the candidates from approval ballots as Alós-Ferrer & Granić (2015) do (sav.png)")
@@ -376,7 +378,7 @@ def main():
                     a.cand_shift, m, a.ks_alpha, a.ks_cut, a.ks_shared, salience="cluster" if a.salience_exponent > 0 else "none",
                     salience_exponent=a.salience_exponent, fixed_variance=a.fixed_variance,
                     field_kappa=a.field_kappa, field_salience=a.field_salience,
-                    noise_strength=a.noise_strength, utility=ut)
+                    noise_strength=a.noise_strength, utility=ut, cands_vote=a.cands_vote)
            for m, ut in combos]
     # the same random streams as run.py: election e of seed s is the electorate run.py uses (the utility
     # form changes only the utilities, not the positions)

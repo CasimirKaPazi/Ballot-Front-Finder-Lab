@@ -2195,7 +2195,7 @@ COMPARISONS = {
 }
 
 COMPARISONS["extended"] = COMPARISONS["standard"] + ["ESR", "DMS", "Soft Minimax",
-                                                     "Soft Minimax-40", "MARS-T"]
+                                                     "Soft Minimax-40", "MARS-T", "Asset", "Delegated 321"]
 
 
 def follows_score_range(method):

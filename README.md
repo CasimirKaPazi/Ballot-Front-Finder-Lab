@@ -28,7 +28,7 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 
 **Methods** ([methods](docs/methods.md))
 - 66 single-winner methods in eleven families: plurality-based (Plurality, IRV and variants, coalition methods), Condorcet (Ranked pairs, Schulze, Kemeny-Young, Copeland, Copeland//Margins, …), the minimax family, Condorcet-based hybrids (Black, Baldwin, Nanson, BTR, Smith//Score, …), approval-based (Approval, MDDA, MAMPO), rated (Score, DMS, ESR, …), median-based (MJ, MAV, MCA), score–pairwise hybrids (STAR, MARS, ARA, 3-2-1, Soft Minimax, …), positional (Borda, Dowdall), two-round methods with a real, separate runoff (TTR, Approval runoff, Score runoff, …) and delegated methods, where candidates cast or fill in votes (Asset voting, Delegated 3-2-1). Ties are counted exactly, as shared winning chances.
-- A standard set of 29, the most discussed methods and the strongest found here, is the default; every other method, family or set can be named. The set `extended` adds the strongest newer methods (34 in all).
+- A standard set of 29, the most discussed methods and the strongest found here, is the default; every other method, family or set can be named. The set `extended` adds the strongest newer methods and the delegated ones (36 in all).
 - New methods as add-ons: one Python file in `addons/` with a counting rule; ballots, strategy and measures come with the ballot type. A [tutorial](docs/addons.md) walks through writing one with little Python.
 
 **Electorates** ([model](docs/model.md), Electorates)
@@ -91,7 +91,7 @@ Every run or sweep writes into its own folder in `output/`, and `analyze.py` wri
 
 ## Versions
 
-Version numbers have three parts, major.minor.patch (currently 1.1.0, `run.VERSION`; every results row records it together with a fingerprint of each method's results, and the reports warn when files of different versions or code are combined):
+Version numbers have three parts, major.minor.patch (currently 2.0.0, `run.VERSION`; every results row records it together with a fingerprint of each method's results, and the reports warn when files of different versions or code are combined):
 
 - **patch** (1.0.x): changes that leave every existing result as it is: plots, documentation, new methods;
 - **minor** (1.x.0): changes that alter some results (a fixed bug, a changed rule for some methods); the journal names which;
