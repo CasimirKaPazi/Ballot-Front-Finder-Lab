@@ -23,7 +23,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 
 `--out` names the folder; a name without a directory goes into `output/` (created when needed), one with a directory (`--out runs/test`) is used as given. Without `--out` the folder is named by the time (`run-20261011-143000`, `sweep-…`), so nothing is overwritten by accident; an existing run is only replaced with `--overwrite`. `analyze.py` takes run or sweep folders (a sweep folder means all its run files) or elections CSV files, and looks up bare names in `output/`. Since a sweep keeps one file per run, single runs can be analysed alone, moved, or mixed with runs of other sweeps (see Combining runs). With several inputs (combining runs) the first is the base and the analysis goes into the last input's folder as `analysis-vs-<first>/`: `analyze.py base maxscore` writes `output/maxscore/analysis-vs-base/`, so each test keeps its comparison with the base next to its data. `--out` names another folder; a run or sweep folder given there gets the analysis inside it, never over its own files.
 
-**What a run writes.** `elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns; the simulator version (column `version`, from `run.VERSION`; the report names it, and warns when CSVs of different versions are combined); the quantities for the axes: U_method, U_best, U_rb (random ballot), U_rand (random candidate, for the usual VSE), WM (the winner's worst margin, share of voters), WM_best, WM_rb; has_cw and p_cw (probability of electing the Condorcet winner); the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see [analysis.md](analysis.md), Robustness); sincerity, fidelity, settled, the strategy types, the ties (split, zero_margins; see [analysis.md](analysis.md), Ties) and, with `--adaptive`, adapted. `summary.csv` and the printed table (`table.txt`) have one row per method:
+**What a run writes.** `elections.csv` has one row per (election, method, ballots = sincere or learned) with the run's parameters as columns; the simulator version (column `version`, from `run.VERSION`; the report names it, and warns when CSVs of different versions are combined); the quantities for the axes: U_method, U_best, U_rb (random ballot), U_rand (random candidate, for the usual VSE), WM (the winner's worst margin, share of voters), WM_best, WM_rb; has_cw and p_cw (probability of electing the Condorcet winner); the electorate properties cw_is_util, U_cw and fav_ratio (the same in every row of an election; see [analysis.md](analysis.md), Robustness); sincerity, fidelity, settled, the strategy types, the ties (split, zero_margins; see [analysis.md](analysis.md), Ties), the random juries (`jury`, filled once per election, in the first method's rows; see [analysis.md](analysis.md), Equivalent jury size) and, with `--adaptive`, adapted. `summary.csv` and the printed table (`table.txt`) have one row per method:
 
 | Column | Meaning |
 |---|---|
@@ -106,8 +106,8 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--boot` | 1000 | bootstrap replicates |
 | `--format` | png | file format(s) of the plots, one or more of png, svg, pdf (`--format png svg` writes both); the report links the first. svg and pdf are vector graphics, sharp at any zoom |
 | `--dpi` | 150 | resolution of png plots |
-| `--overlay` | frontier guides normalized rounded points | what the VSE/WME plots draw besides the methods; no names: only the methods ([analysis.md](analysis.md), Reachable region) |
-| `--points` | rb rc cwrb pair median mean | which reference points to draw, of rb, rc, ml, cwrb, cwuw, pair, median, mean; ml and cwuw are left out by default since they lie next to cwrb (the report gives all values) |
+| `--overlay` | frontier guides normalized rounded points trivial juries | what the VSE/WME plots draw besides the methods (`trivial`: the area of the trivial rules, the natural baseline; `juries`: the lines of random juries); no names: only the methods ([analysis.md](analysis.md), Reachable region) |
+| `--points` | rb rc coin nuw mwm mirror cwrb pair median mean | which reference points to draw, of rb, rc, ml, coin (a coin between the best worst margin and the best normalized total), nuw (normalized utility winner), mwm (best worst margin), mirror (the trivial rule mirroring CW//random ballot), cwrb, cwuw, pair, median, mean; ml and cwuw are left out by default since they lie next to cwrb (the report gives all values) |
 | `--compare` | none | pairs `"A:B"` for paired differences |
 | `--hide` | `references` | methods or groups left out of the scatter and chain plots; `--hide` alone shows all |
 | `--show` | all | only these methods or groups in the scatter and sweep plots (overrides `--hide`), e.g. `--show condorcet STAR` |
@@ -147,6 +147,8 @@ Column names are the option names with underscores, except for the options of th
 | split, zero_margins | 2026-10-26 | blank (ties not recorded) |
 | U_ml, WM_ml | 2026-10-26 | blank (no maximal lottery reference point) |
 | U_/WM_ cwrb, cwuw, pair, median, mean; Ur_cands | 2026-10-27 | blank (no further reference points, no line of rounded ballots) |
+| p_span | 2026-11-04 | blank (Span and Span\* shown as —) |
+| cands_vote, honesty | 2026-11-03, 2026-11-04 | read as 0 (candidates apart from the voters) and "none" (the earlier rule of individual voters) |
 | campaign, risk, risk_tolerance; camp_follow, camp_top, bold | 2026-10-27 | read as 0, 0 and 0.1 (no campaigns, the fixed aggressive split); the three outputs blank |
 | manip1, manip2, U_manip1, U_manip2 | 2026-10-17 | blank (manipulation not tested) |
 

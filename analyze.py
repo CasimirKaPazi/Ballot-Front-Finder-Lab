@@ -56,14 +56,27 @@ from collections import OrderedDict
 import numpy as np
 
 import plots
-from metrics import pareto, FRONT_TOLERANCE, REF_POINTS
+from metrics import pareto, FRONT_TOLERANCE, REF_POINTS, parse_jury
 from run import out_path, write_command, strategy_text, cand_text, width_text, check_folder, ANALYSIS_FILES, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
 from models import model_text, MODELS
 from methods import GROUPS, METHODS, select, group_of, sincerity_defined, current_name, file_name
 
 AXES = ["VSE", "WME", "VSE*", "WME*"]
 FRONT = ["VSE*", "WME*", "sincerity"]   # the axes dominance is judged on
-EXTRA = ["CE", "CE*", "Low", "Low*"]   # reported, not used for dominance (Low: winner below the median candidate)
+EXTRA = ["CE", "CE*", "NUCW", "NUCW*", "Span", "Span*", "Low", "Low*"]   # reported, not used for dominance (NUCW:
+# the Condorcet winner elected where it also has the highest normalized total; Span: elected from the trade-off
+# span, metrics.span; Low: winner below the median candidate)
+# reference points the analysis derives from the candidates' values (besides metrics.REF_POINTS)
+DERIVED_POINTS = {"coin": "a coin between the best worst margin and the best normalized total",
+                  "nuw": "normalized utility winner",
+                  "mwm": "best worst margin"}
+# the trivial rules of the baseline: random ballot, CW//random ballot, the mirror of CW//random ballot on the
+# utility side (the normalized utility winner weakened as much as CW//random ballot is against the best
+# worst margin, see trivial_points), random pair
+TRIVIAL = ["rb", "cwrb", "mirror", "pair"]
+MIRROR = "mirror of CW//random ballot"      # its name among the reference points
+BASE = ["Lead", "Lead*", "Gap", "Gap*"]   # beyond the lotteries of trivial rules; short of the normalized frontier
+JURY = ["Jury", "Jury*"]   # equivalent jury size (honest, learned ballots): the smallest random jury reaching the method
 TYPES = ["compromise", "burial", "pushover", "exaggeration"]
 PARAMS = [k for k in RUN_PARAMS if k != "seed"]      # condition parameters, as run.py writes them
 NOM = ["nom_changed", "nom_exits", "nom_clones", "nom_settled"]     # per method and election (sincere rows)
@@ -160,6 +173,8 @@ ADDED_COLUMNS = {
     "U_ml": (None, "2026-10-26, the maximal lottery as a reference point"),
     "Ur_cands": (None, "2026-10-27, the line of rounded ballots"),
     **{f"{a}_{k}": (None, "2026-10-27, further reference points") for k in REF_POINTS for a in ("U", "WM")},
+    "p_span": (None, "2026-11-04, the chance of electing from the trade-off span"),
+    "jury": (None, "2026-11-05, random juries (equivalent jury size)"),
     "campaign": ("0.0", "2026-10-27, campaigns: older runs had none"),
     "individual": ("0", "2026-10-30, individual voters reading one poll: older runs used ranking groups"),
     "coordination": ("0.25", "2026-10-29, coordination share: older runs had campaigns planned with the "
@@ -339,6 +354,7 @@ def arrays(rows):
     A.update({k: np.full((E, M), np.nan) for k in ["fid_s", "fid_l", "pbcw_s", "pbcw_l", "adapted", "us", "ul"]})   # absent in older CSVs
     A.update({k: np.full((E, M), "", dtype=object) for k in ["bcw_s", "bcw_l"]})    # ballot Condorcet winner
     A.update({k: np.full((E, M), np.nan) for k in ["split_s", "split_l", "zero_s", "zero_l"]})   # ties (2026-10-26)
+    A.update({k: np.full((E, M), np.nan) for k in ["span_s", "span_l"]})          # trade-off span (2026-11-04)
     A.update({k + sfx: np.full((E, M), np.nan) for k in PART for sfx in ("_s", "_l")})
     A.update({k: np.full((E, M), np.nan) for k in MANIP})
     den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
@@ -346,6 +362,7 @@ def arrays(rows):
     has = np.zeros(E)
     ele = {k: np.full(E, np.nan) for k in ["cw_is_util", "U_cw", "U_best", "fav_ratio", "U_rb", "WM_rb", "U_rand",
                                          "U_ml", "WM_ml"] + [f"{a}_{k}" for k in REF_POINTS for a in ("U", "WM")]}
+    jury = [None] * E            # per election: metrics.juries, or None (runs before 2026-11-05)
     cands = [None] * E           # per election: (total utility, worst margin, normalized total or None) of every
                                  # candidate, for the frontier
     for r in rows:
@@ -353,12 +370,15 @@ def arrays(rows):
         num = float(r["U_method"]) - float(r["U_rb"])
         nwm = float(r["WM"]) - float(r["WM_rb"])
         pcw = float(r["p_cw"]) if r["has_cw"] == "1" else 0.0
+        if r.get("jury"):                                     # random juries: once per election (since 2026-11-05)
+            jury[i] = parse_jury(r["jury"])
         if r["ballots"] == "sincere":
             A["num_s"][i, j], A["cw_s"][i, j], A["wm_s"][i, j] = num, pcw, nwm
             A["us"][i, j] = float(r["U_method"])
             for k in NOM:
                 A[k][i, j] = float(r[k])
             A["bcw_s"][i, j], A["pbcw_s"][i, j] = r.get("bcw", ""), float(r.get("p_bcw") or "nan")
+            A["span_s"][i, j] = float(r.get("p_span") or "nan")
             A["split_s"][i, j], A["zero_s"][i, j] = float(r.get("split") or "nan"), float(r.get("zero_margins") or "nan")
             if sincerity_defined(r["method"]):            # blank for TRASH and Inverse-* (also in older CSVs)
                 A["fid_s"][i, j] = float(r.get("fidelity") or "nan")
@@ -381,6 +401,7 @@ def arrays(rows):
             A["num_l"][i, j], A["cw_l"][i, j], A["wm_l"][i, j] = num, pcw, nwm
             A["ul"][i, j] = float(r["U_method"])
             A["bcw_l"][i, j], A["pbcw_l"][i, j] = r.get("bcw", ""), float(r.get("p_bcw") or "nan")
+            A["span_l"][i, j] = float(r.get("p_span") or "nan")
             A["split_l"][i, j], A["zero_l"][i, j] = float(r.get("split") or "nan"), float(r.get("zero_margins") or "nan")
             if sincerity_defined(r["method"]):
                 A["sin"][i, j] = float(r["sincerity"] or "nan")
@@ -394,10 +415,33 @@ def arrays(rows):
                 A[k + "_l"][i, j] = float(r[k])
     # tails: the winner (expected utility of the winner lottery) below the median candidate's total utility;
     # nan where the CSV has no candidate utilities (runs from before the frontier columns)
+    # the normalized utility Condorcet winner (the Condorcet winner where it also has the highest total of
+    # normalized utilities, the total ballots can see): where there is one, how often the method elects it;
+    # and the reference point "a coin between the best worst margin and the best normalized total" (the one
+    # candidate where they agree), and the normalized utility winner itself (ties split evenly). All from the
+    # candidates' values (Un_cands: runs since 2026-10-20).
+    hu = np.zeros(E)
+    for a_ in ("U", "WM"):
+        for k_ in DERIVED_POINTS:
+            ele[f"{a_}_{k_}"] = np.full(E, np.nan)
+    for i, c in enumerate(cands):
+        if c is None or c[2] is None:
+            continue
+        U_, W_, Un_ = c[0], c[1], c[2]
+        mw = np.flatnonzero(W_ >= W_.max() - 1e-12)
+        nw = np.flatnonzero(Un_ >= Un_.max() - 1e-9 * max(1.0, abs(Un_.max())))
+        hu[i] = float(has[i] == 1 and len(nw) == 1 and int(np.argmax(W_)) == nw[0])
+        ele["U_coin"][i] = 0.5 * U_[mw].mean() + 0.5 * U_[nw].mean()
+        ele["WM_coin"][i] = 0.5 * W_[mw].mean() + 0.5 * W_[nw].mean()
+        ele["U_nuw"][i], ele["WM_nuw"][i] = U_[nw].mean(), W_[nw].mean()      # ties split evenly
+        ele["U_mwm"][i], ele["WM_mwm"][i] = U_[mw].mean(), W_[mw].mean()
+    for sfx in ("_s", "_l"):
+        A["ucw" + sfx] = A["cw" + sfx] * hu[:, None]
     med = np.array([np.median(c[0]) if c is not None else np.nan for c in cands])
     for k, src in (("low_s", "us"), ("low_l", "ul")):
         A[k] = np.where(np.isnan(med)[:, None], np.nan, (A[src] < med[:, None] - 1e-9 * np.abs(med)[:, None]).astype(float))
-    return methods, A, (den, dwm), has, ele, cands
+    ele["_jury"] = jury
+    return methods, A, (den, dwm, hu), has, ele, cands
 
 
 def axis_values(W, A, dens, has):
@@ -411,6 +455,10 @@ def axis_values(W, A, dens, has):
         "WME*": (W @ A["wm_l"]) / dw[:, None],
         "CE": (W @ A["cw_s"]) / np.where(h > 0, h, np.nan)[:, None],     # no Condorcet winner drawn: undefined
         "CE*": (W @ A["cw_l"]) / np.where(h > 0, h, np.nan)[:, None],
+        "NUCW": (W @ A["ucw_s"]) / np.where(W @ dens[2] > 0, W @ dens[2], np.nan)[:, None],
+        "NUCW*": (W @ A["ucw_l"]) / np.where(W @ dens[2] > 0, W @ dens[2], np.nan)[:, None],
+        **{x: (W @ np.nan_to_num(A[k])) / np.where(W @ ~np.isnan(A[k]) > 0, W @ ~np.isnan(A[k]), np.nan)
+           for x, k in (("Span", "span_s"), ("Span*", "span_l"))},
         **{x: (W @ np.nan_to_num(A[k])) / np.where(W @ ~np.isnan(A[k]) > 0, W @ ~np.isnan(A[k]), np.nan)
            for x, k in (("Low", "low_s"), ("Low*", "low_l"))},
         "sincerity": (W @ A["sin"]) / W.sum(axis=1)[:, None],
@@ -541,10 +589,140 @@ def references(cands, dens, ele):
     v = sum(U.mean() - urb for (U, W, *_), urb in zip(cands, ele["U_rb"])) / du
     w = sum(W.mean() - wrb for (U, W, *_), wrb in zip(cands, ele["WM_rb"])) / dw
     out = {"random ballot": (0.0, 0.0), "random candidate": (float(v), float(w))}
-    for k, name in [("ml", "maximal lottery")] + list(REF_POINTS.items()):
+    for k, name in [("ml", "maximal lottery")] + list(DERIVED_POINTS.items()) + list(REF_POINTS.items()):
         if not np.isnan(ele[f"U_{k}"]).any():
             out[name] = (float((ele[f"U_{k}"] - ele["U_rb"]).sum() / du),
                          float((ele[f"WM_{k}"] - ele["WM_rb"]).sum() / dw))
+    T = trivial_points(np.ones((1, len(cands))), ele, dens)[0]
+    if not np.isnan(T).any():
+        out[MIRROR] = tuple(float(x) for x in T[TRIVIAL.index("mirror")])
+    return out
+
+
+def _cross(a, b):
+    return a[0] * b[1] - a[1] * b[0]
+
+
+def _up_normals(P):
+    """Unit normals w >= 0 of the upper-right boundary of the down-closure of conv(P), P: K x 2, with
+    the two axis directions: along any ray the support line that binds is one of these (ray_reach)."""
+    P = np.unique(np.round(P[~np.isnan(P).any(axis=1)], 12), axis=0)        # sorted by x, then y
+    keep = [p for p in P if not ((P[:, 0] >= p[0]) & (P[:, 1] >= p[1]) & ((P[:, 0] > p[0]) | (P[:, 1] > p[1]))).any()]
+    chain = []                                            # undominated points by rising x: the concave
+    for p in keep:                                        # hull of them (y falls along it)
+        while len(chain) >= 2 and _cross(chain[-1] - chain[-2], p - chain[-2]) >= -1e-15:
+            chain.pop()
+        chain.append(p)
+    W = [(1.0, 0.0), (0.0, 1.0)]
+    for a, b in zip(chain, chain[1:]):
+        n = np.array([a[1] - b[1], b[0] - a[0]])         # (dy, dx) of a falling edge: both >= 0
+        W.append(tuple(n / np.linalg.norm(n)))
+    return np.array(W)
+
+
+def lead(P, X):
+    """How far points X (M x 2, or B x M x 2) lie beyond the lotteries of points P (K x 2, or B x K x 2),
+    in points on both axes at once: the least, over every lottery q of P, of the larger of X - q on the
+    two axes. Positive: against every lottery the point is ahead by at least that much on one axis;
+    negative: some lottery is better by that much on both (anything worse than a lottery on both axes
+    counts as reachable too). Through the support lines of the down-closure of conv(P): the smallest
+    delta with X - delta * (1, 1) in it is the largest (w . X - h(w)) / (w . (1, 1)) over its normals w."""
+    P, X = np.asarray(P, float), np.asarray(X, float)
+    one = P.ndim == 2
+    if one:
+        P, X = P[None], X[None]
+    out = np.empty(X.shape[:2])
+    for b in range(len(P)):
+        Wn = _up_normals(P[b])                               # N x 2
+        h = (P[b] @ Wn.T).max(axis=0)                        # N
+        out[b] = ((X[b] @ Wn.T - h[None, :]) / Wn.sum(axis=1)[None, :]).max(axis=1)
+    return out[0] if one else out
+
+
+def trivial_points(W, ele, dens):
+    """The trivial rules of TRIVIAL as (VSE, WME) fractions for weight rows W (B x E): B x K x 2.
+    The mirror: CW//random ballot reaches a share f_w of the WME and f_v of the VSE of the best worst
+    margin (the end of the trade-off on the WME side); the mirror takes the normalized utility winner (the
+    end on the VSE side) to f_w of its VSE and f_v of its WME, so both ends are weakened alike.
+    nan where the candidates' values are missing."""
+    d, dw = W @ dens[0], W @ dens[1]
+    P = {k: np.stack([(W @ (ele[f"U_{k}"] - ele["U_rb"])) / d, (W @ (ele[f"WM_{k}"] - ele["WM_rb"])) / dw], axis=1)
+         for k in ("cwrb", "pair", "nuw", "mwm")}
+    with np.errstate(divide="ignore", invalid="ignore"):
+        fv, fw = P["cwrb"][:, 0] / P["mwm"][:, 0], P["cwrb"][:, 1] / P["mwm"][:, 1]
+    mirror = np.stack([P["nuw"][:, 0] * fw, P["nuw"][:, 1] * fv], axis=1)
+    pts = {"rb": np.zeros((len(W), 2)), "cwrb": P["cwrb"], "mirror": mirror, "pair": P["pair"]}
+    return np.stack([pts[k] for k in TRIVIAL], axis=1)
+
+
+def baseline(V, Wm, T, F):
+    """The natural baseline of methods at (V, Wm) (B x M fractions): their lead over the lotteries of the
+    trivial rules T (B x K x 2) and their gap to the frontier F of normalized ballots (K' x 2; with T
+    added, all of them rules that read ballots), both in the sense of lead(): (lead, gap), gap = -lead
+    over the frontier, positive below it. Gap nan without a frontier, both nan without the trivial rules."""
+    X = np.stack([V, Wm], axis=2)                           # B x M x 2
+    if np.isnan(T).any():
+        return np.full(V.shape, np.nan), np.full(V.shape, np.nan)
+    ld = lead(T, X)
+    if F is None:
+        return ld, np.full(V.shape, np.nan)
+    FF = np.concatenate([np.broadcast_to(F, (len(T),) + F.shape), T], axis=1)
+    return ld, -lead(FF, X)
+
+
+def jury_points(W, ele, dens):
+    """What random juries reach (metrics.juries) for weight rows W (B x E): {k: B x L x 2} as (VSE, WME)
+    fractions, the size 1 (the random ballot) as the origin; None where an election lacks the juries or
+    the sizes differ between elections (electorates smaller than a size)."""
+    J = ele.get("_jury")
+    if not J or any(j is None for j in J):
+        return None
+    sizes = sorted(set.intersection(*(set(j) for j in J)))
+    if not sizes:
+        return None
+    d, dw = W @ dens[0], W @ dens[1]
+    out = {1: np.zeros((len(W), 1, 2))}
+    for k in sizes:
+        GU = np.stack([J[i][k][0] - ele["U_rb"][i] for i in range(len(J))])      # E x L
+        GW = np.stack([J[i][k][1] - ele["WM_rb"][i] for i in range(len(J))])
+        out[k] = np.stack([(W @ GU) / d[:, None], (W @ GW) / dw[:, None]], axis=2)
+    return out
+
+
+def jury_size(V, Wm, JP):
+    """Equivalent jury size of methods at (V, Wm) (B x M fractions): the smallest random jury whose
+    lotteries (and anything worse on both axes) reach the method, i.e. lead() <= 0 against them; between the
+    sizes run, interpolated on a log scale in the lead. inf: beyond the largest jury; nan without juries."""
+    if JP is None:
+        return np.full(V.shape, np.nan)
+    X = np.stack([V, Wm], axis=2)
+    ks = sorted(JP)
+    L = np.stack([lead(np.concatenate([JP[k], np.zeros((len(X), 1, 2))], axis=1), X) for k in ks])   # K x B x M
+    lk = np.log(np.array(ks, float))
+    out = np.full(V.shape, np.inf)
+    done = np.zeros(V.shape, bool)
+    for a in range(len(ks)):
+        hit = ~done & (L[a] <= 0)
+        if a == 0:
+            out[hit] = ks[0]
+        else:
+            la, lb = L[a - 1][hit], L[a][hit]
+            out[hit] = np.exp(lk[a - 1] + (lk[a] - lk[a - 1]) * la / np.where(la - lb > 1e-15, la - lb, 1))
+        done |= hit
+    return out
+
+
+def jury_curves(JP):
+    """Per jury size, the undominated points of what it reaches (full sample), sorted by VSE: for the plots."""
+    if JP is None:
+        return None
+    out = {}
+    for k, P in JP.items():
+        if k == 1:
+            continue
+        P = P[0]
+        keep = [p for p in P if not ((P[:, 0] >= p[0]) & (P[:, 1] >= p[1]) & ((P[:, 0] > p[0]) | (P[:, 1] > p[1]))).any()]
+        out[k] = np.array(sorted(keep, key=lambda p: p[0]))
     return out
 
 
@@ -586,7 +764,7 @@ def frontier_text(F, R=None, refs=None, N=None, NR=None, max_score=None):
     if ml:
         rc_text += (f" The maximal lottery of the sincere preferences (the Condorcet winner if there is one, else a "
                     f"lottery no candidate beats in expectation) gives VSE {ml[0] * 100:.1f} / WME {ml[1] * 100:.1f}.")
-    more = [(name, refs[name]) for name in REF_POINTS.values() if refs and name in refs]
+    more = [(name, refs[name]) for name in list(DERIVED_POINTS.values()) + list(REF_POINTS.values()) if refs and name in refs]
     if more:
         rc_text += " Further reference points (VSE / WME): " + "; ".join(
             f"{name} {p[0] * 100:.1f} / {p[1] * 100:.1f}" for name, p in more) + "."
@@ -606,6 +784,20 @@ def frontier_text(F, R=None, refs=None, N=None, NR=None, max_score=None):
             f"VSE {F[k, 0] * 100:.1f} / WME {F[k, 1] * 100:.1f}." + n_text + rc_text)
 
 
+def baseline_text(r):
+    """The trivial rules of the condition and the methods no better than a lottery of them."""
+    T = r.get("trivial")
+    if T is None:
+        return []
+    names = {"rb": "random ballot", "cwrb": "CW//random ballot", "mirror": "its mirror on the utility side", "pair": "random pair"}
+    order = np.argsort(-r["VSE*"], kind="stable")
+    out = [f"with {how} ballots " + (", ".join(r["methods"][j] for j in order if r[x][j] <= 0) or "none")
+           for x, how in (("Lead*", "learned"), ("Lead", "honest"))]
+    return ["**Natural baseline:** trivial rules (VSE / WME) " + "; ".join(
+        f"{names[k]} {p[0] * 100:.1f} / {p[1] * 100:.1f}" for k, p in zip(TRIVIAL, T))
+        + ". No better than a lottery of them (Lead ≤ 0): " + "; ".join(out) + ".", ""]
+
+
 def electorate_text(e):
     return (f"Electorates: Condorcet winner in {e['cw']:.1%}; it also has the highest total utility in "
             f"{e['cw_util']:.1%} of those; electing it loses {e['cw_loss']:.1%} of VSE; "
@@ -620,6 +812,13 @@ def analyse_condition(rows, boot, seed=0):
     point = axis_values(np.ones((1, E)), A, dens, has)
     halves = axis_values(np.stack([np.arange(E) % 2 == 0, np.arange(E) % 2 == 1]).astype(float), A, dens, has)
     bs = axis_values(W, A, dens, has)
+    NF = normalized_frontier(cands, dens, ele)
+    for Wr, vals in ((np.ones((1, E)), point), (np.stack([np.arange(E) % 2 == 0, np.arange(E) % 2 == 1]).astype(float), halves), (W, bs)):
+        T = trivial_points(Wr, ele, dens)
+        vals["Lead"], vals["Gap"] = baseline(vals["VSE"], vals["WME"], T, NF)      # the frontier is the full
+        vals["Lead*"], vals["Gap*"] = baseline(vals["VSE*"], vals["WME*"], T, NF)  # sample's in every resample
+        JP = jury_points(Wr, ele, dens)
+        vals["Jury"], vals["Jury*"] = jury_size(vals["VSE"], vals["WME"], JP), jury_size(vals["VSE*"], vals["WME*"], JP)
     P_b = np.stack([bs[a] for a in FRONT], axis=2)           # B x M x 3
     tol = [FRONT_TOLERANCE[a] for a in FRONT]
     dom, better = dominance(P_b, tol)
@@ -628,7 +827,10 @@ def analyse_condition(rows, boot, seed=0):
                     for i in range(len(methods))]
     res = {"methods": methods, "elections": E, "with_cw": int(has.sum()), "dominated_by": dominated_by, "boot": bs, "halves": halves, "frontier": frontier(cands, dens, ele),
            "region": region(cands, dens, ele),
-           "nfrontier": normalized_frontier(cands, dens, ele),
+           "nfrontier": NF,
+           "juries": jury_curves(jury_points(np.ones((1, E)), ele, dens)),
+           "jury_max": (lambda J: max(J) if J else None)(jury_points(np.ones((1, E)), ele, dens)),
+           "trivial": None if np.isnan(trivial_points(np.ones((1, E)), ele, dens)).any() else trivial_points(np.ones((1, E)), ele, dens)[0],
            "rfrontier": normalized_frontier(cands, dens, ele, which=3),
            "references": references(cands, dens, ele),
            "electorate": electorate_summary(dens, has, ele),
@@ -640,11 +842,12 @@ def analyse_condition(rows, boot, seed=0):
            "ties": ties_summary(A),
            # Pareto front on point estimates; undefined sincerity (TRASH, Inverse-*) counts as worst
            "pareto": set(pareto(np.nan_to_num(np.stack([point[a][0] for a in FRONT], axis=1), nan=-np.inf), tol))}
-    for a in AXES + EXTRA + ["sincerity", "fidelity", "fidelity_honest"] + TYPES:
+    for a in AXES + EXTRA + BASE + JURY + ["sincerity", "fidelity", "fidelity_honest"] + TYPES:
         res[a] = point[a][0]
         with np.errstate(all="ignore"), warnings.catch_warnings():     # all-nan columns (e.g. CE without a
             warnings.simplefilter("ignore", RuntimeWarning)               # Condorcet winner) give nan, no warning
-            res[a + "_lo"], res[a + "_hi"] = np.nanpercentile(bs[a], [2.5, 97.5], axis=0)
+            res[a + "_lo"], res[a + "_hi"] = np.nanpercentile(bs[a], [2.5, 97.5], axis=0,
+                                                              method="nearest" if a in JURY else "linear")   # inf: beyond
     return res
 
 
@@ -743,7 +946,8 @@ def label(key, varying, first):
     return ", ".join(f"{names.get(k, k)} {p[k]}" for k in diff) or "base"
 
 
-POINT_KEYS = {"rb": "random ballot", "rc": "random candidate", "ml": "maximal lottery", **REF_POINTS}   # --points
+POINT_KEYS = {"rb": "random ballot", "rc": "random candidate", "ml": "maximal lottery", **DERIVED_POINTS, **REF_POINTS,
+              "mirror": MIRROR}   # --points
 PARAM_NAMES = {"honesty": "honesty cost", "campaign": "campaigns", "coordination": "coordination share", "individual": "individual voters", "risk": "risk by satisfaction",
                "risk_tolerance": "risk tolerance", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error",
@@ -839,6 +1043,22 @@ def dom_text(items, sep=", ", limit=None):
     return text + (f" +{len(items) - len(shown)} more" if len(items) > len(shown) else "")
 
 
+def fmt_jury(r, x, j):
+    """An equivalent jury size with its interval: one decimal below 10, whole numbers above; > the
+    largest jury run where it is beyond it."""
+    big = r.get("jury_max")
+
+    def one(v):
+        if np.isnan(v):
+            return "—"
+        if np.isinf(v):
+            return f">{big}" if big else "—"
+        return f"{v:.1f}" if v < 10 else f"{v:.0f}"
+    if np.isnan(r[x][j]):
+        return "—"
+    return f"{one(r[x][j])} [{one(r[x + '_lo'][j])}–{one(r[x + '_hi'][j])}]"
+
+
 def fmt(x, lo, hi, pct=True):
     if np.isnan(x):
         return "—"          # undefined (sincerity and fidelity of TRASH and the Inverse-* methods)
@@ -854,7 +1074,7 @@ def nanmean0(X):
         warnings.simplefilter("ignore", RuntimeWarning)
         return np.nanmean(X, axis=0)
 
-MD_STARRED = re.compile(r"(?<![\\\w])(VSE|WME|CE|Low|Inverse-)\*(?!\*)")
+MD_STARRED = re.compile(r"(?<![\\\w])(VSE|WME|Lead|Gap|Jury|CE|NUCW|Span|Low|Inverse-)\*(?!\*)")
 
 
 def md_stars(text):
@@ -880,13 +1100,14 @@ def main():
     ap.add_argument("--format", nargs="+", default=["png"], choices=["png", "svg", "pdf"],
                     help="file format(s) of the plots; the report links the first (svg and pdf: vector, sharp at any zoom)")
     ap.add_argument("--dpi", type=int, default=150, help="resolution of png plots (default 150)")
-    ap.add_argument("--overlay", nargs="*", default=["frontier", "guides", "normalized", "rounded", "points"],
-                    choices=["frontier", "guides", "normalized", "rounded", "points"],
+    ap.add_argument("--overlay", nargs="*", default=["frontier", "guides", "normalized", "rounded", "points", "trivial", "juries"],
+                    choices=["frontier", "guides", "normalized", "rounded", "points", "trivial", "juries"],
                     help="what the VSE/WME plots draw besides the methods: the reachable frontier and region, the "
-                         "guide lines, the normalized-ballots line, the line of rounded ballots, reference points "
+                         "guide lines, the normalized-ballots line, the line of rounded ballots, reference points, "
+                         "the area of the trivial rules (natural baseline), the lines of random juries "
                          "(default: all; --overlay with "
                          "no names: none)")
-    ap.add_argument("--points", nargs="+", default=["rb", "rc", "cwrb", "pair", "median", "mean"], choices=list(POINT_KEYS),
+    ap.add_argument("--points", nargs="+", default=["rb", "rc", "coin", "nuw", "mwm", "mirror", "cwrb", "pair", "median", "mean"], choices=list(POINT_KEYS),
                     help="which reference points to draw (default all but ml and cwuw, which lie next to cwrb; "
                          "all values are in the report): " + ", ".join(f"{k} = {v}" for k, v in POINT_KEYS.items()))
     ap.add_argument("--compare", nargs="*", default=[], help='pairs "A:B" for paired differences')
@@ -962,7 +1183,7 @@ def main():
     with open(os.path.join(a.out, "summary.csv"), "w", newline="") as f:
         w = csv.writer(f)
         cols = []
-        for x in AXES + EXTRA + ["sincerity", "fidelity", "fidelity_honest"] + TYPES:
+        for x in AXES + EXTRA + BASE + JURY + ["sincerity", "fidelity", "fidelity_honest"] + TYPES:
             cols += [x, x + "_lo", x + "_hi"]
         tie_cols = [c + s for c in ("split", "zero_any", "zero_pairs") for s in ("_honest", "")]   # blank before 2026-10-26
         w.writerow(PARAMS + ["condition", "elections", "method", "group"] + cols + ["pareto_front", "dominated_by"] + tie_cols)
@@ -1058,10 +1279,31 @@ def main():
           "election (values above 100 cannot be reached). VSE measures total utility; WME the winner's worst "
           "head-to-head margin by sincere preferences (a refined Condorcet measure; every election counts; Minimax "
           "reaches 100 with honest ballots by construction). CE (Condorcet efficiency, elections with a Condorcet "
-          "winner only, elected or not) is shown for comparison and not used for dominance. **Low** and **Low\\***: "
+          "winner only, elected or not) is shown for comparison and not used for dominance; **NUCW** likewise, for "
+          "the elections where the Condorcet winner also has the highest total of normalized utilities (each voter's "
+          "utilities stretched between their least and most liked candidate, as ballots see them): there the two "
+          "measures agree as far as ballots can tell, and a good method should elect it nearly always. **Span**: the "
+          "chance of electing from the trade-off span, the candidates no other beats on both the normalized total "
+          "and the worst margin (where the two agree, only that candidate; runs since 2026-11-04). **Low** and **Low\\***: "
           "the share of elections whose winner (the expected total utility of the winner lottery) lies below the "
           "median candidate's total utility, with honest and with learned ballots: how often a method elects a "
-          "poor candidate, which the averages of VSE hide. Not used for dominance."]
+          "poor candidate, which the averages of VSE hide. Not used for dominance.",
+          "- **Lead** and **Gap** (with honest ballots; **Lead\\*** and **Gap\\*** with learned ones), a natural "
+          "baseline: the trivial rules each use one obvious piece of what ballots show: the random ballot; the Condorcet "
+          "winner, else random ballot; the normalized utility winner; a random pair decided by majority. **Lead**: "
+          "against every lottery of them, the method is ahead by at least this many points on VSE or on WME; negative: "
+          "some lottery of them is better by that much on both, so the method is no better than a coin among trivial "
+          "rules. **Gap**: how far the method stays below the frontier of normalized ballots (the dotted line in the "
+          "plots) in the same sense, by that many points on both axes; negative beyond it (the frontier is not a strict "
+          "bound). No weights between VSE and WME are involved. The intervals leave out the noise "
+          "of the frontier, which is the full sample's. Not used for dominance.",
+          "- **Jury** and **Jury\\*** (equivalent jury size, honest and learned ballots; runs since 2026-11-05): a "
+          "random jury of k voters decides with its honest normalized ballots, ideally for each trade-off between "
+          "the normalized total and the worst margin among the jurors, and is judged on the whole electorate. A "
+          "jury of one is the random ballot; the larger the jury, the closer it comes to the frontier of normalized "
+          "ballots. The equivalent jury size is the smallest jury whose lotteries reach the method (Lead against "
+          "them at most 0), interpolated on a log scale between the sizes run; > the largest size where no jury "
+          "run reaches it. How many voters' honest judgment a method turns into its result. Not used for dominance."]
     if a.errorbars:
         L += ["- **Error bars** in the arrow plots are 95% intervals relative to the average of the methods shown: "
               "the variation all methods share (some elections are harder for everyone) is removed, so clearly "
@@ -1153,15 +1395,19 @@ def main():
               "these axes and clearly worse on none): "
               + ", ".join(r["methods"][j] for j in np.argsort(-r["VSE*"], kind="stable") if not r["dominated_by"][j])
               + ".", "",
-              "| Method | Group | VSE* | WME* | Sincerity | Fidelity | (honest) | VSE | WME | CE | CE* | Low | Low* "
-              "| Compromise | Burial | Push-over | Exaggeration | Dominated by |",
-              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+              ] + baseline_text(r) + [
+              "| Method | Group | VSE* | WME* | Lead* | Gap* | Jury* | Sincerity | Fidelity | (honest) | VSE | WME | Lead | Gap | Jury | CE | CE* | NUCW | NUCW* "
+              "| Span | Span* | Low | Low* | Compromise | Burial | Push-over | Exaggeration | Dominated by |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for j in np.argsort(-r["VSE*"], kind="stable"):
             L.append(f"| {r['methods'][j]} | {group_of(r['methods'][j])} | "
-                     + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in ["VSE*", "WME*", "sincerity"])
+                     + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in ["VSE*", "WME*", "Lead*", "Gap*"])
+                     + " | " + fmt_jury(r, "Jury*", j) + " | " + fmt(r["sincerity"][j], r["sincerity_lo"][j], r["sincerity_hi"][j])
                      + " | " + " | ".join("—" if np.isnan(r[x][j]) else f"{r[x][j] * 100:.1f}"
                                           for x in ["fidelity", "fidelity_honest"])
-                     + " | " + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in ["VSE", "WME"] + EXTRA)
+                     + " | " + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in ["VSE", "WME", "Lead", "Gap"])
+                     + " | " + fmt_jury(r, "Jury", j)
+                     + " | " + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in EXTRA)
                      + " | " + " | ".join("—" if np.isnan(r[t][j]) else f"{r[t][j] * 100:.1f}%" for t in TYPES)
                      + f" | {dom_text(r['dominated_by'][j], limit=3)} |")
         L += [""]
@@ -1268,14 +1514,14 @@ def main():
                   f"![trade-off](tradeoff-{r['tag']}.{plots.ext()})", ""]
         if a.compare:
             L += ["Paired differences (first minus second), percentage points:", "",
-                  "| Pair | " + " | ".join(AXES + EXTRA + ["sincerity"]) + " |", "|---|" + "---|" * len(AXES + EXTRA + ["sincerity"])]
+                  "| Pair | " + " | ".join(AXES + BASE + EXTRA + ["sincerity"]) + " |", "|---|" + "---|" * len(AXES + BASE + EXTRA + ["sincerity"])]
             for pair in a.compare:
                 m1, m2 = pair.split(":")
                 if m1 not in r["methods"] or m2 not in r["methods"]:
                     continue
                 i, j = r["methods"].index(m1), r["methods"].index(m2)
                 cells = []
-                for x in AXES + EXTRA + ["sincerity"]:
+                for x in AXES + BASE + EXTRA + ["sincerity"]:
                     d = (r["boot"][x][:, i] - r["boot"][x][:, j]) * 100
                     pt = (r[x][i] - r[x][j]) * 100
                     lo, hi = np.percentile(d, [2.5, 97.5])

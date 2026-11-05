@@ -1710,3 +1710,44 @@ with _mm.candidates(_line([0.0, 1.0, 3.0, 4.0])):
     assert _stt(_Sd, _ud, None, _Sd)["burial"] == 0 and _stt(_Sd, _ud)["burial"] == 1
     _mm.set_lazy(0.0)
 print("strategy types of delegated ballots ok")
+# the trade-off span (metrics.span): the candidates no other beats on both the normalized total and the worst
+# margin; a single candidate where the Condorcet winner also has the best normalized total
+from metrics import span as _span, worst_margins as _wmg
+_us = np.array([[0.6, 1.0, 0.0]] * 5 + [[0.0, 1.0, 0.2]] * 4)            # B is everyone's favourite
+assert _span(_us, _wmg(_us)).tolist() == [False, True, False]             # B: Condorcet winner and best total
+_ut = np.array([[1.0, 0.0, 0.5]] * 5 + [[0.0, 1.0, 0.95]] * 4)           # A wins pairwise, C has the best total
+assert _span(_ut, _wmg(_ut)).tolist() == [True, False, True]
+print("trade-off span ok")
+# natural baseline (analyze.lead): against every lottery of the trivial rules, ahead by at least this much on
+# one axis; negative: a lottery is better by that much on both
+import analyze as _an
+_T = np.array([[0.0, 0.0], [0.5, 0.9], [0.9, 0.4], [0.6, 0.6]])          # (0.6, 0.6) lies inside
+_X = np.array([[0.9, 0.9], [0.5, 0.5], [0.9, 0.4], [1.0, 0.0], [-1.0, -1.0], [0.6, 0.6]])
+_ld = _an.lead(_T, _X)
+# (0.9, 0.9) minus d on both axes meets the edge (0.5, 0.9)-(0.9, 0.4) at d = 0.4 / 1.8; the points on or
+# below the diagonal are beaten on both axes by the edge's point (0.5 + 0.4 * 4/9) on the diagonal; (0.9, 0.4) is
+# a trivial rule itself; (1, 0) is ahead of every lottery by 0.1 on VSE
+_q = 0.5 + 0.4 * 4 / 9
+assert np.allclose(_ld, [0.4 / 1.8, 0.5 - _q, 0.0, 0.1, -1 - _q, 0.6 - _q])
+# gap: below the frontier by the same measure (negative beyond it); the trivial rules are added to the frontier
+_F = np.array([[0.7, 1.0], [1.0, 0.7]])
+_lb, _gb = _an.baseline(_X[:, :1].T, _X[:, 1:].T, _T[None], _F)
+assert np.allclose(_lb[0], _ld) and np.allclose(_gb[0, [0, 3]], [-0.05, 0.0]) and (_lb + _gb >= -1e-12).all()
+print("natural baseline ok")
+# random juries (metrics.juries): the whole electorate is one draw and follows the normalized rule; a jury's
+# winner is judged on everyone; equivalent jury size (analyze.jury_size) interpolates on a log scale
+from metrics import juries as _jur, jury_text as _jt, parse_jury as _pj, worst_margins as _wm2
+_uj = np.random.default_rng(5).random((40, 4))
+_mj = _wm2(_uj)
+_J = _jur(_uj, _mj, np.random.default_rng(0), sizes=[2, 9, 65])
+assert sorted(_J) == [2, 9, 40]                              # sizes from the electorate up are replaced by it
+_un = (_uj - _uj.min(1, keepdims=True)) / (_uj.max(1, keepdims=True) - _uj.min(1, keepdims=True))
+assert abs(_J[40][0][-1] - _uj.sum(0)[np.argmax(_un.sum(0))]) < 1e-9          # lam = 1: normalized utility winner
+assert abs(_J[40][1][0] - _mj.max()) < 1e-9                                    # lam = 0: best worst margin
+_back = _pj(_jt(_J))
+assert all(np.allclose(_back[k][0], _J[k][0], rtol=1e-5) and np.allclose(_back[k][1], _J[k][1], rtol=1e-5) for k in _J)
+_JP = {1: np.zeros((1, 1, 2)), 4: np.array([[[0.4, 0.4]]]), 16: np.array([[[0.8, 0.8]]])}
+_js = _an.jury_size(np.array([[0.2, 0.6, 0.9, -0.1]]), np.array([[0.2, 0.6, 0.9, -0.1]]), _JP)
+# (0.2, 0.2): lead 0.2 over size 1, -0.2 under size 4 -> halfway in log between 1 and 4 = 2; (0.6, 0.6) -> 8
+assert np.allclose(_js[0, :2], [2.0, 8.0]) and np.isinf(_js[0, 2]) and _js[0, 3] == 1
+print("random juries ok")

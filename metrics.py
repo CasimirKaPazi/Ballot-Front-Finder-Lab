@@ -144,6 +144,74 @@ def reference_points(u, m, voters, cands, vw=None):
     return out
 
 
+# random juries (analyze.py, jury sizes): k voters drawn at random decide with their honest normalized
+# ballots, ideally for each trade-off weight; the sizes, the weights and the draws per size
+# (smaller than the electorate; the whole electorate is added as the largest jury); the weights lam spaced
+# evenly in log(lam / (1 - lam)), with both ends
+JURY_SIZES = [2, 3, 5, 9, 17, 33, 65]
+JURY_WEIGHTS = np.concatenate([[0.0], (lambda r: r / (1 + r))(np.logspace(-2, 2, 17)), [1.0]])
+JURY_DRAWS = 24
+
+
+def juries(u, m, rng, sizes=JURY_SIZES, weights=JURY_WEIGHTS, draws=JURY_DRAWS):
+    """What random juries reach in one election. For each size k (at most the number of voters) and each
+    weight lam, k voters drawn without replacement elect the candidate with the highest
+    lam * (their mean normalized utility, each juror stretched between least and most liked, as ballots
+    see it) + (1 - lam) * (its worst margin among the jurors); ties split evenly, at lam = 0 and 1 the other
+    term breaks them. The winner is judged on the whole electorate: the expected total utility and worst
+    margin (m, of everyone) over the draws. The rule a whole electorate would follow is the frontier of
+    normalized ballots (analyze.normalized_frontier, which scales the terms over all elections at once);
+    a jury of one elects its favourite, the random ballot. Returns {k: (U (L), WM (L))}."""
+    n, C = u.shape
+    mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
+    un = (u - mn) / np.where(mx - mn > 1e-12, mx - mn, 1)
+    U = u.sum(axis=0)
+    lam = np.asarray(weights, float)[:, None]
+    out = {}
+    for k in [k for k in sizes if k < n] + [n]:
+        eu, ew = np.zeros(len(lam)), np.zeros(len(lam))
+        for _ in range(draws if k < n else 1):            # the whole electorate: one draw
+            J = rng.choice(n, size=k, replace=False)
+            nj = un[J].mean(axis=0)
+            wj = worst_margins(u[J])
+            v = lam * nj + (1 - lam) * wj + 1e-9 * (nj + wj)
+            win = v >= v.max(axis=1, keepdims=True) - 1e-12
+            p = win / win.sum(axis=1, keepdims=True)
+            eu += p @ U
+            ew += p @ m
+        out[k] = (eu / (draws if k < n else 1), ew / (draws if k < n else 1))
+    return out
+
+
+def jury_text(J):
+    """The column 'jury': per size k:U values,WM values (by weight), sizes separated by '|'."""
+    return "|".join(f"{k}:" + ",".join(f"{x:.6g}" for x in U) + ";" + ",".join(f"{x:.6g}" for x in W)
+                    for k, (U, W) in J.items())
+
+
+def parse_jury(text):
+    out = {}
+    for part in filter(None, (text or "").split("|")):
+        k, rest = part.split(":")
+        a, b = rest.split(";")
+        out[int(k)] = (np.array(a.split(","), float), np.array(b.split(","), float))
+    return out
+
+
+def span(u, m):
+    """The trade-off span of an election: the candidates no other candidate beats on both the total of
+    normalized utilities (each voter stretched between least and most liked, as ballots see them) and
+    the worst margin, i.e. at least as good on both and better on one. Where the Condorcet winner also
+    has the highest normalized total, it is the only one; else the span runs from the best worst margin
+    to the best normalized total, with whatever lies undominated between them. Returns a bool mask."""
+    mn, mx = u.min(axis=1, keepdims=True), u.max(axis=1, keepdims=True)
+    Un = ((u - mn) / np.where(mx - mn > 1e-12, mx - mn, 1)).sum(axis=0)
+    ge = (Un[:, None] >= Un[None, :] - 1e-12) & (m[:, None] >= m[None, :] - 1e-12)
+    gt = (Un[:, None] > Un[None, :] + 1e-12) | (m[:, None] > m[None, :] + 1e-12)
+    dominated = (ge & gt).any(axis=0)                 # column j: some row i at least as good and better
+    return ~dominated
+
+
 def election_row(u, P, m):
     """Quantities for one election: u utilities, P method's winner probabilities,
     m worst margins from worst_margins (the same for all methods)."""
@@ -163,6 +231,7 @@ def election_row(u, P, m):
         "WM": float(value(P, m)),
         "WM_best": float(m.max()),
         "WM_rb": float(value(rb, m)),
+        "p_span": float(P[span(u, m)].sum()),                     # chance of electing from the trade-off span
     }
 
 

@@ -32,14 +32,68 @@ A method's distance to the curve is what it loses to having only ballots, not ut
 
 **Further reference points** (since 2026-10-27; columns U_\<key\>, WM_\<key\>): rules that see the sincere preferences or the positions, as benchmarks, not proposals, drawn as crosses with the others:
 
+- **coin CW/NUW** (`coin`, since 2026-11-04): a coin between the candidate with the best worst margin (the Condorcet winner, where there is one) and the candidate with the highest total of normalized utilities (the utility winner as ballots can see it: each voter's utilities stretched between their least and most liked candidate). Where the two are the same candidate, that one. Where they agree, the measures agree as far as ballots can tell, so a good method elects that candidate; where they disagree, the coin only takes one of the two ends of the trade-off, at random. A bar every good method should clear: getting the clear cases right and choosing an end of the trade-off blindly in the others. Derived in the analysis from the candidates' values (U_cands, WM_cands, Un_cands), so runs since 2026-10-20 have it.
+- **normalized utility winner** (`nuw`, since 2026-11-05): the candidate with the highest total of normalized utilities, ties split evenly; **best worst margin** (`mwm`): the candidate with the best worst margin (the Condorcet winner where there is one). The two ends of the trade-off of normalized ballots; **mirror of CW//random ballot** (`mirror`): a trivial rule of the natural baseline (below).
 - **CW//random ballot** (`cwrb`): the Condorcet winner if there is one, else a random voter's favourite. What electing the Condorcet winner is worth on its own.
 - **CW//utility winner** (`cwuw`): the Condorcet winner if there is one, else the candidate with the highest total utility. The best a rule can do while always respecting the Condorcet winner; with Condorcet winners in nearly every election it lies close to the previous one.
 - **random pair** (`pair`): two candidates drawn at random, the sincere majority decides. The simplest majority-based lottery (not the method Random pair runoff, which draws two ballots).
 - **median voter** (`median`): the candidate nearest the voters' geometric median, the median voter in several dimensions; **mean voter** (`mean`): the candidate nearest the voters' mean, the utility winner under quadratic utility. Where "the centre" lands on the two axes. For the ks models positions are scaled by the voters' average weights first (as in show_electorates.py).
 
-**What the plots draw** (`--overlay`): `frontier` (the reachable region and the 100 lines), `guides` (−1 … −8), `normalized`, `rounded`, `points` (reference points; `--points` chooses which: rb, rc, ml, cwrb, cwuw, pair, median, mean; by default all but ml and cwuw, which lie next to cwrb in the runs so far). Default: all; `--overlay` with no names draws only the methods.
+**What the plots draw** (`--overlay`): `frontier` (the reachable region and the 100 lines), `guides` (−1 … −8), `normalized`, `rounded`, `points` (reference points; `--points` chooses which: rb, rc, ml, coin, nuw, mwm, mirror, cwrb, cwuw, pair, median, mean; by default all but ml and cwuw, which lie next to cwrb in the runs so far), `trivial` (the area of the trivial rules, a faint area with a thin edge; see the natural baseline), `juries` (the lines of random juries; see the equivalent jury size). Default: all; `--overlay` with no names draws only the methods.
+
+**Natural baseline: Lead and Gap** (since 2026-11-05), reported alongside but not used for dominance. The question: is there a bar that good methods pass and bad ones do not, without choosing a weight between VSE and WME? The baseline is made of **trivial rules**:
+
+- the random ballot (one voter's favourite);
+- the Condorcet winner, else random ballot (CW//random ballot);
+- the mirror of CW//random ballot on the utility side (below);
+- a random pair decided by majority.
+
+The two ends of the trade-off are the best worst margin (always electing the candidate with the best worst margin, WME 100) and the normalized utility winner (the best total of the ballots' own scales). CW//random ballot is a weakened version of the first end: it reaches a share f_w of its WME (98.7% at the defaults) and f_v of its VSE. The mirror weakens the other end alike: it takes the normalized utility winner to f_w of its VSE and f_v of its WME (91.2 / 91.7 at the defaults, against 92.4 / 93.3). So neither end of the trade-off is favoured. Using the normalized utility winner itself, as in the first version of the same day, put the utility end at full strength and the Condorcet end below it, and so favoured the Condorcet methods. How far both ends are weakened comes from CW//random ballot, that is from how often there is no Condorcet winner. That is a chosen anchor, not a natural one.
+
+Lotteries of trivial rules are trivial too, and so is anything worse than one of them on both axes. Together they make an area of the VSE/WME plane, the `trivial` overlay in the plots. A method inside it is no better than a coin among trivial rules.
+
+- **Lead** (Lead\* with learned ballots): against every lottery of the trivial rules, the method is ahead by at least this many points on VSE or on WME. Negative: some lottery of them is better by that many points on both axes. Formally, the least over lotteries q of max(VSE − q_VSE, WME − q_WME). It is computed through the support lines of the area, in `analyze.lead`.
+- **Gap** (Gap\*): the same against the frontier of normalized ballots (the dotted line; the trivial rules are added to it, as they read ballots too), with the sign turned. That is how many points the method stays below that frontier on both axes, and negative if it lies beyond it (that frontier is not a strict bound).
+
+Points on both axes are used rather than a ratio. A first version measured radial efficiency: along the ray from the random ballot through the method, 0 at the edge of the trivial area and 100 at the frontier. It was replaced the same day. The trivial area reaches close to the frontier, so the ratio divided by a thin gap. Plurality came out at −2331, with intervals hundreds of points wide. Along some rays the two edges coincide, which left the ratio undefined.
+
+The intervals come from the paired bootstrap. The trivial rules are recomputed in each resample, but the frontier is the full sample's, so the noise of the Gap leaves out the frontier's own. The report names the trivial rules' values and the methods with Lead ≤ 0.
+
+**Equivalent jury size: Jury, Jury\*** (since 2026-11-05; column `jury`), reported alongside but not used for dominance. A baseline made of an amount of information instead of chosen rules. A **random jury** of k voters decides with its honest normalized ballots, ideally:
+
+1. For each trade-off weight λ, it elects the candidate with the highest λ × (the jurors' mean normalized utility) + (1 − λ) × (its worst margin among the jurors). Ties are split evenly.
+2. The winner is judged on the whole electorate, by its real total utility and worst margin.
+3. This is averaged over 24 juries per size (`metrics.juries`). The sizes are 2, 3, 5, 9, 17, 33 and 65 where smaller than the electorate, and the whole electorate. There are 19 weights, spaced evenly in log(λ / (1 − λ)), with both ends.
+
+A jury of one elects its favourite, the random ballot. The whole electorate follows the rule of the frontier of normalized ballots. That frontier scales the two terms over all elections at once, the juries per election, so the two lines differ slightly in between; their ends are the same. In between, the juries' lotteries (and anything worse on both axes) form nested areas, drawn as faint dashed lines labelled with the size (overlay `juries`; the whole electorate is left out, as it lies on the normalized line).
+
+A method's **equivalent jury size** is the smallest jury whose area reaches it, that is the size at which its Lead against that jury's lotteries falls to 0. Between the sizes run it is interpolated on a log scale; > the electorate where it lies beyond the whole electorate's line. It says how many voters' honest judgment, used ideally, a method turns into its result. No weight between VSE and WME is involved: each jury covers the whole trade-off. It depends on the number of voters: a jury of 65 is most of an electorate of 99.
+
+The juries are stored once per election, in the first method's rows (24 draws for each size, a few percent of the run's time at most), so the analysis needs no per-voter data. Runs from before have no column, and the report shows —.
+
+At the defaults (300 elections, 99 voters, 6 candidates, standard set), the juries reach 23.8 / 19.6 (2 jurors), 62.7 / 66.9 to 66.1 / 63.8 (9), 76.4 / 81.7 to 79.1 / 79.6 (17), 82.8 / 91.1 to 86.2 / 84.5 (33) and 86.0 / 97.2 to 91.2 / 91.1 (65). They approach the frontier slowly. Equivalent jury sizes with learned ballots:
+
+| Method | Jury\* (honest) |
+|---|---|
+| Plurality | 16 (15) |
+| IRV | 42 (59) |
+| Borda | 39 (61) |
+| Approval | 55 (57) |
+| Score | 53 (55) |
+| MJ | 61 (59) |
+| STAR | 67 (71) |
+| Soft Minimax-D | 74 (78) |
+| ARA | 80 (83) |
+| 321 | 85 (94) |
+| Minimax, Schulze, Ranked pairs | 93 (96) |
+
+The intervals are wide near the top, where only the sizes 65 and 99 are run.
 
 **Condorcet efficiency (CE)**, reported alongside but not an axis: among elections with a Condorcet winner by sincere utilities, the probability the method elects it. It ignores elections without a Condorcet winner and does not distinguish narrow from clear ones.
+
+**NUCW, NUCW\*** (since 2026-11-04), reported alongside but not an axis: among elections where the Condorcet winner also has the highest total of normalized utilities, the probability the method elects it, with honest and with learned ballots. Normalized utilities (each voter's stretched between their least and most liked candidate) are what ballots can carry: a method never sees how much one voter cares compared with another, so the utility winner by the true totals is out of its reach in a way this one is not. In these elections VSE and WME agree as far as ballots can tell, so a good method should be near 100. Condorcet methods reach it with honest ballots by definition; it shows what the others lose where nothing is in dispute, and what strategy costs there. Computed from the candidates' values (Un_cands, WM_cands) and p_cw, so runs since 2026-10-20 have it.
+
+**Span, Span\*** (since 2026-11-04), reported alongside but not an axis: the chance of electing from the trade-off span, the candidates no other candidate beats on both the normalized total and the worst margin (at least as good on both, better on one; `metrics.span`). Where the Condorcet winner also has the best normalized total, the span is that candidate alone; otherwise it runs from the best worst margin to the best normalized total, with every candidate between them that nobody beats on both. A candidate need not lie on a line between the two ends: being undominated is the relaxed notion of "on the trade-off". Electing outside the span means electing a candidate some other candidate beats on both counts. Column p_span in every row (runs since 2026-11-04; older runs show —).
 
 **Low** (and Low\* with learned ballots), reported alongside but not an axis: the share of elections whose winner lies below the median candidate by total utility (for a lottery, its expected total utility below the median of the candidates' totals). VSE and WME are averages over elections, ratios of sums, so a method that is usually excellent and sometimes disastrous can match one that is always good; Low shows how often a method elects a poor candidate. After John Huang's votesim, which reports the worst 5% of elections; a share of poor outcomes is used instead because one election's VSE is unstable (its denominator can be small). Computed from the candidates' totals stored in every row (U_cands), so older runs with that column get it too.
 

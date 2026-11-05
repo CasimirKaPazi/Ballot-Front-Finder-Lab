@@ -50,7 +50,7 @@ from methods import (METHODS, run_selection, set_max_score, set_lazy, set_voter_
                      ensure, set_candidates, candidates, candidate_utilities)
 from ballots import score_ballots
 from strategy import respond, strategy_types, default_poll_size, fidelity, implied_values
-from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, maximal_lottery, reference_points, FRONT_TOLERANCE
+from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, maximal_lottery, reference_points, juries, jury_text, FRONT_TOLERANCE
 import participation as part
 import manipulation as manip
 
@@ -125,6 +125,8 @@ def one_election(job):
     # the same rounded to the score range: the honest score ballots' totals, for the line of rounded ballots
     estats["Ur_cands"] = ";".join(f"{x:.6g}" for x in score_ballots(u, 0.0).sum(axis=0))
     estats["Un_cands"] = ";".join(f"{x:.6g}" for x in ((u - mn) / np.where(mx - mn > 1e-12, mx - mn, 1)).sum(axis=0))
+    # random juries (metrics.juries; own stream): stored once per election, in its first row
+    jury = {"jury": jury_text(juries(u, m_cand, np.random.default_rng([seed, e, zlib.crc32(b"jury")])))}
     # strategic voters: own random stream, the same voters for every method
     # adaptive voters: the next share of the same draw; their place in it is their personal threshold (0..1)
     draw = np.random.default_rng([seed, e, zlib.crc32(b"strategic")]).random(len(u))
@@ -168,7 +170,8 @@ def one_election(job):
                     nstats = {**st, "nom_changed": int(np.abs(P_h - m.honest(u)).sum() > 1e-9)}
             check = (lambda B: part.no_show(m, B, uf, u, back)) if participation else (lambda B: part.NAN)
             defined = sincerity_defined(name)          # blank for TRASH and the Inverse-* methods
-            sincere_row = {**election_row(u, P_h, m_cand), **estats, "sincerity": 1.0 if defined else "",
+            sincere_row = {**election_row(u, P_h, m_cand), **estats, **(jury if name == names[0] else {"jury": ""}),
+                           "sincerity": 1.0 if defined else "",
                        "fidelity": float(fidelity(m, m.sincere(uf), uf).mean()) if defined else "", "settled": 1,
                            "adapted": "", "compromise": 0.0, "pushover": 0.0, "burial": 0.0, "exaggeration": 0.0, **nstats, **check(m.sincere(uf))}
             # Each method learns with a fresh copy of the same stream (common random numbers: the same
@@ -204,7 +207,7 @@ def one_election(job):
                             "camp_follow": "", "camp_top": "", "bold": ""})
                 cs_r = cst.get(r, {})
                 out.append({"rounds": r, "election": e, "method": name, "ballots": "learned",
-                            **election_row(u, P_l, m_cand), **estats, **ballot_condorcet(m, B, u, back, P_l),
+                            **election_row(u, P_l, m_cand), **estats, "jury": "", **ballot_condorcet(m, B, u, back, P_l),
                             **ties(m, B, P_l),
                             "sincerity": sin if defined else "",
                             "fidelity": float(fidelity(m, B, uf).mean()) if defined else "",

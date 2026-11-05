@@ -87,11 +87,18 @@ DPI = 150           # resolution of raster formats (--dpi)
 # what the VSE/WME plots draw besides the methods (analyze.py --overlay): "frontier" (the reachable region
 # and the 100 lines), "guides" (−1 … −8 lines), "normalized" (the normalized-ballots line), "points"
 # (reference points; POINTS: which, None = all)
-OVERLAY = {"frontier", "guides", "normalized", "rounded", "points"}
+OVERLAY = {"frontier", "guides", "normalized", "rounded", "points", "trivial", "juries"}
+# the trivial rules of the natural baseline (analyze.TRIVIAL), by their reference-point names
+TRIVIAL_NAMES = ["random ballot", "Condorcet winner, else random ballot", "mirror of CW//random ballot",
+                 "random pair, majority"]
+TRIVIAL_FILL = "#f4f2ec"
 POINTS = None
 SHORT = {"maximal lottery": "max. lottery", "Condorcet winner, else random ballot": "CW//random ballot",
+         "a coin between the best worst margin and the best normalized total": "coin CW/NUW",
          "Condorcet winner, else utility winner": "CW//utility winner", "random pair, majority": "random pair",
-         "nearest the median voter": "median voter", "nearest the mean voter": "mean voter"}   # labels in the plots
+         "nearest the median voter": "median voter", "nearest the mean voter": "mean voter",
+         "normalized utility winner": "NUW", "best worst margin": "best WM",
+         "mirror of CW//random ballot": "mirror"}   # labels in the plots
 
 
 def save(fig, path):
@@ -195,7 +202,45 @@ def _normalized(ax, N, R=None, label="normalized ballots", style=(0, (1, 2)), co
             clip_on=True)
 
 
-def _frontier(ax, F, R=None, refs=None, N=None, NR=None):
+def _juries(ax, J):
+    """What random juries reach (analyze.jury_curves: {size: undominated points}): a faint line per size,
+    labelled with the size at its best-VSE end, the whole electorate left out (the normalized line)."""
+    if not J:
+        return
+    for k in sorted(J)[:-1]:
+        P = J[k] * 100
+        if len(P) == 1:
+            ax.scatter(P[:, 0], P[:, 1], s=4, color=BOUNDARY, zorder=0.6, clip_on=True)
+        else:
+            ax.plot(P[:, 0], P[:, 1], color=BOUNDARY, lw=0.5, ls=(0, (3, 2)), zorder=0.6)
+        ax.text(P[-1, 0], P[-1, 1], f" {k}", fontsize=5.5, color=MUTED, ha="left", va="center", zorder=1.1, clip_on=True)
+
+
+def _trivial(ax, refs):
+    """The lotteries of the trivial rules and everything worse on both axes (the natural baseline,
+    analyze.lead): a faint area with a thin edge, labelled at its corner nearest the 100 / 100 corner.
+    A method inside it is no better than a coin among trivial rules."""
+    if not refs or any(n not in refs for n in TRIVIAL_NAMES):
+        return
+    P = np.unique(np.round(np.array([refs[n] for n in TRIVIAL_NAMES]) * 100, 9), axis=0)
+    keep = [p for p in P if not ((P[:, 0] >= p[0]) & (P[:, 1] >= p[1]) & ((P[:, 0] > p[0]) | (P[:, 1] > p[1]))).any()]
+    chain = []
+    for p in keep:
+        while len(chain) >= 2 and ((chain[-1] - chain[-2])[0] * (p - chain[-2])[1]
+                                   - (chain[-1] - chain[-2])[1] * (p - chain[-2])[0]) >= -1e-12:
+            chain.pop()
+        chain.append(p)
+    C = np.array(chain)
+    far = -1000.0
+    poly = np.vstack([[far, C[0, 1]], C, [C[-1, 0], far], [far, far]])
+    ax.add_patch(plt.Polygon(poly, closed=True, facecolor=TRIVIAL_FILL, edgecolor="none", zorder=0.4))
+    edge = np.vstack([[far, C[0, 1]], C, [C[-1, 0], far]])
+    ax.plot(edge[:, 0], edge[:, 1], color=BOUNDARY, lw=0.6, zorder=0.5)
+    k = int(np.argmax(C.sum(axis=1)))
+    ax.text(C[k, 0], C[k, 1], "trivial rules ", fontsize=6, color=MUTED, ha="right", va="top", zorder=1.1, clip_on=True)
+
+
+def _frontier(ax, F, R=None, refs=None, N=None, NR=None, J=None):
     """Draw the reachable frontier (points (VSE, WME) as fractions, best WME first) and grey out the
     region beyond it, which no rule can reach in these elections. With R (the whole reachable region,
     see analyze.region) everything outside that polygon is greyed out: also the parts below the ends of
@@ -211,6 +256,14 @@ def _frontier(ax, F, R=None, refs=None, N=None, NR=None):
         N = None
     if "rounded" not in OVERLAY:
         NR = None
+    if "trivial" in OVERLAY or "juries" in OVERLAY:
+        x0_, x1_, y0_, y1_ = *ax.get_xlim(), *ax.get_ylim()
+        if "trivial" in OVERLAY:
+            _trivial(ax, refs)
+        if "juries" in OVERLAY:
+            _juries(ax, J)
+        ax.set_xlim(x0_, x1_)
+        ax.set_ylim(y0_, y1_)
     if "frontier" not in OVERLAY:
         _normalized(ax, N)
         _normalized(ax, NR, label="rounded ballots", style=(0, (4, 1.5, 1, 1.5)))
@@ -326,7 +379,8 @@ def arrows(r, path, hide, errorbars=False):
     ax.set_ylabel(WME_LABEL)
     _pad(ax)
     _unreachable(ax, "xy", lines=r.get("frontier") is None)
-    _frontier(ax, r.get("frontier"), r.get("region"), r.get("references"), r.get("nfrontier"), r.get("rfrontier"))
+    _frontier(ax, r.get("frontier"), r.get("region"), r.get("references"), r.get("nfrontier"), r.get("rfrontier"),
+              r.get("juries"))
     ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}"
                  + ("; bars: 95% intervals relative to the average of the methods shown" if errorbars else ""),
                  loc="left")
@@ -595,9 +649,10 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
     refs = base.get("references") if same_electorates else None
     NF = base.get("nfrontier") if same_electorates else None
     NR = base.get("rfrontier") if same_electorates else None
+    JC = base.get("juries") if same_electorates else None
     _pad(axs.flat[0])
     _unreachable(axs.flat[0], "xy", lines=F is None)       # shared axes: limits apply to all panels
-    _frontier(axs.flat[0], F, R, refs, NF, NR)
+    _frontier(axs.flat[0], F, R, refs, NF, NR, JC)
     for ax in list(axs.flat)[1:len(panels)]:
         if "frontier" in OVERLAY:
             lo, hi = ax.get_xlim()
@@ -607,7 +662,7 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
             if F is None:
                 ax.axvline(100, color=BOUNDARY, lw=1.0, zorder=1)
                 ax.axhline(100, color=BOUNDARY, lw=1.0, zorder=1)
-        _frontier(ax, F, R, refs, NF, NR)
+        _frontier(ax, F, R, refs, NF, NR, JC)
     handles = [plt.Line2D([], [], ls="", marker="o", ms=7, color=shades[i], label=str(v)) for i, v in enumerate(values)]
     handles.append(plt.Line2D([], [], ls="--" if not learning_only else "", lw=0.8, color="#c4c3be", marker="o", ms=6,
                               mfc=SURFACE, mec=MUTED,
@@ -697,9 +752,10 @@ def track(conds, method, varying, names, path, same_electorates, errorbars=False
     refs = pts[0][0].get("references") if same_electorates else None
     NF = pts[0][0].get("nfrontier") if same_electorates else None
     NR = pts[0][0].get("rfrontier") if same_electorates else None
+    JC = pts[0][0].get("juries") if same_electorates else None
     _pad(ax)
     _unreachable(ax, "xy", lines=F is None)
-    _frontier(ax, F, R, refs, NF, NR)
+    _frontier(ax, F, R, refs, NF, NR, JC)
     ax.set_title(title + "\nlearned ballots (filled); honest (open)"
                  + ("; bars: each point's own 95% interval" if errorbars else ""), loc="left")
     fig.tight_layout()
