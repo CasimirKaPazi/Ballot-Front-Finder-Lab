@@ -1771,3 +1771,17 @@ for _nm in ("Score", "Copeland", "IRV"):
         _pa, _px = _iv._value(_ra, _S, _ux[:20], 5)[0], _iv._value(_rx, _S, _ux[:20], 5)[0]
         assert np.abs(_pa - _px).max() < 0.05, np.abs(_pa - _px).max()   # third candidates' totals move too
 print("exact response ok")
+# pooled discovery (run.py --response pooled): under Plurality, with A 40, B 39 and C 20 first preferences,
+# the type C > B > A finds that a quarter of it ranking B first makes B win, and its voters do so; nobody
+# else moves
+_up = np.array([[3., 2., 1.]] * 40 + [[2., 3., 1.]] * 39 + [[1., 2., 3.]] * 20)        # columns A, B, C
+_Mp = METHODS["Plurality"]
+_pmp = _Mp.poll_view()
+_sp = _Mp.sincere(_up)
+_Tp = _pmp.features(_sp).sum(axis=0)[None]
+_memp = {"last": {}, "trust": {}}
+_Bp, _act = _iv.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], threshold=np.zeros(99), share=0.25,
+                              memory=_memp)
+assert _act[79:].all() and not _act[:79].any()
+assert (np.argmax(_Bp[79:], axis=1) == 1).all()
+print("pooled discovery ok")

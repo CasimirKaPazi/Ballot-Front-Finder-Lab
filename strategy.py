@@ -198,7 +198,9 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strateg
     read the averaged polls and each decides alone (individual.py): None/False (the ranking groups), True
     (each voter expects only themselves to vote as they do), or per voter the number of voters they
     expect to (their boldness). response: how individual voters value a move: "arithmetic" (its worth in
-    switching voters, individual._value) or "exact" (the poll counted again, individual._value_exact)."""
+    switching voters, individual._value), "exact" (the poll counted again, individual._value_exact) or
+    "pooled" (moves found and valued per type of voter by counting the round's polls again,
+    individual.answer_pooled)."""
     if report is not None:
         want = sorted(set(int(r) for r in report))
         if want[0] < 0:
@@ -294,6 +296,23 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
         ind_rng = np.random.default_rng(rng.bit_generator.seed_seq.spawn(1)[0])
     for r in range(1, rounds + 1):
         polls = np.stack([rng.choice(n, m if inc else m_full, replace=False) for _ in range(samples)])
+        if individual is not None and response == "pooled":     # pooled discovery (individual.answer_pooled)
+            F = pm.features(B)
+            W = np.zeros((samples, n))
+            W[np.arange(samples)[:, None], polls] = n / m
+            tot = F.sum(axis=0)
+            dev = poll_error * (W @ F - tot)           # the polls as the ranking groups see them
+            places_r = _leaders(lambda j: pm.decide_many(_widened(tot, dev, j), C), C, 3)
+            if leaders is not None:
+                leaders[r] = (places_r[0], places_r[1])
+            B_prev = B
+            B, active = _ind.answer_pooled(method, pm, u, B, sincere, tot + dev, places_r, threshold=thr,
+                                           share=float(fol) if np.ndim(fol) == 0 else 0.25, memory=ind_memory)
+            record(r)
+            settled = np.array_equal(B, B_prev)
+            if snapshot:
+                snapshot(r, (B, settled, float(sincerity(method, B, u).mean())))
+            continue
         if individual is not None:
             F = pm.features(B)
             W = np.zeros((samples, n))

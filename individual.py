@@ -323,6 +323,97 @@ def _value_exact(r, S, U, C):
     return P, (P * U).sum(axis=1)
 
 
+class _PollChances:
+    """What judge needs of a reading: the winner chances of the round's polls."""
+    def __init__(self, P):
+        self.P = P
+
+
+def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, share, memory):
+    """One round with pooled discovery (run.py --response pooled, a variant). Discovery is shared, the
+    decision individual:
+    - Types: the voters by their order of the poll's places (up to three: the leaders and the next place,
+      as the ranking groups find them), six types for three places.
+    - Discovery: for each type the moves of the ranking groups (moves._naive: the naive exaggerations
+      for the leader the type prefers against the other; moves._push: the push-over for the next place),
+      each rendered by every voter of the type on their own utilities. A share `share` (--coordination)
+      of the type's change of ballots (from what they voted in the last round) is added to each of the
+      round's polls (polls_T: one row of totals per poll), and the polls are counted again: the winner
+      chances the move promises. The type returning to its sincere ballots is counted the same way.
+      Nobody sees individual ballots: discovery counts published totals, as anyone knowing the method can.
+    - Decision: each strategic voter values every published move of their type by their own utilities
+      against their type's sincere ballots (as a share of their utility range), its promise over the
+      polls as they are weighted by their trust (judge, trust), and makes the most valuable move if
+      that exceeds their cost (threshold), else votes sincerely.
+    Every voter of a type counts in its change, strategic or not: discovery does not know who follows.
+    Returns the new ballots and the voters who vote strategically this round."""
+    n, C = u.shape
+    P0 = count.decide_many(polls_T, C).mean(axis=0)
+    judge(u, _PollChances(P0), memory)
+    newB = sincere.copy()
+    memory["follow"] = np.zeros(C)
+    active = np.zeros(n, bool)
+    able = np.isfinite(threshold)
+    for v in [v for v in memory.get("held", {}) if not able[v]]:
+        memory["held"].pop(v)
+    places = [c for c in places if c is not None]
+    if len(places) < 2 or not able.any():
+        return newB, active
+    lo_u, hi_u = u.min(axis=1), u.max(axis=1)
+    span = np.where(hi_u > lo_u, hi_u - lo_u, 1.0)
+    F_cur = count.features(B)
+    order = np.argsort(-u[:, places], axis=1, kind="stable")
+    types = {}
+    for v in range(n):
+        types.setdefault(tuple(places[i] for i in order[v]), []).append(v)
+
+    def chances(D):
+        return count.decide_many(polls_T + D[None], C).mean(axis=0)
+
+    for key, mem in types.items():
+        mem = np.array(mem)
+        V = mem[able[mem]]
+        if not len(V):
+            continue
+        A = min(places[:2], key=key.index)                   # the leader the type prefers
+        Bo = places[1] if A == places[0] else places[0]
+        moves = list(mv._naive(method.ballot, A, Bo))
+        if len(places) > 2:
+            p = mv._push(method.ballot, A, Bo, places[2])
+            if p is not None:
+                moves.append(p)
+        moves = list(dict.fromkeys(moves))
+        lazy, appr = mv.own_params(mem)
+        P_s = chances(share * (count.features(sincere[mem]) - F_cur[mem]).sum(axis=0))
+        Xs, Ps = [], []
+        for m in moves:
+            X = mv.render(method, u[mem], m, sincere[mem], lazy, appr)
+            Xs.append(X)
+            Ps.append(chances(share * (count.features(X) - F_cur[mem]).sum(axis=0)))
+        sel = able[mem]                                     # the strategic voters of the type
+        U = u[V]
+        before = U @ P0
+        EU = np.stack([U @ P_s] + [U @ P for P in Ps])     # sincere first
+        for j in range(1, len(EU)):
+            rho = np.array([trust(memory, int(v), moves[j - 1]) for v in V])
+            gain = EU[j] - before
+            EU[j] = before + np.where(gain > 0, rho * gain, gain)
+        best = np.argmax(EU, axis=0)
+        value = (EU[best, np.arange(len(V))] - EU[0]) / span[V]
+        best = np.where(value > threshold[V], best, 0)
+        for i, v in enumerate(V):
+            v = int(v)
+            j = int(best[i])
+            if j > 0:
+                newB[v] = Xs[j - 1][np.flatnonzero(sel)[i]]
+                memory["last"][v] = (moves[j - 1], float(U[i] @ Ps[j - 1] - before[i]), float(before[i]))
+                memory.setdefault("held", {})[v] = moves[j - 1]
+                active[v] = True
+            else:
+                memory.setdefault("held", {}).pop(v, None)
+    return newB, active
+
+
 CAMPAIGN_SEARCH = 1  # random variations of their last recommendation each candidate tries per round
 
 

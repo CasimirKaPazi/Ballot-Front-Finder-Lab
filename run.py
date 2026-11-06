@@ -362,8 +362,10 @@ def check_params(a, error):
         error("--poll-error must be 0 or more")
     if any(v not in (0, 1) for v in vals("campaign")):
         error("--campaign must be 0 (off) or 1 (on; it plans with --coordination, the share until 2026-10-29)")
-    if "exact" in vals("response") and 0 in vals("individual"):
-        error("--response exact needs --individual 1")
+    if set(vals("response")) - {"arithmetic"} and 0 in vals("individual"):
+        error("--response exact and pooled need --individual 1")
+    if "pooled" in vals("response") and (any(float(v) > 0 for v in vals("campaign")) or any(int(v or 0) > 0 for v in vals("search"))):
+        error("--response pooled has no campaigns and no random search yet")
     if any(v < 0 for v in vals("honesty")):
         error("--honesty must be at least 0")
     if any(not 0 <= v <= 1 for v in vals("coordination")):
@@ -402,7 +404,8 @@ def strategy_text(p, n):
         return (f"{g('rounds')} poll round(s), the average of {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
                 f"individual voters (compromise or burial if it gains more than a cost up to {g('honesty')} of their "
                 f"utility range, expecting {g('coordination')} of their camp to do the same"
-                + (", moves valued by counting the poll again" if g("response") == "exact" else "") + ")"
+                + (", moves valued by counting the poll again" if g("response") == "exact" else "")
+                + (", moves found and valued per type of voter by counting the polls again" if g("response") == "pooled" else "") + ")"
                 + ((f", campaigns (planned with {g('coordination')} of the audience)") if float(g("campaign")) > 0 else "")
                 + (f", laziness {g('lazy')}" if float(g("lazy")) > 0 else ""))
     return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
@@ -843,10 +846,12 @@ def parser():
                     help="with --individual: an adaptive voter's cost of voting insincerely is a personal share, uniform "
                          "from 0 to this, of their utility range; they make a move only if it gains more (0.3 gives "
                          "about the strategic voting measured under Plurality)")
-    ap.add_argument("--response", default="arithmetic", choices=["arithmetic", "exact"],
+    ap.add_argument("--response", default="arithmetic", choices=["arithmetic", "exact", "pooled"],
                     help="with --individual: how a voter values a move: by arithmetic (its worth in voters switching "
                          "from the poll winner, the default) or exactly (the averaged poll counted again with the move; "
-                         "a variant, much slower; docs/model.md, Individual voters)")
+                         "a variant, much slower) or pooled (moves of the ranking groups found and valued per type of "
+                         "voter, by their order of the poll's top three, counting the round's polls again; a variant). "
+                         "docs/model.md, Individual voters")
     ap.add_argument("--risk", type=int, default=0, choices=[0, 1],
                     help="ranking groups (--individual 0) only: 1 = each voter is careful or bold by their "
                          "satisfaction with the polls, instead of the fixed --aggressive split (docs/campaigns.md)")
