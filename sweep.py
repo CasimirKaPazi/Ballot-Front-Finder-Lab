@@ -83,6 +83,8 @@ def main():
                     help="individual voters: the largest cost of voting insincerely, a share of the utility range")
     ap.add_argument("--individual", type=int, nargs="+", default=[1], choices=[0, 1],
                     help="1 = individual voters (default since 2026-10-31), 0 = the ranking groups")
+    ap.add_argument("--response", nargs="+", default=["arithmetic"], choices=["arithmetic", "exact", "pooled"],
+                    help="individual voters: how a move is valued (run.py --response); exact and pooled are variants")
     ap.add_argument("--risk", type=int, nargs="+", default=[0], choices=[0, 1])
     ap.add_argument("--risk-tolerance", type=float, nargs="+", default=[0.1])
     ap.add_argument("--seeds", type=int, nargs="+", default=[1])

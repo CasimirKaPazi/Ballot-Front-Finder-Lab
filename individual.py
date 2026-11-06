@@ -329,11 +329,18 @@ class _PollChances:
         self.P = P
 
 
+# Trial (2026-11-06, left off): choose a move with the round's polls and value it with a second, fresh set of
+# as many polls, against the bias of taking the best of several noisy values. With 5 polls it overcorrects:
+# strategic voting fell to 1.2% of voters on average (5 polls 3.6%, 40 polls 2.3%), because a worthwhile
+# move often shows no gain in 5 fresh polls either. The overreaction to noisy polls is kept in the model on
+# purpose (methods differ in how much it costs them); --samples tests it.
+POOL_CHECK = False
 POOL_LIBRARY = 8     # pooled discovery: moves a type keeps from its search (the most recent)
 POOL_STEPS = 6       # pooled discovery: the longest move the search builds
 
 
-def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, share, memory, search=0, rng=None):
+def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, share, memory, search=0, rng=None,
+                  check_T=None):
     """One round with pooled discovery (run.py --response pooled, a variant). Discovery is shared, the
     decision individual:
     - Types: the voters by their order of the poll's places (up to three: the leaders and the next place,
@@ -381,6 +388,9 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
     def chances(D):
         return count.decide_many(polls_T + D[None], C).mean(axis=0)
 
+    def checked(D):                                # the second look (check_T), else the same polls
+        return chances(D) if check_T is None else count.decide_many(check_T + D[None], C).mean(axis=0)
+
     for key, mem in types.items():
         mem = np.array(mem)
         V = mem[able[mem]]
@@ -396,20 +406,23 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
         lib = memory.setdefault("library", {}).setdefault(key, [])
         moves = list(dict.fromkeys(moves + lib))
         lazy, appr = mv.own_params(mem)
-        P_s = chances(share * (count.features(sincere[mem]) - F_cur[mem]).sum(axis=0))
+        D_s = share * (count.features(sincere[mem]) - F_cur[mem]).sum(axis=0)
+        P_s = chances(D_s)
         Us = u[mem] @ P_s
-        Xs, Ps = [], []
+        Xs, Ps, Ds = [], [], []
 
         def tryout(m):
             X = mv.render(method, u[mem], m, sincere[mem], lazy, appr)
-            P = chances(share * (count.features(X) - F_cur[mem]).sum(axis=0))
-            return X, P, float(np.mean((u[mem] @ P - Us) / span[mem]))     # the type's mean gain
+            D = share * (count.features(X) - F_cur[mem]).sum(axis=0)
+            P = chances(D)
+            return X, P, float(np.mean((u[mem] @ P - Us) / span[mem])), D    # the type's mean gain
 
         best_m, best_g = (), 0.0
         for m in moves:
-            X, P, g = tryout(m)
+            X, P, g, D = tryout(m)
             Xs.append(X)
             Ps.append(P)
+            Ds.append(D)
             if g > best_g + 1e-12:
                 best_m, best_g = m, g
         if search > 0 and rng is not None:
@@ -417,12 +430,13 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
                 m = mv.random_move(best_m if len(best_m) < POOL_STEPS else best_m[:POOL_STEPS - 1], C, rng)
                 if m in moves:
                     continue
-                X, P, g = tryout(m)
+                X, P, g, D = tryout(m)
                 if g > best_g + 1e-12:
                     best_m, best_g = m, g
                     moves.append(m)
                     Xs.append(X)
                     Ps.append(P)
+                    Ds.append(D)
                     lib.append(m)
             del lib[:-POOL_LIBRARY]
         sel = able[mem]                                     # the strategic voters of the type
@@ -434,14 +448,29 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
             gain = EU[j] - before
             EU[j] = before + np.where(gain > 0, rho * gain, gain)
         best = np.argmax(EU, axis=0)
-        value = (EU[best, np.arange(len(V))] - EU[0]) / span[V]
+        promised = {j: Ps[j - 1] for j in range(1, len(EU))}
+        if check_T is not None:                    # the chosen moves valued again with fresh polls
+            chosen = sorted(set(int(j) for j in best if j > 0))
+            P2 = {j: checked(Ds[j - 1]) for j in chosen}
+            P2s = checked(D_s)
+            b2 = U @ checked(np.zeros_like(D_s))
+            E2 = np.stack([U @ P2s] + [U @ P2[j] if j in P2 else np.full(len(V), -np.inf) for j in range(1, len(EU))])
+            for j in chosen:
+                rho = np.array([trust(memory, int(v), moves[j - 1]) for v in V])
+                gain = E2[j] - b2
+                E2[j] = b2 + np.where(gain > 0, rho * gain, gain)
+            value = (E2[best, np.arange(len(V))] - E2[0]) / span[V]
+            promised.update(P2)
+        else:
+            value = (EU[best, np.arange(len(V))] - EU[0]) / span[V]
         best = np.where(value > threshold[V], best, 0)
         for i, v in enumerate(V):
             v = int(v)
             j = int(best[i])
             if j > 0:
                 newB[v] = Xs[j - 1][np.flatnonzero(sel)[i]]
-                memory["last"][v] = (moves[j - 1], float(U[i] @ Ps[j - 1] - before[i]), float(before[i]))
+                base = b2[i] if check_T is not None else before[i]      # the promise against the polls it
+                memory["last"][v] = (moves[j - 1], float(U[i] @ promised[j] - base), float(before[i]))   # came from
                 memory.setdefault("held", {})[v] = moves[j - 1]
                 active[v] = True
             else:

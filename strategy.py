@@ -306,9 +306,15 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
             if leaders is not None:
                 leaders[r] = (places_r[0], places_r[1])
             B_prev = B
+            check = None
+            if _ind.POOL_CHECK:                        # a second, fresh set of polls (own stream: the polls
+                pc = np.stack([ind_rng.choice(n, m, replace=False) for _ in range(samples)])   # stay the same)
+                W2 = np.zeros((samples, n))
+                W2[np.arange(samples)[:, None], pc] = n / m
+                check = tot + poll_error * (W2 @ F - tot)
             B, active = _ind.answer_pooled(method, pm, u, B, sincere, tot + dev, places_r, threshold=thr,
                                            share=float(fol) if np.ndim(fol) == 0 else 0.25, memory=ind_memory,
-                                           search=search, rng=ind_rng)
+                                           search=search, rng=ind_rng, check_T=check)
             record(r)
             settled = np.array_equal(B, B_prev)
             if snapshot:
