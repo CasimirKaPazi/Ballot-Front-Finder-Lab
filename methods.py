@@ -582,6 +582,90 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
 }
 
 
+# ---------- totals of the subset features (Method.totals) ----------
+# A tally needs only the sum over voters of a feature. For the features over every subset of candidates
+# that sum can be had far more cheaply than through the per-voter array (n x 2^C x C): a candidate c is a
+# voter's first among S exactly when S holds c and none of the candidates that voter puts before c, so
+# the totals for all subsets follow from counting, per candidate, how often each such set occurs, and a
+# subset-sum transform (_zeta); the normalized scores among S from each voter's lowest and highest score
+# in S, built up subset by subset, and one matrix product. Exactly equal to the sums of FEATURES (tested);
+# about 40 times faster at 10 candidates, where strategic nomination tallies many fields.
+def _zeta(cnt, C):
+    """Subset sums over the last axis (bitmask index): Z[..., T] = sum of cnt[..., h] over h subset of T."""
+    Z = cnt.astype(float).copy()
+    for i in range(C):
+        V = Z.reshape(Z.shape[:-1] + (2 ** (C - 1 - i), 2, 2 ** i))
+        V[..., 1, :] += V[..., 0, :]
+    return Z
+
+
+def _firsts_total_generic(B, block, count):
+    """Totals over voters of a 'first among S' feature: c counts for a voter in S iff c in S, count[v, c],
+    and no candidate of block[v, c] (bool over d) is in S."""
+    n, C = B.shape
+    H = (block * (1 << np.arange(C))[None, None, :]).sum(axis=2)        # (n, C) bitmasks
+    cnt = np.zeros((C, 2 ** C))
+    for c in range(C):
+        np.add.at(cnt[c], H[count[:, c], c], 1)
+    Z = _zeta(cnt, C)
+    full = 2 ** C - 1
+    S = np.arange(2 ** C)
+    inS = masks(C)                                                     # (2^C, C)
+    out = Z[:, full ^ S].T * inS                                          # (2^C, C)
+    return out.ravel()
+
+
+def _firsts_total(B):
+    n, C = B.shape
+    gt = B[:, None, :] > B[:, :, None]                                   # [v, c, d]: d above c
+    eq = B[:, None, :] == B[:, :, None]
+    lower = np.arange(C)[None, :] < np.arange(C)[:, None]               # [c, d]: d < c
+    other = ~np.eye(C, dtype=bool)
+    unr = (B <= 0)[:, :, None]
+    block = gt | (eq & lower[None]) | (unr & eq & other[None])
+    return _firsts_total_generic(B, block, np.ones((n, C), bool))
+
+
+def _firsts_ex_total(B):
+    n, C = B.shape
+    gt = B[:, None, :] > B[:, :, None]
+    eq = B[:, None, :] == B[:, :, None]
+    lower = np.arange(C)[None, :] < np.arange(C)[:, None]
+    return _firsts_total_generic(B, gt | (eq & lower[None]), B > 0)
+
+
+def _firsts_eq_total(B):
+    n, C = B.shape
+    gt = B[:, None, :] > B[:, :, None]
+    eq = B[:, None, :] == B[:, :, None]
+    other = ~np.eye(C, dtype=bool)
+    unr = (B <= 0)[:, :, None]
+    return _firsts_total_generic(B, gt | (unr & eq & other[None]), np.ones((n, C), bool))
+
+
+def _nscore_sub_total(B):
+    n, C = B.shape
+    m = masks(C)
+    lo = np.full((n, 2 ** C), np.inf)
+    hi = np.full((n, 2 ** C), -np.inf)
+    for S in range(1, 2 ** C):                                           # by the lowest member
+        c = (S & -S).bit_length() - 1
+        R = S & (S - 1)
+        lo[:, S] = np.minimum(lo[:, R], B[:, c])
+        hi[:, S] = np.maximum(hi[:, R], B[:, c])
+    span = hi - lo
+    R = np.where(span > 0, MAXS / np.where(span > 0, span, 1), 0.0)
+    R[:, 0] = 0
+    lo0 = np.where(np.isfinite(lo), lo, 0.0)
+    out = (R.T @ B - (lo0 * R).sum(axis=0)[:, None]) * m
+    return out.ravel()
+
+
+
+FEATURE_TOTALS = {"firsts": _firsts_total, "firsts_ex": _firsts_ex_total, "firsts_eq": _firsts_eq_total,
+                  "nscore_sub": _nscore_sub_total}
+
+
 # ---------- what a poll shows (docs/model.md, What a poll shows) ----------
 # A poll publishes totals per candidate, per pair of candidates or per grade. Methods counted from totals
 # over every subset of candidates (the IRV family, ...) are counted by voters from such totals with a
@@ -1879,10 +1963,17 @@ class Method:
                 return self._tally(B)
         return self._tally(B)
 
+    def totals(self, B):
+        """The features summed over voters, (d,): as features(B).sum(axis=0), but the subset features
+        through FEATURE_TOTALS."""
+        return np.concatenate([FEATURE_TOTALS[f](B) if f in FEATURE_TOTALS
+                               else FEATURES[f][0](B).reshape(len(B), -1).astype(float).sum(axis=0)
+                               for f in self.feats])
+
     def _tally(self, B):
         if self.full is not None:
             return self.full(B)
-        return self.decide_many(self.features(B).sum(axis=0, keepdims=True), B.shape[1])[0]
+        return self.decide_many(self.totals(B)[None], B.shape[1])[0]
 
     def pref(self, u):
         """The preferences a sincere ballot expresses: u, or reversed for the Inverse-* methods.

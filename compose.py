@@ -1299,7 +1299,7 @@ def composed(expr, ballot=None):
             s = {}
             if inner is not None:
                 inner._C = C
-                s = inner.unpack(inner.features(B).sum(axis=0))
+                s = inner.unpack(inner.totals(B))
             return evaluate(expr, s, C, ballot, B=B, pt=pt)
         m = M.Method(ballot, full=full, settings=settings, poll=poll)
     else:

@@ -1798,3 +1798,18 @@ _iv.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], threshold=np.full(99
                   memory=_mem0, search=20, rng=np.random.default_rng(3))
 assert not _mem0.get("library")
 print("pooled search ok")
+# subset-feature totals (methods.FEATURE_TOTALS) equal the sums of the per-voter features, for strict,
+# truncated and tied ballots, up to 10 candidates
+import methods as _mt
+_rt = np.random.default_rng(21)
+for _C in (3, 5, 7, 10):
+    _Ut = _rt.normal(size=(40, _C))
+    _cases = {"firsts": [METHODS["IRV"].sincere(_Ut), np.where(_rt.random((40, _C)) < 0.3, 0, METHODS["IRV"].sincere(_Ut))],
+              "firsts_ex": [METHODS["IRV-3"].sincere(_Ut), _rt.integers(0, 4, (40, _C)).astype(float)],
+              "firsts_eq": [METHODS["ER-IRV"].sincere(_Ut), _rt.integers(0, 3, (40, _C)).astype(float)],
+              "nscore_sub": [METHODS["ESR"].sincere(_Ut), _rt.integers(0, 6, (40, _C)).astype(float)]}
+    for _f, _Bs in _cases.items():
+        for _Bt in _Bs:
+            _ref = _mt.FEATURES[_f][0](_Bt).reshape(40, -1).astype(float).sum(axis=0)
+            assert np.abs(_mt.FEATURE_TOTALS[_f](_Bt) - _ref).max() < 1e-9, (_f, _C)
+print("subset totals ok")
