@@ -362,10 +362,8 @@ def check_params(a, error):
         error("--poll-error must be 0 or more")
     if any(v not in (0, 1) for v in vals("campaign")):
         error("--campaign must be 0 (off) or 1 (on; it plans with --coordination, the share until 2026-10-29)")
-    if set(vals("response")) - {"arithmetic"} and 0 in vals("individual"):
-        error("--response exact and pooled need --individual 1")
-    if "pooled" in vals("response") and any(float(v) > 0 for v in vals("campaign")):
-        error("--response pooled has no campaigns yet")
+    if "pooled" in vals("response") and 1 in vals("individual") and any(float(v) > 0 for v in vals("campaign")):
+        error("campaigns need --response arithmetic (pooled discovery has no campaigns yet)")
     if any(v < 0 for v in vals("honesty")):
         error("--honesty must be at least 0")
     if any(not 0 <= v <= 1 for v in vals("coordination")):
@@ -400,12 +398,18 @@ def strategy_text(p, n):
     g = lambda k: g0(k) if k not in LATER_PARAMS else (p.get(k, LATER_PARAMS[k]) if isinstance(p, dict)
                                                         else getattr(p, k, LATER_PARAMS[k]))
     ps = int(g("poll_size")) or default_poll_size(int(n))
+    if int(g("individual")) and g("response") == "pooled":
+        return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
+                f"individual voters with pooled discovery (the moves that pay for {g('coordination')} of each type "
+                f"of voter, by their order of the poll's top three, counted on the polls; a voter makes one if it "
+                f"gains more than a cost up to {g('honesty')} of their utility range"
+                + (f"; search {g('search')}" if int(g("search") or 0) else "") + ")"
+                + (f", laziness {g('lazy')}" if float(g("lazy")) > 0 else ""))
     if int(g("individual")):
         return (f"{g('rounds')} poll round(s), the average of {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
                 f"individual voters (compromise or burial if it gains more than a cost up to {g('honesty')} of their "
                 f"utility range, expecting {g('coordination')} of their camp to do the same"
-                + (", moves valued by counting the poll again" if g("response") == "exact" else "")
-                + (", moves found and valued per type of voter by counting the polls again" if g("response") == "pooled" else "") + ")"
+                + (", moves valued by counting the poll again" if g("response") == "exact" else ", moves valued by arithmetic") + ")"
                 + ((f", campaigns (planned with {g('coordination')} of the audience)") if float(g("campaign")) > 0 else "")
                 + (f", laziness {g('lazy')}" if float(g("lazy")) > 0 else ""))
     return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
@@ -846,12 +850,12 @@ def parser():
                     help="with --individual: an adaptive voter's cost of voting insincerely is a personal share, uniform "
                          "from 0 to this, of their utility range; they make a move only if it gains more (0.3 gives "
                          "about the strategic voting measured under Plurality)")
-    ap.add_argument("--response", default="arithmetic", choices=["arithmetic", "exact", "pooled"],
-                    help="with --individual: how a voter values a move: by arithmetic (its worth in voters switching "
-                         "from the poll winner, the default) or exactly (the averaged poll counted again with the move; "
-                         "a variant, much slower) or pooled (moves of the ranking groups found and valued per type of "
-                         "voter, by their order of the poll's top three, counting the round's polls again; a variant). "
-                         "docs/model.md, Individual voters")
+    ap.add_argument("--response", default="pooled", choices=["arithmetic", "exact", "pooled"],
+                    help="with --individual: how a voter values a move: pooled (the default since 2026-11-06: the moves "
+                         "of the ranking groups found and valued per type of voter, by their order of the poll's top "
+                         "three, counting the round's polls again), by arithmetic (its worth in voters switching "
+                         "from the poll winner, the default before) or exactly (the averaged poll counted again with the move; "
+                         "a variant for analysis, much slower). Ignored for the ranking groups. docs/model.md, Individual voters")
     ap.add_argument("--risk", type=int, default=0, choices=[0, 1],
                     help="ranking groups (--individual 0) only: 1 = each voter is careful or bold by their "
                          "satisfaction with the polls, instead of the fixed --aggressive split (docs/campaigns.md)")

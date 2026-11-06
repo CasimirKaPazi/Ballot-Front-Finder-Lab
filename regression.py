@@ -63,6 +63,11 @@ CONDITIONS = [
     ("individual-previous", {"individual": 1, "search": 0, "start": "previous"}),
     ("individual-previous-nomination", {"individual": 1, "search": 0, "start": "previous", "exits": 1, "clones": 1,
                                         "rounds": 1}),       # the previous ballots carried to another field
+    ("pooled", {"individual": 1, "response": "pooled", "search": 0, "strategic": 0.2, "adaptive": 0.8, "rounds": 3}),
+    ("pooled-search", {"individual": 1, "response": "pooled", "search": 3, "strategic": 1.0, "adaptive": 0.0,
+                       "rounds": 2}),                       # pooled discovery (the default since 2026-11-06), with search
+    ("pooled-previous", {"individual": 1, "response": "pooled", "search": 0, "start": "previous"}),
+    ("exact", {"individual": 1, "response": "exact", "search": 0, "rounds": 2}),   # the exact response (a variant)
     ("cands-vote", {"voters": 9, "cands": 5, "cands_vote": 1, "exits": 1, "clones": 1, "rounds": 1}),   # candidates are voters
     ("cands-vote-biased", {"cands_vote": 1, "cand_shift": 0.5, "cand_dispersion": 0.7}),   # who stands, biased
 ]
