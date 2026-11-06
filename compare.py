@@ -730,7 +730,7 @@ def main():
           "- **Clearly better** and **dominates** are as in analyze.py's reports: the paired 95% interval of the "
           "difference within the condition excludes 0 (sincerity: and the difference is at least 1 point); "
           "dominance on VSE\\*, WME\\* and sincerity. **Near the front (1 / 2)**: no method in the condition is "
-          "better by 1 (2) points on VSE\\* and WME\\* at once (point estimates), the guide lines of the arrow plots.",
+          "better by 1 (2) points on VSE\\* and WME\\* at once (point estimates); the guide lines of the arrow plots, drawn with analyze.py --overlay guides.",
           "- Pair counts are over the conditions both methods were run in.", ""]
 
     L += ["## Conditions", "", "| Condition | Differs from the defaults | Elections | Methods | Inputs |", "|---|---|---|---|---|"]

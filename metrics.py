@@ -148,7 +148,7 @@ def reference_points(u, m, voters, cands, vw=None):
 # ballots, ideally for each trade-off weight; the sizes, the weights and the draws per size
 # (smaller than the electorate; the whole electorate is added as the largest jury); the weights lam spaced
 # evenly in log(lam / (1 - lam)), with both ends
-JURY_SIZES = [2, 3, 5, 9, 17, 33, 65]
+JURY_SIZES = [2, 3, 5, 9, 17, 33, 46, 65, 81, 129]
 JURY_WEIGHTS = np.concatenate([[0.0], (lambda r: r / (1 + r))(np.logspace(-2, 2, 17)), [1.0]])
 JURY_DRAWS = 24
 

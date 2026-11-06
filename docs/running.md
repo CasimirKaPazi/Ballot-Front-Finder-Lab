@@ -107,7 +107,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--boot` | 1000 | bootstrap replicates |
 | `--format` | png | file format(s) of the plots, one or more of png, svg, pdf (`--format png svg` writes both); the report links the first. svg and pdf are vector graphics, sharp at any zoom |
 | `--dpi` | 150 | resolution of png plots |
-| `--overlay` | frontier guides normalized rounded points trivial juries | what the VSE/WME plots draw besides the methods (`trivial`: the area of the trivial rules, the natural baseline; `juries`: the lines of random juries); no names: only the methods ([analysis.md](analysis.md), Reachable region) |
+| `--overlay` | frontier normalized rounded points trivial juries | what the VSE/WME plots draw besides the methods (`guides`: 1, 2, 4, 8 points below the frontier, not by default; `trivial`: the edge of the trivial rules, the natural baseline; `juries`: the lines of random juries); no names: only the methods ([analysis.md](analysis.md), Reachable region) |
 | `--points` | rb rc coin nuw mwm mirror cwrb pair median mean | which reference points to draw, of rb, rc, ml, coin (a coin between the best worst margin and the best normalized total), nuw (normalized utility winner), mwm (best worst margin), mirror (the trivial rule mirroring CW//random ballot), cwrb, cwuw, pair, median, mean; ml and cwuw are left out by default since they lie next to cwrb (the report gives all values) |
 | `--compare` | none | pairs `"A:B"` for paired differences |
 | `--hide` | `references` | methods or groups left out of the scatter and chain plots; `--hide` alone shows all |

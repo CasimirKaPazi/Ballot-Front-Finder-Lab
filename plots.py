@@ -91,7 +91,6 @@ OVERLAY = {"frontier", "guides", "normalized", "rounded", "points", "trivial", "
 # the trivial rules of the natural baseline (analyze.TRIVIAL), by their reference-point names
 TRIVIAL_NAMES = ["random ballot", "Condorcet winner, else random ballot", "mirror of CW//random ballot",
                  "random pair, majority"]
-TRIVIAL_FILL = "#f4f2ec"
 POINTS = None
 SHORT = {"maximal lottery": "max. lottery", "Condorcet winner, else random ballot": "CW//random ballot",
          "a coin between the best worst margin and the best normalized total": "coin CW/NUW",
@@ -217,9 +216,9 @@ def _juries(ax, J):
 
 
 def _trivial(ax, refs):
-    """The lotteries of the trivial rules and everything worse on both axes (the natural baseline,
-    analyze.lead): a faint area with a thin edge, labelled at its corner nearest the 100 / 100 corner.
-    A method inside it is no better than a coin among trivial rules."""
+    """The edge of what lotteries of the trivial rules reach: a thin line between its corners (the trivial
+    rules on it), labelled at the corner nearest the 100 / 100 corner (the natural baseline, analyze.lead).
+    A method below and left of it is no better than a coin among trivial rules."""
     if not refs or any(n not in refs for n in TRIVIAL_NAMES):
         return
     P = np.unique(np.round(np.array([refs[n] for n in TRIVIAL_NAMES]) * 100, 9), axis=0)
@@ -231,11 +230,7 @@ def _trivial(ax, refs):
             chain.pop()
         chain.append(p)
     C = np.array(chain)
-    far = -1000.0
-    poly = np.vstack([[far, C[0, 1]], C, [C[-1, 0], far], [far, far]])
-    ax.add_patch(plt.Polygon(poly, closed=True, facecolor=TRIVIAL_FILL, edgecolor="none", zorder=0.4))
-    edge = np.vstack([[far, C[0, 1]], C, [C[-1, 0], far]])
-    ax.plot(edge[:, 0], edge[:, 1], color=BOUNDARY, lw=0.6, zorder=0.5)
+    ax.plot(C[:, 0], C[:, 1], color=MUTED, lw=0.6, zorder=0.5)       # the corners only, not the walls beyond
     k = int(np.argmax(C.sum(axis=1)))
     ax.text(C[k, 0], C[k, 1], "trivial rules ", fontsize=6, color=MUTED, ha="right", va="top", zorder=1.1, clip_on=True)
 

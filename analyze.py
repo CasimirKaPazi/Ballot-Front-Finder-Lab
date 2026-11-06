@@ -1101,11 +1101,11 @@ def main():
     ap.add_argument("--format", nargs="+", default=["png"], choices=["png", "svg", "pdf"],
                     help="file format(s) of the plots; the report links the first (svg and pdf: vector, sharp at any zoom)")
     ap.add_argument("--dpi", type=int, default=150, help="resolution of png plots (default 150)")
-    ap.add_argument("--overlay", nargs="*", default=["frontier", "guides", "normalized", "rounded", "points", "trivial", "juries"],
+    ap.add_argument("--overlay", nargs="*", default=["frontier", "normalized", "rounded", "points", "trivial", "juries"],
                     choices=["frontier", "guides", "normalized", "rounded", "points", "trivial", "juries"],
                     help="what the VSE/WME plots draw besides the methods: the reachable frontier and region, the "
-                         "guide lines, the normalized-ballots line, the line of rounded ballots, reference points, "
-                         "the area of the trivial rules (natural baseline), the lines of random juries "
+                         "guide lines (1, 2, 4, 8 points below the frontier; not drawn by default), the normalized-ballots line, the line of rounded ballots, reference points, "
+                         "the edge of the trivial rules (natural baseline), the lines of random juries "
                          "(default: all; --overlay with "
                          "no names: none)")
     ap.add_argument("--points", nargs="+", default=["rb", "rc", "coin", "nuw", "mwm", "mirror", "cwrb", "pair", "median", "mean"], choices=list(POINT_KEYS),
