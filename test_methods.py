@@ -1785,3 +1785,16 @@ _Bp, _act = _iv.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], threshol
 assert _act[79:].all() and not _act[:79].any()
 assert (np.argmax(_Bp[79:], axis=1) == 1).all()
 print("pooled discovery ok")
+# pooled search: a type's kept proposals go into its library and are offered again; a sincere-only round
+# (no strategic voters) leaves it empty
+_mems = {"last": {}, "trust": {}}
+_Bs, _ = _iv.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], threshold=np.zeros(99), share=0.25,
+                           memory=_mems, search=20, rng=np.random.default_rng(3))
+_lib = _mems.get("library", {})
+assert all(len(v) <= _iv.POOL_LIBRARY and all(len(m) <= _iv.POOL_STEPS for m in v) for v in _lib.values())
+assert (np.argmax(_Bs[79:], axis=1) == 1).all()                 # the type C > B > A still compromises for B
+_mem0 = {"last": {}, "trust": {}}
+_iv.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], threshold=np.full(99, np.inf), share=0.25,
+                  memory=_mem0, search=20, rng=np.random.default_rng(3))
+assert not _mem0.get("library")
+print("pooled search ok")

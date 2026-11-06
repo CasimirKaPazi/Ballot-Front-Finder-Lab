@@ -1290,8 +1290,9 @@ def main():
           "median candidate's total utility, with honest and with learned ballots: how often a method elects a "
           "poor candidate, which the averages of VSE hide. Not used for dominance.",
           "- **Lead** and **Gap** (with honest ballots; **Lead\\*** and **Gap\\*** with learned ones), a natural "
-          "baseline: the trivial rules each use one obvious piece of what ballots show: the random ballot; the Condorcet "
-          "winner, else random ballot; the normalized utility winner; a random pair decided by majority. **Lead**: "
+          "baseline: the trivial rules are the random ballot; the Condorcet winner, else random ballot; its mirror on the "
+          "utility side (the normalized utility winner, weakened as much as CW//random ballot is against the best worst "
+          "margin); a random pair decided by majority. **Lead**: "
           "against every lottery of them, the method is ahead by at least this many points on VSE or on WME; negative: "
           "some lottery of them is better by that much on both, so the method is no better than a coin among trivial "
           "rules. **Gap**: how far the method stays below the frontier of normalized ballots (the dotted line in the "

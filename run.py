@@ -364,8 +364,8 @@ def check_params(a, error):
         error("--campaign must be 0 (off) or 1 (on; it plans with --coordination, the share until 2026-10-29)")
     if set(vals("response")) - {"arithmetic"} and 0 in vals("individual"):
         error("--response exact and pooled need --individual 1")
-    if "pooled" in vals("response") and (any(float(v) > 0 for v in vals("campaign")) or any(int(v or 0) > 0 for v in vals("search"))):
-        error("--response pooled has no campaigns and no random search yet")
+    if "pooled" in vals("response") and any(float(v) > 0 for v in vals("campaign")):
+        error("--response pooled has no campaigns yet")
     if any(v < 0 for v in vals("honesty")):
         error("--honesty must be at least 0")
     if any(not 0 <= v <= 1 for v in vals("coordination")):

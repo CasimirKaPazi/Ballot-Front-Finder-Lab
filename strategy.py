@@ -307,7 +307,8 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
                 leaders[r] = (places_r[0], places_r[1])
             B_prev = B
             B, active = _ind.answer_pooled(method, pm, u, B, sincere, tot + dev, places_r, threshold=thr,
-                                           share=float(fol) if np.ndim(fol) == 0 else 0.25, memory=ind_memory)
+                                           share=float(fol) if np.ndim(fol) == 0 else 0.25, memory=ind_memory,
+                                           search=search, rng=ind_rng)
             record(r)
             settled = np.array_equal(B, B_prev)
             if snapshot:

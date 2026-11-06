@@ -329,7 +329,11 @@ class _PollChances:
         self.P = P
 
 
-def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, share, memory):
+POOL_LIBRARY = 8     # pooled discovery: moves a type keeps from its search (the most recent)
+POOL_STEPS = 6       # pooled discovery: the longest move the search builds
+
+
+def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, share, memory, search=0, rng=None):
     """One round with pooled discovery (run.py --response pooled, a variant). Discovery is shared, the
     decision individual:
     - Types: the voters by their order of the poll's places (up to three: the leaders and the next place,
@@ -341,6 +345,13 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
       round's polls (polls_T: one row of totals per poll), and the polls are counted again: the winner
       chances the move promises. The type returning to its sincere ballots is counted the same way.
       Nobody sees individual ballots: discovery counts published totals, as anyone knowing the method can.
+    - Search (search > 0, with rng): each type also tries `search` random proposals per round, each one
+      random step (moves.random_move) after its best move so far (its sincere ballots if none gains),
+      as the ranking groups search. A proposal that raises the type's mean gain (each voter's gain over
+      the type's sincere ballots as a share of their utility range, all voters of the type) is kept in
+      the type's library (memory["library"], per type: its order of the places; the POOL_LIBRARY most
+      recent, moves of up to POOL_STEPS steps) and offered again in later rounds, published like the
+      rest.
     - Decision: each strategic voter values every published move of their type by their own utilities
       against their type's sincere ballots (as a share of their utility range), its promise over the
       polls as they are weighted by their trust (judge, trust), and makes the most valuable move if
@@ -382,14 +393,38 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
             p = mv._push(method.ballot, A, Bo, places[2])
             if p is not None:
                 moves.append(p)
-        moves = list(dict.fromkeys(moves))
+        lib = memory.setdefault("library", {}).setdefault(key, [])
+        moves = list(dict.fromkeys(moves + lib))
         lazy, appr = mv.own_params(mem)
         P_s = chances(share * (count.features(sincere[mem]) - F_cur[mem]).sum(axis=0))
+        Us = u[mem] @ P_s
         Xs, Ps = [], []
-        for m in moves:
+
+        def tryout(m):
             X = mv.render(method, u[mem], m, sincere[mem], lazy, appr)
+            P = chances(share * (count.features(X) - F_cur[mem]).sum(axis=0))
+            return X, P, float(np.mean((u[mem] @ P - Us) / span[mem]))     # the type's mean gain
+
+        best_m, best_g = (), 0.0
+        for m in moves:
+            X, P, g = tryout(m)
             Xs.append(X)
-            Ps.append(chances(share * (count.features(X) - F_cur[mem]).sum(axis=0)))
+            Ps.append(P)
+            if g > best_g + 1e-12:
+                best_m, best_g = m, g
+        if search > 0 and rng is not None:
+            for _ in range(search):
+                m = mv.random_move(best_m if len(best_m) < POOL_STEPS else best_m[:POOL_STEPS - 1], C, rng)
+                if m in moves:
+                    continue
+                X, P, g = tryout(m)
+                if g > best_g + 1e-12:
+                    best_m, best_g = m, g
+                    moves.append(m)
+                    Xs.append(X)
+                    Ps.append(P)
+                    lib.append(m)
+            del lib[:-POOL_LIBRARY]
         sel = able[mem]                                     # the strategic voters of the type
         U = u[V]
         before = U @ P0
