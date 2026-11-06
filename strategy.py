@@ -175,7 +175,7 @@ def default_poll_size(n):
 
 def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strategic=None, poll_error=2.0,
             report=None, aggressive=None, start=None, adaptive=None, activated=None, campaign=None, risk=None,
-            cstats=None, leaders=None, individual=False, honesty=0.3):
+            cstats=None, leaders=None, individual=False, honesty=0.3, response="arithmetic"):
     """Poll rounds (see the module docstring). Returns ballots of the last round, whether it
     settled (same as the round before), and mean sincerity (all voters).
     report: a list of round numbers; then `rounds` is ignored, the rounds run up to the highest,
@@ -197,7 +197,8 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strateg
     round's two poll leaders (a, b)}, as the polls the voters answered showed them. individual: voters
     read the averaged polls and each decides alone (individual.py): None/False (the ranking groups), True
     (each voter expects only themselves to vote as they do), or per voter the number of voters they
-    expect to (their boldness)."""
+    expect to (their boldness). response: how individual voters value a move: "arithmetic" (its worth in
+    switching voters, individual._value) or "exact" (the poll counted again, individual._value_exact)."""
     if report is not None:
         want = sorted(set(int(r) for r in report))
         if want[0] < 0:
@@ -205,16 +206,16 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strateg
         snaps = {}
         _respond(method, u, rng, max(want), samples, poll_size, search, strategic, poll_error, aggressive,
                  lambda r, res: snaps.__setitem__(r, res) if r in want else None, start, adaptive, activated,
-                 campaign, risk, cstats, leaders, individual, honesty)
+                 campaign, risk, cstats, leaders, individual, honesty, response)
         return [snaps[int(r)] for r in report]
     return _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive,
                     start=start, adaptive=adaptive, activated=activated, campaign=campaign, risk=risk, cstats=cstats,
-                    leaders=leaders, individual=individual, honesty=honesty)
+                    leaders=leaders, individual=individual, honesty=honesty, response=response)
 
 
 def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll_error, aggressive=None,
              snapshot=None, start=None, adaptive=None, activated=None, campaign=None, risk=None, cstats=None,
-             leaders=None, individual=False, honesty=0.3):
+             leaders=None, individual=False, honesty=0.3, response="arithmetic"):
     n, C = u.shape
     sincere = method.sincere(u)
     B = sincere.copy()
@@ -299,7 +300,7 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
             W[np.arange(samples)[:, None], polls] = n / m
             tot = F.sum(axis=0)
             T0 = tot + poll_error * ((W @ F).mean(axis=0) - tot)      # the average of the polls
-            reading = _ind.Reading(pm, method.ballot, T0, C, n, m * samples, poll_error)
+            reading = _ind.Reading(pm, method.ballot, T0, C, n, m * samples, poll_error, exact=response == "exact")
             if leaders is not None:
                 leaders[r] = (reading.A, reading.B)
             B_prev = B

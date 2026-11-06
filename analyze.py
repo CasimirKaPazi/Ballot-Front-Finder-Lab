@@ -175,6 +175,7 @@ ADDED_COLUMNS = {
     **{f"{a}_{k}": (None, "2026-10-27, further reference points") for k in REF_POINTS for a in ("U", "WM")},
     "p_span": (None, "2026-11-04, the chance of electing from the trade-off span"),
     "jury": (None, "2026-11-05, random juries (equivalent jury size)"),
+    "response": ("arithmetic", "2026-11-06, how individual voters value a move (arithmetic or exact)"),
     "campaign": ("0.0", "2026-10-27, campaigns: older runs had none"),
     "individual": ("0", "2026-10-30, individual voters reading one poll: older runs used ranking groups"),
     "coordination": ("0.25", "2026-10-29, coordination share: older runs had campaigns planned with the "
@@ -948,7 +949,7 @@ def label(key, varying, first):
 
 POINT_KEYS = {"rb": "random ballot", "rc": "random candidate", "ml": "maximal lottery", **DERIVED_POINTS, **REF_POINTS,
               "mirror": MIRROR}   # --points
-PARAM_NAMES = {"honesty": "honesty cost", "campaign": "campaigns", "coordination": "coordination share", "individual": "individual voters", "risk": "risk by satisfaction",
+PARAM_NAMES = {"response": "response to a move", "honesty": "honesty cost", "campaign": "campaigns", "coordination": "coordination share", "individual": "individual voters", "risk": "risk by satisfaction",
                "risk_tolerance": "risk tolerance", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error",
                "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion", "cands_vote": "candidates vote",

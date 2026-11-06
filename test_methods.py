@@ -1751,3 +1751,23 @@ _js = _an.jury_size(np.array([[0.2, 0.6, 0.9, -0.1]]), np.array([[0.2, 0.6, 0.9,
 # (0.2, 0.2): lead 0.2 over size 1, -0.2 under size 4 -> halfway in log between 1 and 4 = 2; (0.6, 0.6) -> 8
 assert np.allclose(_js[0, :2], [2.0, 8.0]) and np.isinf(_js[0, 2]) and _js[0, 3] == 1
 print("random juries ok")
+# exact response (run.py --response exact): with no change it reads the poll as the arithmetic does; for an
+# additive count (Score) one voter's change moves the chances about as the arithmetic says (within a few
+# points: the arithmetic leaves out what the change does to the other candidates; response_check.md)
+import individual as _iv
+_ux = np.random.default_rng(11).normal(size=(99, 5))
+for _nm in ("Score", "Copeland", "IRV"):
+    _M = METHODS[_nm]
+    _pm = _M.poll_view()
+    _Fx = _pm.features(_M.sincere(_ux))
+    _ra = _iv.Reading(_pm, _M.ballot, _Fx.sum(0), 5, 99, 300, 2.0)
+    _rx = _iv.Reading(_pm, _M.ballot, _Fx.sum(0), 5, 99, 300, 2.0, exact=True)
+    if _ra.B is None:
+        continue
+    _Z = np.zeros((3, _Fx.shape[1]))
+    assert np.allclose(_iv._value(_ra, _Z, _ux[:3], 5)[0], _iv._value(_rx, _Z, _ux[:3], 5)[0], atol=1e-3), _nm
+    if _nm == "Score":
+        _S = _pm.features(_M.sincere(_ux[:20])[::-1]) - _Fx[:20]           # one voter's change each
+        _pa, _px = _iv._value(_ra, _S, _ux[:20], 5)[0], _iv._value(_rx, _S, _ux[:20], 5)[0]
+        assert np.abs(_pa - _px).max() < 0.05, np.abs(_pa - _px).max()   # third candidates' totals move too
+print("exact response ok")

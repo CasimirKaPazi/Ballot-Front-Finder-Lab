@@ -151,8 +151,9 @@ class Reading:
     """What one poll says: the winner A, the runner-up B and next place T (by closeness), their
     closeness in voters, and the chances."""
 
-    def __init__(self, count, ballot, T, C, n, m, poll_error):
+    def __init__(self, count, ballot, T, C, n, m, poll_error, exact=False):
         self.count, self.C, self.n = count, C, n
+        self.exact = exact               # run.py --response exact: moves valued by _value_exact
         self.sigma = max(poll_error, 1e-9) * n * 0.5 / sqrt(m)
         P = count.decide_many(T[None], C)[0]
         self.A = A = int(np.argmax(P))
@@ -275,6 +276,8 @@ def _value(r, S, U, C):
     cross-effects on B and T (Reading.cross: each other race's switches move their closeness, added
     up). Returns (P, EU): winner chances per row, and the expected outcome of U."""
     races = r.races
+    if r.exact:
+        return _value_exact(r, S, U, C)
     s = {c: (S @ r.delta[c]) / max(float(r.delta[c] @ r.delta[c]), 1e-12) for c in races}
     k = {}
     for c in races:
@@ -291,6 +294,31 @@ def _value(r, S, U, C):
     P = np.zeros((len(S), C))
     P[:, r.A] = pA
     for c, p in zip(races, ps):
+        P[:, c] += p
+    return P, (P * U).sum(axis=1)
+
+
+def _value_exact(r, S, U, C):
+    """_value with the exact response (run.py --response exact): the averaged poll counted again with each
+    change, and the closeness of the races found by the same bisection as for the poll itself (from 0 to
+    n voters switching from A; for a race leading after the change, how far, down to 3 sigma below 0,
+    where the counts still mean something). The belief is the arithmetic's: the same races, spread and
+    chances. Distinct changes are counted once."""
+    Su, inv = np.unique(np.round(S, 9), axis=0, return_inverse=True)
+    inv = inv.ravel()
+    rows = r.T0[None] + Su
+    z, hi, neg = np.zeros(len(Su)), np.full(len(Su), float(r.n)), np.full(len(Su), -3 * r.sigma)
+    k = []
+    for c in r.races:
+        kc = _closeness(r.count, rows, c, C, r.delta[c], z, hi, STEPS_FULL)
+        lead = kc <= 0
+        if lead.any():
+            kc[lead] = _closeness(r.count, rows[lead], c, C, r.delta[c], neg[lead], z[lead], STEPS_FULL)
+        k.append(kc[inv])
+    pA, ps = _chances_many(k, r.sigma)
+    P = np.zeros((len(S), C))
+    P[:, r.A] = pA
+    for c, p in zip(r.races, ps):
         P[:, c] += p
     return P, (P * U).sum(axis=1)
 

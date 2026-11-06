@@ -197,7 +197,8 @@ def one_election(job):
             res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
                           poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0,
                           adaptive=adaptive, activated=act, campaign=camp, risk=risk, cstats=cst,
-                          leaders=lead, individual=followers if individual else None, honesty=float(p.get("honesty", 0.3)))
+                          leaders=lead, individual=followers if individual else None, honesty=float(p.get("honesty", 0.3)),
+                          response=p.get("response", "arithmetic"))
             sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
             sincere_row.update(ties(m, m.sincere(uf), P_h))
             sincere_row.update(manip.manipulation(m, m.sincere(uf), uf, u, back) if manipulating else manip.NAN)
@@ -361,6 +362,8 @@ def check_params(a, error):
         error("--poll-error must be 0 or more")
     if any(v not in (0, 1) for v in vals("campaign")):
         error("--campaign must be 0 (off) or 1 (on; it plans with --coordination, the share until 2026-10-29)")
+    if "exact" in vals("response") and 0 in vals("individual"):
+        error("--response exact needs --individual 1")
     if any(v < 0 for v in vals("honesty")):
         error("--honesty must be at least 0")
     if any(not 0 <= v <= 1 for v in vals("coordination")):
@@ -398,7 +401,8 @@ def strategy_text(p, n):
     if int(g("individual")):
         return (f"{g('rounds')} poll round(s), the average of {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
                 f"individual voters (compromise or burial if it gains more than a cost up to {g('honesty')} of their "
-                f"utility range, expecting {g('coordination')} of their camp to do the same)"
+                f"utility range, expecting {g('coordination')} of their camp to do the same"
+                + (", moves valued by counting the poll again" if g("response") == "exact" else "") + ")"
                 + ((f", campaigns (planned with {g('coordination')} of the audience)") if float(g("campaign")) > 0 else "")
                 + (f", laziness {g('lazy')}" if float(g("lazy")) > 0 else ""))
     return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
@@ -413,11 +417,11 @@ def strategy_text(p, n):
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "utility", "cand_dispersion", "cand_shift", "rounds", "samples",
           "strategic", "adaptive", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search",
-          "start", "seed", "campaign", "risk", "risk_tolerance", "coordination", "individual", "cands_vote", "honesty"]
+          "start", "seed", "campaign", "risk", "risk_tolerance", "coordination", "individual", "cands_vote", "honesty", "response"]
 # Run parameters added later, with the value that gives the earlier behaviour: filled in where a caller
 # leaves them out (simulate), so callers written before them keep working
 LATER_PARAMS = {"campaign": 0.0, "risk": 0, "risk_tolerance": 0.1, "coordination": 0.25, "individual": 0,
-                "cands_vote": 0, "honesty": 0.3}
+                "cands_vote": 0, "honesty": 0.3, "response": "arithmetic"}
 
 
 def previous_election(args):
@@ -465,7 +469,8 @@ def previous_election(args):
         B, _, _ = respond(m, uf, np.random.default_rng([p["seed"], zlib.crc32(b"previous-learning")]), rounds=rounds,
                           samples=p["samples"], poll_size=p["poll_size"], search=p["search"], strategic=strategic,
                           poll_error=p["poll_error"], aggressive=aggressive, adaptive=adaptive,
-                          campaign=camp, risk=risk, individual=followers, honesty=float(p.get("honesty", 0.3)))
+                          campaign=camp, risk=risk, individual=followers, honesty=float(p.get("honesty", 0.3)),
+                          response=p.get("response", "arithmetic"))
     set_voter_lazy(None)
     set_voter_approval(None)
     set_candidates(None)
@@ -838,6 +843,10 @@ def parser():
                     help="with --individual: an adaptive voter's cost of voting insincerely is a personal share, uniform "
                          "from 0 to this, of their utility range; they make a move only if it gains more (0.3 gives "
                          "about the strategic voting measured under Plurality)")
+    ap.add_argument("--response", default="arithmetic", choices=["arithmetic", "exact"],
+                    help="with --individual: how a voter values a move: by arithmetic (its worth in voters switching "
+                         "from the poll winner, the default) or exactly (the averaged poll counted again with the move; "
+                         "a variant, much slower; docs/model.md, Individual voters)")
     ap.add_argument("--risk", type=int, default=0, choices=[0, 1],
                     help="ranking groups (--individual 0) only: 1 = each voter is careful or bold by their "
                          "satisfaction with the polls, instead of the fixed --aggressive split (docs/campaigns.md)")
