@@ -42,9 +42,6 @@ from ballots import BALLOTS
 STEPS_FULL = 14      # bisection steps for the closeness of a candidate, over 0 .. n voters
 GRID = (-24, -12, -6, -2, 0, 2, 6, 12, 24)   # scenario table: voters switching between A and another
 STEPS_TABLE = 10     # bisection steps in the table (0.1 voter)
-ALL_RACES = False    # True: value moves in the races against every candidate who can win, not only B and T,
-                     # with cross-effects on B and T from each (a trial of 2026-11-04, docs/journal.md: it found no
-                     # burial against the Condorcet methods either, changed other methods, and took 35% longer)
 
 
 def _Phi(x):
@@ -171,11 +168,9 @@ class Reading:
         self.B = order[0] if order and np.isfinite(ks[order[0]]) else None
         self.T = order[1] if len(order) > 1 and np.isfinite(ks[order[1]]) else None
         self.k = ks
-        # the races a move is valued in: A against B and T, or (ALL_RACES) against every candidate who
-        # can win by voters switching from A
+        # the races a move is valued in: A against B and T (against every candidate who can win was a
+        # trial of 2026-11-04, journal.md)
         self.races = [c for c in (self.B, self.T) if c is not None]
-        if ALL_RACES:
-            self.races += [c for c in order if c not in self.races and np.isfinite(ks[c])]
         pA, ps = _chances_many([ks[c] for c in self.races], self.sigma)
         self.P = np.zeros(C)
         self.P[A] = pA[0]
@@ -329,18 +324,11 @@ class _PollChances:
         self.P = P
 
 
-# Trial (2026-11-06, left off): choose a move with the round's polls and value it with a second, fresh set of
-# as many polls, against the bias of taking the best of several noisy values. With 5 polls it overcorrects:
-# strategic voting fell to 1.2% of voters on average (5 polls 3.6%, 40 polls 2.3%), because a worthwhile
-# move often shows no gain in 5 fresh polls either. The overreaction to noisy polls is kept in the model on
-# purpose (methods differ in how much it costs them); --samples tests it.
-POOL_CHECK = False
 POOL_LIBRARY = 8     # pooled discovery: moves a type keeps from its search (the most recent)
 POOL_STEPS = 6       # pooled discovery: the longest move the search builds
 
 
-def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, share, memory, search=0, rng=None,
-                  check_T=None):
+def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, share, memory, search=0, rng=None):
     """One round with pooled discovery (run.py --response pooled, a variant). Discovery is shared, the
     decision individual:
     - Types: the voters by their order of the poll's places (up to three: the leaders and the next place,
@@ -392,9 +380,6 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
         if key not in memo:
             memo[key] = count.decide_many(polls_T + D[None], C).mean(axis=0)
         return memo[key]
-
-    def checked(D):                                # the second look (check_T), else the same polls
-        return chances(D) if check_T is None else count.decide_many(check_T + D[None], C).mean(axis=0)
 
     for key, mem in types.items():
         mem = np.array(mem)
@@ -458,28 +443,14 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
             EU[j] = before + np.where(gain > 0, rho * gain, gain)
         best = np.argmax(EU, axis=0)
         promised = {j: Ps[j - 1] for j in range(1, len(EU))}
-        if check_T is not None:                    # the chosen moves valued again with fresh polls
-            chosen = sorted(set(int(j) for j in best if j > 0))
-            P2 = {j: checked(Ds[j - 1]) for j in chosen}
-            P2s = checked(D_s)
-            b2 = U @ checked(np.zeros_like(D_s))
-            E2 = np.stack([U @ P2s] + [U @ P2[j] if j in P2 else np.full(len(V), -np.inf) for j in range(1, len(EU))])
-            for j in chosen:
-                rho = np.array([trust(memory, int(v), moves[j - 1]) for v in V])
-                gain = E2[j] - b2
-                E2[j] = b2 + np.where(gain > 0, rho * gain, gain)
-            value = (E2[best, np.arange(len(V))] - E2[0]) / span[V]
-            promised.update(P2)
-        else:
-            value = (EU[best, np.arange(len(V))] - EU[0]) / span[V]
+        value = (EU[best, np.arange(len(V))] - EU[0]) / span[V]
         best = np.where(value > threshold[V], best, 0)
         for i, v in enumerate(V):
             v = int(v)
             j = int(best[i])
             if j > 0:
                 newB[v] = Xs[j - 1][np.flatnonzero(sel)[i]]
-                base = b2[i] if check_T is not None else before[i]      # the promise against the polls it
-                memory["last"][v] = (moves[j - 1], float(U[i] @ promised[j] - base), float(before[i]))   # came from
+                memory["last"][v] = (moves[j - 1], float(U[i] @ promised[j] - before[i]), float(before[i]))
                 memory.setdefault("held", {})[v] = moves[j - 1]
                 active[v] = True
             else:

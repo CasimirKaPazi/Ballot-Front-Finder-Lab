@@ -1342,18 +1342,27 @@ def main():
               "reference: the agreement expected from sampling noise alone between two runs of the base condition "
               "(its even and odd elections correlated, then scaled up to full size with the Spearman-Brown "
               "formula; — where the halves do not agree at all, so the base itself gives no stable order on that "
-              "axis). A condition near or above that row orders the methods as the base does; only values "
-              "clearly below it show a real change.", "",
+              "axis); for conditions with fewer elections than the base, a further row gives the agreement "
+              "expected between the base and a run of that size. A condition near or above its row orders the "
+              "methods as the base does; only values clearly below it show a real change.", "",
               "| Condition | " + " | ".join(cols) + " |", "|---|" + "---|" * len(cols)]
         ib = [base["methods"].index(m) for m in shown]
 
-        def full_size(rh):     # Spearman-Brown: agreement expected between two full-size samples. It only
-            # holds for a positive half-sample agreement: at 0 or below (noise alone, e.g. a few methods
-            # with nearly equal values) there is no usable reference, shown as —
-            return 2 * rh / (1 + rh) if rh > 0 else float("nan")
+        def at_size(rh, k):    # Spearman-Brown: the reliability of k elections from the agreement rh of two
+            # halves of the base. It only holds for a positive half-sample agreement: at 0 or below (noise
+            # alone, e.g. a few methods with nearly equal values) there is no usable reference, shown as —
+            c = k / (base["elections"] / 2)
+            return c * rh / (1 + (c - 1) * rh) if rh > 0 else float("nan")
+        rh = {x: spearman(base['halves'][x][0][ib], base['halves'][x][1][ib]) for x in cols}
         L.append(f"| noise reference: {base['tag']} vs itself | "
-                 + " | ".join(cor(full_size(spearman(base['halves'][x][0][ib], base['halves'][x][1][ib])))
-                              for x in cols) + " |")
+                 + " | ".join(cor(at_size(rh[x], base["elections"])) for x in cols) + " |")
+        # conditions with fewer elections than the base agree less with it by noise alone: the agreement
+        # expected between the base and a run of m elections, sqrt(rel(n) rel(m))
+        for m in sorted({r["elections"] for r in list(results.values())[1:] if r["elections"] < base["elections"]},
+                        reverse=True):
+            L.append(f"| noise reference: {base['tag']} vs a run of {m} elections | "
+                     + " | ".join(cor(np.sqrt(at_size(rh[x], base["elections"]) * at_size(rh[x], m)))
+                                  for x in cols) + " |")
         for r in list(results.values())[1:]:
             common = [m for m in shown if m in r["methods"]]
             if len(common) < 3:
