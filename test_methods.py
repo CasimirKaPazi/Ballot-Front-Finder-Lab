@@ -1032,7 +1032,8 @@ with _tf.TemporaryDirectory() as _d:
         _f.write('from compose import composed, smith\nMETHODS = {"My Smith//Score": composed(smith >> "Score")}\n')
     _methods_mod._load_addons(_d)
 assert np.allclose(METHODS["My Smith//Score"].tally(_Bs), METHODS["Smith//Score"].tally(_Bs))
-for _k in [k for k, m in list(METHODS.items()) if "composition" in m.__dict__]:   # the method list as before
+for _k in [k for k, m in list(METHODS.items())                                 # the method list as before
+           if "composition" in m.__dict__ and k not in _methods_mod.BUILTIN_COMPOSED]:
     METHODS.pop(_k); _methods_mod.ADDONS.pop(_k, None)
     for _g in _methods_mod.GROUPS.values():
         if _k in _g:
@@ -1813,3 +1814,43 @@ for _C in (3, 5, 7, 10):
             _ref = _mt.FEATURES[_f][0](_Bt).reshape(40, -1).astype(float).sum(axis=0)
             assert np.abs(_mt.FEATURE_TOTALS[_f](_Bt) - _ref).max() < 1e-9, (_f, _C)
 print("subset totals ok")
+# scores with the voter's own approval cutoff (ballot scorecut): the approved are always an upper set of
+# the scores (the favourite among them), through sincere ballots (with laziness), random changes and moves
+import ballots as _bl
+import moves as _mv2
+_rc = np.random.default_rng(31)
+
+
+def _cut_ok(X):
+    S, a = _bl.cut_parts(X)
+    t = np.where(a, S, np.inf).min(axis=1, keepdims=True)
+    return a.any(axis=1).all() and ((S >= t) == a).all() and ((S <= _mm.MAXS) & (S >= 0)).all()
+
+
+for _lz in (0.0, 0.5):
+    _uc = _rc.normal(size=(60, 6))
+    _Xc = _bl.BALLOTS["scorecut"].sincere(_uc, _lz, _rc.random(60))
+    assert _cut_ok(_Xc)
+    assert (_bl.cut_parts(_Xc)[1][np.arange(60), _uc.argmax(axis=1)]).all()      # the favourite approved
+    _Sc = _bl.cut_parts(_Xc)[0]
+    assert (np.sign(_Xc[:, :, None] - _Xc[:, None, :]) == np.sign(_Sc[:, :, None] - _Sc[:, None, :])).all()
+_b = _Xc[0].copy()
+for _ in range(200):
+    _b = _bl.BALLOTS["scorecut"].mutate(_b.copy(), _rc)
+    assert _cut_ok(_b[None])
+_Mc = METHODS["ARA-C"]
+for _mvx in [(("upto", 2),), (("upto", 2), ("downfrom", 4)), (("upto", 1), ("below", 1)), (("top", 3),), (("bottom", 0),)]:
+    _Xr = _mv2.render(_Mc, _uc, _mvx, _Mc.sincere(_uc, 0.0, 0.5), 0.0, 0.5)
+    assert _cut_ok(_Xr), _mvx
+    if _mvx[0][0] == "upto":                    # after upto X: exactly those at X's level and above approved
+        _S2, _a2 = _bl.cut_parts(_Xr)
+        assert (_a2 == (_S2 >= _S2[:, [_mvx[0][1]]])).all()
+# Smith//Approval: a cycle A > B > C > A (margins 3, 5, 1), D beaten by all three but the most approved
+# (approvals A 6, B 7, C 5, D 9): the most approved of the Smith set wins (B), not D
+_k = _mm.MAXS + 1
+_Bsa = np.array([[5 + _k, 4 + _k, 1, 3 + _k]] * 4 +            # A > B > D > C, approve A, B, D
+                [[1, 5 + _k, 4 + _k, 3 + _k]] * 3 +            # B > C > D > A, approve B, C, D
+                [[4 + _k, 1, 5 + _k, 3 + _k]] * 2, float)      # C > A > D > B, approve C, A, D
+assert np.allclose(METHODS["Smith//Approval"].tally(_Bsa), [0, 1, 0, 0])
+assert np.allclose(METHODS["Approval"].tally(_bl.cut_parts(_Bsa)[1].astype(float)), [0, 0, 0, 1])   # Approval: D
+print("scores with an approval cutoff ok")

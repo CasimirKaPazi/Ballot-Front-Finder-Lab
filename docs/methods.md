@@ -10,12 +10,12 @@ Every method belongs to exactly one group. Groups can be used wherever methods a
 |---|---|
 | `condorcet` | Ranked pairs, Schulze, Schulze-ER, Kemeny-Young, Copeland, Copeland//Margins, Copeland//Margins-ER, SICT (Condorcet methods decided by the pairwise counts alone) |
 | `minimax-family` | Minimax, Minimax-ER, MMWV, MMPO, MMPOWV (the minimax family; MMPO and MMPOWV are not Condorcet methods) |
-| `condorcet-based` | Black, Baldwin, Baldwin-ER, Nanson, BTR-Borda, BTR-IRV, Benham, Smith//Score (Condorcet methods built on a Borda, IRV or score count) |
+| `condorcet-based` | Black, Baldwin, Baldwin-ER, Nanson, BTR-Borda, BTR-IRV, Benham, Smith//Score, Smith//Approval (Condorcet methods built on a Borda, IRV or score count) |
 | `plurality-based` | Plurality, Supplementary vote, IRV, ER-IRV, IRV-3, Coombs, DSC, DAC (first choices, eliminations and coalitions of top preferences; Coombs eliminates by last places) |
 | `approval-based` | Approval, MDDA, MAMPO |
-| `rated` | Score, Reciprocal score, INS, DMS, ESR (add-ons can join groups, see Add-ons) |
+| `rated` | Score, Reciprocal score, INS, IMDS, DMS, ESR (add-ons can join groups, see Add-ons) |
 | `median-based` | MJ, MAV, MCA (the grade a candidate reaches with a majority: median grade or Bucklin-like) |
-| `hybrid` | STAR, BTR-score, MARS, IC-MARS, MARS-T, ARA, ARA-Top, Score+, 321, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D (ratings combined with pairwise comparisons or runoffs) |
+| `hybrid` | STAR, BTR-score, MARS, IC-MARS, MARS-T, ESR-MARS, ARA, ARA-Top, ARA-C, Score+, 321, MMWV+Score, MMWVxScore, STLR, Soft Minimax, Soft Minimax-40, Soft Minimax-L, Soft Minimax-D (ratings combined with pairwise comparisons or runoffs) |
 | `positional` | Borda, Borda-ER, Dowdall |
 | `delegated` | Asset, Asset-foresight, Delegated 321 (the candidates cast their voters' votes, or fill in what voters leave blank; see Asset voting and delegation, below) |
 | `two-round` | TTR, Approval runoff, Approval cond. runoff, Score runoff (a real, separate runoff; see below) |
@@ -25,7 +25,7 @@ Every method belongs to exactly one group. Groups can be used wherever methods a
 **Sets** are selection names across groups (not plot panels):
 
 - `standard`, the default selection: the methods most discussed, those of Quinn's vse-sim (Plurality, IRV, Borda, Approval, Score, STAR, MJ, MAV, 321, Ranked pairs, Schulze) the common single-winner proposals and methods in use (TTR, Supplementary vote, ER-IRV, IRV-3, Approval runoff, Approval cond. runoff, Copeland, Kemeny-Young, Minimax, MMWV, MMPO, BTR-IRV), a reference between Score and STAR (Score runoff: STAR's runoff as a separate election, joined 2026-10-20), with the strongest found here (MARS, ARA, BTR-score, Smith//Score, Soft Minimax-D): 29 methods. Copeland//Margins-ER (the earlier Ranked Robin) left the set on 2026-10-19: once Equal Vote's name came to mean any Condorcet method, this particular variant is no longer a live proposal. Geometric median and Condorcet-random-drop are left out: idealised reference cases rather than practical methods.
-- `extended`: the standard set and the strongest newer methods not in it (ESR, DMS, Soft Minimax, Soft Minimax-40, MARS-T), and since 2026-11-04 Asset and Delegated 321, so that asset voting and delegation are seen in every test: 36 methods. Geometric median was in it until 2026-10-26, when it moved to the references. The selection of the reference runs ([reference-runs.md](reference-runs.md)), so that every test shows them in all conditions.
+- `extended`: the standard set and the strongest newer methods not in it (ESR, DMS, Soft Minimax, Soft Minimax-40, MARS-T), since 2026-11-04 Asset and Delegated 321, so that asset voting and delegation are seen in every test, and since 2026-11-06 IMDS and ESR-MARS: 38 methods. Geometric median was in it until 2026-10-26, when it moved to the references. The selection of the reference runs ([reference-runs.md](reference-runs.md)), so that every test shows them in all conditions.
 - `max-score`: every method whose results depend on the score range (`--max-score`): those on a ballot type that uses the range (the score ballot, Score runoff's ballot, add-on types built on them) and that do not fix their own range. Built from the ballot types, so new methods and add-ons join by themselves; a test checks that it holds exactly the methods whose sincere ballots change with the range. MCA and 321 (three fixed grades) are not in it. It includes Inverse-Score and the reference methods on score ballots: `--methods max-score --exclude inverse references` for a max-score sweep.
 - `er-pairs`, each strict method next to its equal-ranking version: IRV/ER-IRV, Borda/Borda-ER, Baldwin/Baldwin-ER, Minimax/Minimax-ER and MMWV, Schulze/Schulze-ER, Copeland//Margins/Copeland//Margins-ER. Equal-ranking versions equal the strict ones with honest ballots (sincere ballots are strict), so these pairs differ only in what strategic voters do with ties.
 
@@ -33,7 +33,7 @@ Example: `--methods condorcet STAR`, `--methods er-pairs`, `--methods max-score`
 
 ## Methods
 
-82 built-in methods, listed by group (see Groups and sets, above), plus any add-ons (see Add-ons, below); a run uses the `standard` set unless `--methods` names others. "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
+86 built-in methods, listed by group (see Groups and sets, above), plus any add-ons (see Add-ons, below); a run uses the `standard` set unless `--methods` names others. "0–5" in the Ballot column is the score ballot with the default range; `--max-score` changes it for all of these methods at once.
 
 Pairwise preferences always come from the ballot itself, so equal ratings count as no preference. All ties are broken uniformly among the tied candidates and counted exactly.
 
@@ -72,6 +72,7 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | BTR-IRV | ranking | each round the two with the fewest first choices meet pairwise; the loser is eliminated |
 | Benham | ranking | IRV, but a Condorcet winner among the remaining candidates wins at once |
 | Smith//Score | 0–5 | highest score total among the Smith set (pairwise from the ratings, equal ratings no preference). The same as BTR-score unless the Smith set has 4 or more members ([journal](journal.md), BTR-score and Smith//Score) |
+| Smith//Approval | 0–5 + cutoff | the most approved candidate of the Smith set ([electowiki](https://electowiki.org/wiki/Condorcet//Approval)); pairwise from the scores (equal scores no preference), approval from the voter's own cutoff, as ARA-C. Since 2026-11-06 |
 
 **plurality-based**
 
@@ -101,6 +102,7 @@ Pairwise preferences always come from the ballot itself, so equal ratings count 
 | Score | 0–5 | highest total; sincere: stretched to the voter's range |
 | Reciprocal score | 0–5 | interpretation of [electowiki](https://electowiki.org/wiki/Reciprocal_Score_Voting): a voter's faction is their top-rated candidate(s). R(X→Y) is the mean rating supporters of X give Y, as a share of the top score. A score for c is multiplied by min(1, R(c→F)/R(F→c)), F the voter's faction: support that c's supporters do not return is cut. Scores for the voter's own top and for candidates nobody top-rates stay unchanged; highest total wins |
 | INS | 0–5 | iterated normalized score, a score elimination: each round every ballot is stretched to the full range over the remaining candidates (lowest 0, highest the top score; a ballot rating them all the same counts for none), the lowest total is eliminated (ties for last split the win), until one is left |
+| IMDS | 0–5 | iterated maxed-and-dropped score, a score elimination like INS that can be counted by hand: each round every ballot's highest-rated remaining candidates count the top score and its lowest-rated remaining candidates 0, the other scores as given (a ballot rating them all the same counts for none); the lowest total is eliminated (ties for last split the win), until one is left. Polled by the score totals, as INS. Built in since 2026-11-06 (an add-on before) |
 | DMS | 0–5 | depth maximin (proposed in this lab): the ballots are read as levels from the top score down (score 0 is no level). For each depth k, the top k levels, a candidate's value is the points they get from those levels divided by the points of the levels counted (5, 5+4, 5+4+3, …); the candidate whose lowest value over the depths is highest wins, ties by the next lowest (leximin), still tied: split. A candidate must be strong at every depth: a dark horse with no top scores has 0 at depth 1, a polarizing one falls at the deep levels. Mostly agrees with Score; where they differ, a middle depth usually decides. Variants tried (relative values, other weights, a soft minimum, elimination, a Buck-set runoff, and others) were not better |
 | ESR | 0–5 | expanding support runoff (proposed in this lab): the ballots read as levels from the top score down, as for DMS. For every depth k (the top k levels) the candidates with the most score points from those levels join the set (all tied for most); at the full depth that is the score total, so the Score winner is always in it. A set of one wins outright; otherwise every ballot is stretched to the full range over the set (not rounded; a ballot rating the whole set alike counts for nobody) and the highest total wins. Tested as BSR-S (a variant counting voters instead of points, a Buck-set runoff, was weaker and is not in the lab); results stored under that name are read as ESR |
 
@@ -121,10 +123,12 @@ The grade a candidate reaches with a majority of the voters: the median grade, o
 | STAR | 0–5 | top two by total, majority runoff; a runoff tie goes to the higher total |
 | BTR-score | 0–5 | order by total score, bottom-two pairwise runoffs climbing up; a pairwise tie goes to the candidate higher in the score order (since 1.1.0; before, split evenly) |
 | MARS | 0–5 | as BTR-score; each match adds share preferring to score as share of maximum |
+| ESR-MARS | 0–5 | MARS among ESR's set: the candidates with the most score points from the top k levels, for every depth k (`buck(points)`), then MARS between them (the composition `buck(points) >> "MARS"`, [compositions.md](compositions.md)). Built in since 2026-11-06 (an add-on before) |
 | IC-MARS | 0–5 | MARS where a pairwise margin counts only beyond the votes rating both candidates at the top (tied at the top, as in [Improved Condorcet Approval](https://electowiki.org/wiki/Improved_Condorcet_Approval)): a margin those votes could reverse counts 0, so score weighs more |
 | MARS-T | 0–5 | MARS with each pairwise margin scaled by the share of ballots that score the two candidates differently (1 − share of equal scores): pairs that many voters do not tell apart are decided more by the score difference |
 | ARA | 0–5 | ratings above the middle of the range are approvals (0–5: 3–5; 0–10: 6–10); order by approvals; each match adds voters preferring to approvals (formerly MARA) |
 | ARA-Top | 0–5 | as ARA, but only the top score counts as approval |
+| ARA-C | 0–5 + cutoff | as ARA, but each voter sets their own approval cutoff on the score ballot (every candidate scored at or above it approved; [electowiki](https://electowiki.org/wiki/Approval_cutoff), without the neutral level). Honest cutoff: the lowest score among the candidates the voter's approval threshold approves. Since 2026-11-06 |
 | Score+ | 0–5 | simplified variant from the [votingtheory.org thread](https://www.votingtheory.org/forum/topic/138/score-interval-score-with-additional-protection-against-the-chicken-dilemma): A defeats B robustly if A's total minus the scores both share (per voter the lower of the two) still exceeds B's total. Robustly defeated candidates are eliminated, each voter's scores among the rest are stretched again to the full range, highest total wins |
 | 321 | three grades | 3-2-1 voting: 3 semifinalists with the most "good" (the third only with at least half as many as the first), of them 2 finalists with the fewest "bad", then the finalist rated above the other on more ballots. Ties: higher score (good 2, OK 1), then split. The party rule for semifinalists does not apply |
 | MMWV+Score | 0–5 | score share (total ÷ (voters × top score)) minus the worst defeat in winning votes as a share of voters; the highest wins (proposed in this lab; pairwise from the ratings) |

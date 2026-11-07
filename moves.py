@@ -10,6 +10,8 @@ moves against the naive exaggerations and push-over of the ranking-group model (
   put at the bottom; after a levelling step (upto, downfrom, below) they support exactly the others
   (after an upto: those at or above its level).
   A ballot with everything at one level gives the top grade to all (score formats).
+  Scores with an approval cutoff take their scores as score ballots do and their approvals as approval
+  ballots do (the cutoff then at the lowest score approved).
       ("top", X)          X above everyone
       ("bottom", Y)       Y below everyone
       ("above", X, Y)     X just above Y, where the voter prefers Y (the campaign move)
@@ -20,7 +22,7 @@ moves against the naive exaggerations and push-over of the ranking-group model (
 import numpy as np
 
 import methods
-from ballots import BALLOTS, cares, lazy_on, rank_ballots
+from ballots import BALLOTS, cares, cut_join, cut_parts, lazy_on, rank_ballots
 
 NUDGE = 1e-6     # top, bottom, above: this share of the voter's utility range beyond the others
 TIE = 1e-9       # ordinal formats: ties a move leaves are broken by the voter's own order, by this much
@@ -38,6 +40,7 @@ def _naive(ballot, A, B):
         "fav": [(("top", A),)], "fav_run": [(("top", A),)],
         "approval": [split], "app_run": [split],
         "score": [(("upto", A), ("downfrom", B)), split], "grade3": [(("upto", A), ("downfrom", B)), split],
+        "scorecut": [(("upto", A), ("downfrom", B)), split],
         "score_run": [(("upto", A), ("downfrom", B)), split],
         "strict": ranking,
         "rank": ranking + [(("below", A),), (("top", A), ("below", A))],
@@ -57,7 +60,7 @@ def _push(ballot, A, B, X):
         return None
     if ballot in ("fav", "fav_run"):
         return (("top", X),)
-    if ballot in ("approval", "app_run", "score", "grade3", "score_run"):
+    if ballot in ("approval", "app_run", "score", "grade3", "score_run", "scorecut"):
         return (("upto", A), ("below", A), ("top", X))
     if ballot == "trunc":
         return (("below", A), ("top", X))
@@ -163,6 +166,11 @@ def render(method, U0, move, sincere_rows, lazy, appr):
             keep = (sup if levelled else (X > 0) & ~low) & (R >= C - (min(methods.TRUNC3, C) if name == "trunc3" else C))
             kk = keep.sum(axis=1, keepdims=True)
             X = np.where(keep, R - (C - kk) + 1, 0.0)
+    if name == "scorecut":                                 # the cutoff as for approval, the scores as for score
+        Sc, a = cut_parts(X)
+        a = sup if levelled else a & ~low
+        Sc = np.where(flat, methods.MAXS, Sc)
+        return cut_join(Sc, a | flat)
     if name in ("score", "grade3", "score_run"):          # everything at one level: the top grade to all
         top = 2 if name == "grade3" else methods.MAXS
         X = np.where(flat, top * C if marks else top, X)

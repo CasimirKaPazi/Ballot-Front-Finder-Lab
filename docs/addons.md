@@ -51,6 +51,7 @@ All ballots of an election form a table `B` with one row per voter and one colum
 | `"fav"` | 1 for the one candidate named | `[0, 1, 0]` |
 | `"weak"` | levels, equal = tied (rankings with ties) | `[2, 2, 0]`: A = B > C |
 | `"grade3"` | 0, 1, 2 (bad, OK, good) | `[2, 0, 1]` |
+| `"scorecut"` | a score plus `methods.MAXS + 1` for every approved candidate (approved: scored at or above the voter's cutoff; `ballots.cut_parts` splits it) | `[11, 3, 0]` (0–5): A 5 and approved, B 3, C 0 |
 
 The others (`"fav_run"`, `"app_run"`, `"score_run"`, `"veto"`, `"trunc"`, `"trunc3"`, `"strict"`) are described at the top of `ballots.py`.
 

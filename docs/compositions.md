@@ -26,7 +26,7 @@ def blend(s, w):                 # values in, values out
 METHODS = {"Blend": composed(best(blend(share(score), worst(wv) / n)))}
 ```
 
-The code is in compose.py. Many built-in methods carry their composition as a comment in methods.py (`# composed: ...` above the method), for copying as a starting point (see Built-in methods as compositions, below).
+The code is in compose.py. Many built-in methods carry their composition as a comment in methods.py (`# composed: ...` above the method), for copying as a starting point (see Built-in methods as compositions, below). A few built-in methods are compositions themselves (`methods.BUILTIN_COMPOSED`, registered at start-up): ESR-MARS, `buck(points) >> "MARS"`.
 
 ## How a composition works
 

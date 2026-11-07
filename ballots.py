@@ -42,6 +42,9 @@ The encodings (see also methods.py):
   "trunc"    truncated ranking: the k ranked candidates get k ... 1, unranked ones 0 (tied last)
   "trunc3"   as trunc, at most TRUNC3 (3) ranked (IRV-3)
   "grade3"   three grades: 2 = good, 1 = OK, 0 = bad
+  "scorecut" scores with the voter's own approval cutoff: score (0..MAXS) + (MAXS+1) for every approved
+             candidate; the approved are always those scored at or above the cutoff (an upper set of the
+             scores; a cutoff does not split a score level), so the values keep the order of the scores
 
 The settings these depend on (score range MAXS, laziness LAZY, TRUNC3) are still kept in methods.py
 and read from there when a function is called.
@@ -130,6 +133,30 @@ def score_ballots(u, lazy=0.0):
     d = np.where(mx - mn > 1e-12, mx - mn, 1.0)
     B = np.rint(methods.MAXS * (u - mn) / d)
     return np.where(cares(u, lazy), B, 0.0) if lazy_on(lazy) else B
+
+
+def cut_parts(X):
+    """Scores with an approval cutoff (scorecut) -> (scores, approved)."""
+    a = X > methods.MAXS
+    return X - (methods.MAXS + 1) * a, a
+
+
+def cut_join(S, a):
+    """Scores and an approval set -> scorecut ballots. The cutoff is the lowest score of an approved
+    candidate, and everyone scored at or above it is approved (a cutoff cannot split a score level);
+    a ballot approving nobody approves its top score."""
+    a = np.asarray(a, bool)
+    none = ~a.any(axis=1)
+    t = np.where(a, S, np.inf).min(axis=1, keepdims=True)
+    t[none, 0] = S[none].max(axis=1)
+    return S + (methods.MAXS + 1) * (S >= t)
+
+
+def scorecut_ballots(u, lazy=0.0, draw=0.5):
+    """Score ballots (score_ballots) with the voter's own approval cutoff at the lowest score among the
+    candidates their honest approval threshold approves (approval_ballots, with laziness); candidates
+    tied with that score are approved too."""
+    return cut_join(score_ballots(u, lazy), approval_ballots(u, lazy, draw) > 0)
 
 
 def runoff_ranking(u, lazy=0.0):
@@ -341,6 +368,20 @@ def _mutate_score(b, rng):
     return b
 
 
+def _mutate_scorecut(b, rng):
+    """Half the time one score changes (as _mutate_score), the cutoff staying at its level; otherwise the
+    cutoff moves one score level up or down (the top score is always approved)."""
+    S, a = cut_parts(np.asarray(b, float)[None])
+    S, a = S[0].copy(), a[0]
+    t = S[a].min() if a.any() else S.max()
+    if rng.random() < 0.5:
+        S = _mutate_score(S, rng)
+    else:
+        t = min(max(t + (1 if rng.random() < 0.5 else -1), 0), methods.MAXS)
+    t = min(t, S.max())
+    return cut_join(S[None], (S >= t)[None])[0]
+
+
 def _mutate_grade3(b, rng):
     c = rng.integers(len(b))
     b[c] = (b[c] + 1 + rng.integers(2)) % 3
@@ -402,6 +443,18 @@ def _exag_levels(Ug, A, Bo, S):
 
 def _exag_score(Ug, A, Bo):
     return _exag_levels(Ug, A, Bo, methods.MAXS)
+
+
+def _exag_scorecut(Ug, A, Bo):
+    """The naive exaggerations of score ballots, each with the cutoff at A's score (A and everyone
+    scored as high approved)."""
+    return [cut_join(x[None], (x >= x[A])[None])[0] for x in _exag_score(Ug, A, Bo)]
+
+
+def _push_scorecut(Ug, A, Bo, X):
+    """The push-over of score ballots, approving A and X (and everyone scored as high as the lower)."""
+    x = _push_levels(lambda: methods.MAXS)(Ug, A, Bo, X)
+    return cut_join(x[None], (x >= min(x[A], x[X]))[None])[0]
 
 
 def _exag_grade3(Ug, A, Bo):
@@ -571,6 +624,11 @@ def _implied_score(X):
     return X / methods.MAXS
 
 
+def _implied_scorecut(X):
+    """What scores with a cutoff say: the scores (the cutoff adds no order the scores do not have)."""
+    return cut_parts(X)[0] / methods.MAXS
+
+
 def _implied_grade3(X):
     return X / 2
 
@@ -699,6 +757,8 @@ BALLOTS = {b.name: b for b in [
            lazy=True, approval=True, pushover=_push_approval),
     Ballot("score", score_ballots, _mutate_score, _exag_score, _implied_score, _worst_score,
            lazy=True, ordered=True, score_range=True, pushover=_push_levels(lambda: methods.MAXS)),
+    Ballot("scorecut", scorecut_ballots, _mutate_scorecut, _exag_scorecut, _implied_scorecut, _worst_score,
+           lazy=True, approval=True, ordered=True, score_range=True, pushover=_push_scorecut),
     Ballot("fav_run", fav_run_ballots, _mutate_fav_run, _exag_fav_run, _implied_marks, _worst_fav,
            marks=_marks_run, lazy=True, pushover=_push_fav_run),      # laziness: the runoff ranking only
     Ballot("app_run", app_run_ballots, _mutate_app_run, _exag_app_run, _implied_marks, _worst_approval,

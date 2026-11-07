@@ -457,6 +457,20 @@ def _nscore_sub(B):
     return out.reshape(n, -1)
 
 
+def _dmscore_sub(B):
+    """For every subset S (IMDS): the voter's highest-rated candidates in S raised to the top score, the
+    lowest in S struck (0), the others as given; 0 outside S. A ballot rating everyone in S alike counts
+    for nobody."""
+    n, C = B.shape
+    in_set = masks(C)[None]
+    scores = B[:, None, :]
+    lowest = np.where(in_set, scores, np.inf).min(axis=2, keepdims=True)
+    highest = np.where(in_set, scores, -np.inf).max(axis=2, keepdims=True)
+    top = in_set & (scores >= highest) & (highest > lowest)
+    above_lowest = in_set & (scores > lowest)
+    return np.where(top, MAXS, np.where(above_lowest, scores, 0.0)).reshape(n, -1)
+
+
 def _rb_sub(B):
     """For every subset S: the voter's share of a random-ballot lottery among S, their ballot's values
     on S divided by their sum (score, grades, approval, a single mark); 0 if they give S nothing."""
@@ -550,6 +564,7 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
                   lambda C: (C, C)),                                           # fav_run / app_run: runoff rankings
     "levels": (_levels, lambda C: (MAXS, C)),                                  # DMS: voters per score level
     "upper": (lambda B: B > MAXS / 2, lambda C: (C,)),                         # above the middle (0..5: 3-5)
+    "cutapp": (lambda B: B > MAXS, lambda C: (C,)),                             # approved: at or above the voter's cutoff (scorecut)
     "maxs": (lambda B: B >= MAXS, lambda C: (C,)),                            # top score only
     "pos": (lambda B: B > 0, lambda C: (C,)),
     "top": (lambda B: B == B.max(axis=1, keepdims=True), lambda C: (C,)),
@@ -571,6 +586,7 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "levelled": (_levelled, lambda C: (C, C)),
     "nscore_sub": (_nscore_sub, lambda C: (2 ** C, C)),
     "rb_sub": (_rb_sub, lambda C: (2 ** C, C)),
+    "dmscore_sub": (_dmscore_sub, lambda C: (2 ** C, C)),
     "diffhist": (_diff_hist, lambda C: (C, C, 2 * MAXS + 1)),
     **{f"soft{int(f * 100)}": ((lambda f: lambda B: _soft_margins(B, f))(f), lambda C: (C, C)) for f in (0.2, 0.4)},
     "firsts_ex": (_firsts_ex, lambda C: (2 ** C, C)),
@@ -662,8 +678,34 @@ def _nscore_sub_total(B):
 
 
 
+def _sub_extremes(B):
+    """Each voter's lowest and highest score in every subset (n x 2^C), built up by the lowest member."""
+    n, C = B.shape
+    lo = np.full((n, 2 ** C), np.inf)
+    hi = np.full((n, 2 ** C), -np.inf)
+    for S in range(1, 2 ** C):
+        c = (S & -S).bit_length() - 1
+        R = S & (S - 1)
+        lo[:, S] = np.minimum(lo[:, R], B[:, c])
+        hi[:, S] = np.maximum(hi[:, R], B[:, c])
+    return lo, hi
+
+
+def _dmscore_sub_total(B):
+    """Totals of _dmscore_sub: per score value k, the voters giving k to a candidate count MAXS where k is
+    their highest in S (above their lowest), k where it lies strictly between, else 0; one matrix product
+    per score value."""
+    n, C = B.shape
+    lo, hi = _sub_extremes(B)
+    out = np.zeros((2 ** C, C))
+    for k in np.unique(B):
+        Mk = MAXS * ((hi == k) & (hi > lo)) + k * ((lo < k) & (k < hi))
+        out += Mk.T @ (B == k).astype(float)
+    return (out * masks(C)).ravel()
+
+
 FEATURE_TOTALS = {"firsts": _firsts_total, "firsts_ex": _firsts_ex_total, "firsts_eq": _firsts_eq_total,
-                  "nscore_sub": _nscore_sub_total}
+                  "nscore_sub": _nscore_sub_total, "dmscore_sub": _dmscore_sub_total}
 
 
 # ---------- what a poll shows (docs/model.md, What a poll shows) ----------
@@ -1706,6 +1748,15 @@ def d_smith_score(s):
     return P
 
 
+def d_smith_approval(s):
+    """Smith//Approval: the most approved candidate of the Smith set (pairwise from the scores; equal
+    scores no preference; approval from the voter's own cutoff)."""
+    sm = smith_set(margins_of(s))
+    P = np.zeros(len(s["cutapp"]))
+    P[sm] = uniform_max(s["cutapp"][sm].astype(float))
+    return P
+
+
 def d_supplementary(s):
     """Supplementary vote: first and second preference count. The top two by first preferences go on;
     a ballot whose first preference is out counts for its second preference if that is a finalist."""
@@ -2067,6 +2118,9 @@ METHODS = {
     "Reciprocal score": M_("score", d_reciprocal_score, ("fset", "fsetB")),
     # composed: repeat(normalize >> drop(score))
     "INS": M_("score", d_iterated_normalized_score, ("nscore_sub",)),
+    # INS with ballots only maxed at the top and struck at the bottom: countable by hand (since 2026-11-06,
+    # an add-on before)
+    "IMDS": M_("score", lambda s: d_iterated_normalized_score(s, "dmscore_sub"), ("dmscore_sub",)),
     "DMS": M_("score", d_dms, ("levels",)),
     # composed: buck(points) >> normalize >> "Score"
     "ESR": M_("score", d_esr, ("levels", "nscore_sub")),
@@ -2084,6 +2138,8 @@ METHODS = {
     "MARS-T": M_("score", d_mars_t, ("n", "sum", "gt", "diffhist")),
     "ARA": M_("score", ara("upper"), ("upper", "gt")),          # ratings above the middle (0..5: 3-5) count as approval
     "ARA-Top": M_("score", ara("maxs"), ("maxs", "gt")),        # only the top score counts as approval
+    "ARA-C": M_("scorecut", ara("cutapp"), ("cutapp", "gt")),   # approval from the voter's own cutoff (since 2026-11-06)
+    "Smith//Approval": M_("scorecut", d_smith_approval, ("cutapp", "gt")),   # the most approved of the Smith set
     "Score+": M_("score", d_score_plus, ("sum", "excess", "keepnorm")),
     "321": M_("grade3", d_321, ("n", "ge2", "eq0", "sum", "gt")),
     # delegation: votes cast or filled in by the candidates (docs/methods.md, Asset voting)
@@ -2143,6 +2199,7 @@ POLL = {
     "Reciprocal score": (("first_split", "favscore"), _poll_reciprocal),
     "Score+": (("sum",), d_sum),                                                    # as Score
     "INS": (("sum",), d_sum),       # score elimination without renormalising elects the Score winner
+    "IMDS": (("sum",), d_sum),      # as INS (and as it was polled as an add-on)
     "ESR": (("sum",), d_sum),       # the Score winner is always in ESR's set, and without renormalising it wins
     "MARS-T": (("sum", "gt"), d_mars),                                              # as MARS
     "Soft Minimax-L": (("soft20",), soft_minimax("soft20")),                        # as Soft Minimax
@@ -2162,13 +2219,13 @@ GROUPS = {
     "condorcet": ["Ranked pairs", "Schulze", "Schulze-ER", "Kemeny-Young", "Copeland", "Copeland//Margins",
                   "Copeland//Margins-ER", "SICT"],
     "minimax-family": ["Minimax", "Minimax-ER", "MMWV", "MMPO", "MMPOWV"],
-    "condorcet-based": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score"],
+    "condorcet-based": ["Black", "Baldwin", "Baldwin-ER", "Nanson", "BTR-Borda", "BTR-IRV", "Benham", "Smith//Score", "Smith//Approval"],
     "plurality-based": ["Plurality", "Supplementary vote", "IRV", "ER-IRV", "IRV-3", "Coombs", "DSC", "DAC"],
     "approval-based": ["Approval", "MDDA", "MAMPO"],
-    "rated": ["Score", "Reciprocal score", "INS", "DMS", "ESR"],
+    "rated": ["Score", "Reciprocal score", "INS", "IMDS", "DMS", "ESR"],
     # median grade or Bucklin-like: the grade level at which a candidate reaches a majority
     "median-based": ["MJ", "MAV", "MCA"],
-    "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "MARS-T", "ARA", "ARA-Top", "Score+", "321", "MMWV+Score", "MMWVxScore", "STLR", "Soft Minimax",
+    "hybrid": ["STAR", "BTR-score", "MARS", "IC-MARS", "MARS-T", "ARA", "ARA-Top", "ARA-C", "Score+", "321", "MMWV+Score", "MMWVxScore", "STLR", "Soft Minimax",
                "Soft Minimax-40", "Soft Minimax-L", "Soft Minimax-D"],
     "positional": ["Borda", "Borda-ER", "Dowdall"],
     # candidates cast their voters' votes (asset voting) or fill in what voters leave blank (delegation)
@@ -2261,6 +2318,21 @@ def _load_addons(folder=ADDON_DIR):
             GROUPS.setdefault(group.get(k, "addons") if isinstance(group, dict) else group, []).append(k)
 
 
+# Built-in compositions (compose.py): registered here, after everything compose.py needs, like the
+# compositions of add-ons. name -> (composition, group).
+BUILTIN_COMPOSED = {
+    "ESR-MARS": ('buck(points) >> "MARS"', "hybrid"),    # MARS among ESR's set (since 2026-11-06, an add-on before)
+}
+
+
+def _load_builtin_composed():
+    import compose
+    for name, (text, group) in BUILTIN_COMPOSED.items():
+        METHODS[name] = compose.composed(compose.parse(text))
+        GROUPS[group].append(name)
+
+
+_load_builtin_composed()
 _load_addons()
 _grouped = [m for ms in GROUPS.values() for m in ms]
 assert sorted(_grouped) == sorted(METHODS), "every method must be in exactly one group"
@@ -2286,7 +2358,8 @@ COMPARISONS = {
 }
 
 COMPARISONS["extended"] = COMPARISONS["standard"] + ["ESR", "DMS", "Soft Minimax",
-                                                     "Soft Minimax-40", "MARS-T", "Asset", "Delegated 321"]
+                                                     "Soft Minimax-40", "MARS-T", "Asset", "Delegated 321",
+                                                     "IMDS", "ESR-MARS"]
 
 
 def follows_score_range(method):
