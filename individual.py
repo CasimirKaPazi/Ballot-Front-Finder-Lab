@@ -385,8 +385,13 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
     for v in range(n):
         types.setdefault(tuple(places[i] for i in order[v]), []).append(v)
 
-    def chances(D):
-        return count.decide_many(polls_T + D[None], C).mean(axis=0)
+    memo = {}
+
+    def chances(D):                                # the same change counted once per round (exactly equal)
+        key = np.round(D, 9).tobytes()
+        if key not in memo:
+            memo[key] = count.decide_many(polls_T + D[None], C).mean(axis=0)
+        return memo[key]
 
     def checked(D):                                # the second look (check_T), else the same polls
         return chances(D) if check_T is None else count.decide_many(check_T + D[None], C).mean(axis=0)
@@ -443,9 +448,13 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
         U = u[V]
         before = U @ P0
         EU = np.stack([U @ P_s] + [U @ P for P in Ps])     # sincere first
+        tr = memory.get("trust", {})
         for j in range(1, len(EU)):
-            rho = np.array([trust(memory, int(v), moves[j - 1]) for v in V])
             gain = EU[j] - before
+            if not tr or not (gain > 0).any():          # nobody's trust shaken yet, or no gain to discount
+                continue
+            ks = aims(moves[j - 1])                 # once per move, not per voter
+            rho = np.array([min((tr.get((int(v), k), (1.0, 1))[0] for k in ks), default=1.0) for v in V])
             EU[j] = before + np.where(gain > 0, rho * gain, gain)
         best = np.argmax(EU, axis=0)
         promised = {j: Ps[j - 1] for j in range(1, len(EU))}
