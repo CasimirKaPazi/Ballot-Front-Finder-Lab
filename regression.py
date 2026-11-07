@@ -19,7 +19,9 @@ of every row with the stored reference, regression.csv. It takes about a minute.
 
 Numbers count as equal within a relative tolerance of 1e-9 (rounding in the last digits can differ
 between numpy versions or machines); text columns must match exactly. The "version" column is not
-compared.
+compared. Rounding can also decide a near-tie differently on another machine (another BLAS kernel):
+a voter choosing between two moves of equal value, so a share changes by one voter (1/25) and what follows
+from it. Such differences are not a bug; the reference is best made on the machine that checks it (--update).
 """
 import argparse
 import csv
