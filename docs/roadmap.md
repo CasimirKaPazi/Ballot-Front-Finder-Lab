@@ -20,8 +20,7 @@ When an item is done, it moves out of this file into the [journal](journal.md), 
 
 ## Methods and Compositions
 
-- **More winning sets in the composition pipeline**: the Schwartz set, the CDTT set and the Banks set, as filters like the Smith set ([compositions.md](compositions.md)).
-- **Intermediate steps as parts**, such as MJ's set of median winners before its tie-break, so that methods can be compared on what they share, independently of their tie-breakers.
+- **More intermediate steps as parts**, so that methods can be compared on what they share, independently of their tie-breakers. Since 2026-11-08 the lab has the Schwartz, CDTT and Banks sets, IMDS's steps and MJ's median ([compositions.md](compositions.md)). Still missing, for example: the uncovered set; MJ's tie-break and MAV's grade-by-grade count as parts; DMS's depths.
 - **A brute-force reference method.** Take the winners of all methods as a new field and hold a new election among them under all methods; repeat as long as the set changes. When it no longer changes, drop the candidates with the fewest wins (or break the tie otherwise, or by random ballot). Where the methods agree, this finds what they agree on; as a reference it shows how far a single method is from the consensus of all.
 - **Multi-winner results.** Compositions that end in a set of k winners (committees) with the same machinery ([compositions.md](compositions.md), Next).
 

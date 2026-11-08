@@ -941,7 +941,9 @@ for _tx, _msg in [("top(2, smith)", "top needs values, smith is a set"),
                   ("repeat(score)", "repeat takes sets"), ("drop(margins)", "drop needs values"),
                   ('ballots("score") >> best(firsts)', "firsts needs rankings"),
                   ('normalize >> best(levels)', "best needs values"),
-                  ('normalize >> "MJ"', "normalize does not provide"),
+                  ('normalize >> "MJ"', "not available after normalize"),
+                  ('max_top >> best(median)', "not available after max_top"),
+                  ('ballots("rank") >> zero_bottom >> "Borda"', "zero_bottom needs score ballots"),
                   ("smith >> score", "a composition ends in"),
                   ('__import__("os")', "unknown part"), ('smith >> "Nope"', "unknown method")]:
     try:
@@ -1854,3 +1856,43 @@ _Bsa = np.array([[5 + _k, 4 + _k, 1, 3 + _k]] * 4 +            # A > B > D > C, 
 assert np.allclose(METHODS["Smith//Approval"].tally(_Bsa), [0, 1, 0, 0])
 assert np.allclose(METHODS["Approval"].tally(_bl.cut_parts(_Bsa)[1].astype(float)), [0, 0, 0, 1])   # Approval: D
 print("scores with an approval cutoff ok")
+# composition parts of 2026-11-08: the Schwartz, CDTT and Banks sets, IMDS's steps, MJ's median
+import compose as _cp3
+_tour = np.zeros((4, 4))                       # A>B, B>C, C>A, A>D, D>B, D>C (each by 1)
+for _i, _j in [(0, 1), (1, 2), (2, 0), (0, 3), (3, 1), (3, 2)]:
+    _tour[_i, _j], _tour[_j, _i] = 1, -1
+assert _cp3._schwartz_of(_tour > 0) == [0, 1, 2, 3]              # one cycle through all four
+assert _cp3._banks_of(_tour > 0) == [0, 2, 3]                    # D covers B: B tops no maximal chain
+assert sorted(_mm.smith_set(_tour)) == [0, 1, 2, 3]
+# CDTT: majority defeats count all voters. 2 voters A5 B5, 1 voter A5 B0, 2 voters A0 B5: B is
+# preferred by 2 of 5, A by 1 of 5, so nobody has a majority over the other and both stay; Schwartz
+# (by margins) keeps only B
+_Bcd = np.array([[5, 5]] * 2 + [[5, 0]] + [[0, 5]] * 2, float)
+assert np.allclose(_cp3.composed(_cp3.parse("cdtt >> random_ballot")).tally(_Bcd) > 0, [True, True])
+assert np.allclose(_cp3.composed(_cp3.parse("schwartz")).tally(_Bcd), [0, 1])
+# median: the lower median as MJ reads it; best(median) holds MJ's winner
+_rmd = np.random.default_rng(41)
+for _ in range(100):
+    _Bm = _rmd.integers(0, _mm.MAXS + 1, (int(_rmd.integers(3, 20)), int(_rmd.integers(2, 6)))).astype(float)
+    _med = np.sort(_Bm, axis=0)[(len(_Bm) - 1) // 2]
+    _bm = _cp3.composed(_cp3.parse("best(median)")).tally(_Bm)
+    assert np.allclose(_bm > 0, _med == _med.max())
+    assert (_bm[METHODS["MJ"].tally(_Bm) > 0] > 0).all()
+# IDS (the add-on) is repeat(zero_bottom >> drop(score)); IMDS is in the built-in comparison above
+if "IDS" in METHODS:
+    _ids = _cp3.composed(_cp3.parse("repeat(zero_bottom >> drop(score))"))
+    for _ in range(150):
+        _Bi = _rmd.integers(0, _mm.MAXS + 1, (int(_rmd.integers(3, 25)), int(_rmd.integers(2, 7)))).astype(float)
+        assert np.allclose(METHODS["IDS"].tally(_Bi), _ids.tally(_Bi)), _Bi.tolist()
+# max_top >> zero_bottom by hand: 5 3 1 0 | 2 4 4 1 -> 2 5 5 0 | 0 1 5 3: totals A 7, B 9, C 11, D 3
+_Bh = np.array([[5, 3, 1, 0], [2, 4, 4, 1], [0, 1, 5, 3]], float)
+assert np.allclose(_cp3.composed(_cp3.parse('max_top >> zero_bottom >> "Score"')).tally(_Bh), [0, 0, 1, 0])
+# IMDS's steps from the subset table and counted from the ballots (exact) agree
+_imc = _cp3.composed(_cp3.parse("repeat(max_top >> zero_bottom >> drop(score))")).__dict__["composition"]
+for _ in range(150):
+    _nv, _C = int(_rmd.integers(3, 25)), int(_rmd.integers(2, 7))
+    _Bx = _rmd.integers(0, _mm.MAXS + 1, (_nv, _C)).astype(float)
+    _sx = {"dmscore_sub": _mm.FEATURES["dmscore_sub"][0](_Bx).reshape(_nv, -1).sum(0).reshape(2 ** _C, _C)}
+    assert np.allclose(_cp3.evaluate(_imc, _sx, _C, "score"), _cp3.evaluate(_imc, _sx, _C, "score", B=_Bx, exact=True))
+print("composition sets and steps ok")
+

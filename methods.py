@@ -2120,6 +2120,7 @@ METHODS = {
     "INS": M_("score", d_iterated_normalized_score, ("nscore_sub",)),
     # INS with ballots only maxed at the top and struck at the bottom: countable by hand (since 2026-11-06,
     # an add-on before)
+    # composed: repeat(max_top >> zero_bottom >> drop(score))
     "IMDS": M_("score", lambda s: d_iterated_normalized_score(s, "dmscore_sub"), ("dmscore_sub",)),
     "DMS": M_("score", d_dms, ("levels",)),
     # composed: buck(points) >> normalize >> "Score"

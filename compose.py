@@ -21,15 +21,19 @@ Parts:
     readings   score (totals; on two-round ballots the round-1 marks), firsts (first preferences among
                the field, rankings), held (after proxy: the votes each candidate holds), margins, wv (winning votes), po (pairwise opposition), soft(f)
                (soft margins, 0 < f <= 1), n (voters), levels (voters per score level, top first),
-               points (the same times the level's score), approvals(k) (voters scoring at least k)
+               points (the same times the level's score), approvals(k) (voters scoring at least k),
+               median (each candidate's lower median score, as MJ)
     arithmetic share(values) = values / (n x top score); worst(pairs) (each candidate's worst defeat);
                total(pairs) (row sums); diff(values) (pairs: row minus column); + - * / and unary minus
-    sets       smith, best(values), top(k, values), drop(values) (all but the lowest), buck(levels or
+    sets       smith, schwartz, cdtt (majority defeats by more than half of all voters), banks (tops of
+               the maximal chains), best(values), top(k, values), drop(values) (all but the lowest), buck(levels or
                points), challenger(set, pairs), bottom_two(order, pairs[, tiebreak]) (one round of
                bottom-two runoff), btr(order, pairs[, tiebreak]) (the bottom-two climb: the winner),
                repeat(steps) (until one is left or nothing changes); a | b, a & b. Ties branch; the
                same part twice in one set expression takes the same branch
-    transforms normalize (score ballots stretched over the current field, not rounded); proxy,
+    transforms normalize (score ballots stretched over the current field, not rounded); max_top (each
+               ballot's highest-rated in the field count the top score), zero_bottom (its lowest-rated
+               count 0), IMDS's steps; proxy,
                proxy("type") (asset voting: every vote given to candidates as the voter's ballot
                divides it, and cast from then on by them with their own ballots of the type; inside a
                repeat, the votes of candidates who are out are passed on round by round)
@@ -59,7 +63,7 @@ from ballots import BALLOTS
 CAND0 = {"sum", "app", "run_sum", "maxs", "pos", "upper", "ge1", "ge2", "eq0", "grades"}   # axis 0 is the candidate
 CAND1 = {"levels"}                                                                     # axis 1 is the candidate
 PAIR = {"gt", "runoff_gt", "round1_gt", "excess", "soft20", "soft40", "levelled", "diffhist"}   # axes 0, 1
-AMONG = {"firsts", "firsts_eq", "firsts_ex", "lasts", "keepnorm", "nscore_sub", "rb_sub"}   # per subset, among it
+AMONG = {"firsts", "firsts_eq", "firsts_ex", "lasts", "keepnorm", "nscore_sub", "dmscore_sub", "rb_sub"}   # per subset, among it
 SCALAR = {"n"}
 # after normalize: features that keep their meaning (order among candidates, or already stretched per
 # subset); "sum" becomes the normalized scores
@@ -151,12 +155,9 @@ def _sub_index(field, C):
     return idx
 
 
-def restrict(s, f, field, C, norm=None):
-    """Feature f's sum on the field (a list of candidates). norm: the field normalize stretched over
-    (then "sum" is the normalized scores)."""
+def restrict(s, f, field, C):
+    """Feature f's sum on the field (a list of candidates)."""
     F = list(field)
-    if f == "sum" and norm is not None:
-        return s["nscore_sub"][int(sum(1 << c for c in norm))][F]
     x = s[f]
     if len(F) == C:
         return x
@@ -173,6 +174,52 @@ def restrict(s, f, field, C, norm=None):
         sub = x[_sub_index(F, C)]
         return sub[:, F] if sub.ndim == 2 else sub
     raise KeyError(f)
+
+
+# ---------- score transforms (normalize, max_top, zero_bottom) ----------
+# The state keeps the transforms applied so far as a tuple of (name, field) steps. A score total after
+# them comes from a table over every subset where the lab keeps one (nscore_sub: normalize; dmscore_sub:
+# max_top and zero_bottom on the same field, as IMDS), else from the ballots (the exact fallback).
+TRANSFORMS = ("normalize", "max_top", "zero_bottom")
+
+
+def _table(ops):
+    """The subset table that gives the score totals after these transforms, or None. ops: the names in
+    order, each with a mark of the field it acted on (the same mark: the same field)."""
+    names = [o for o, _ in ops]
+    if names == ["normalize"]:
+        return "nscore_sub"
+    if sorted(names) == ["max_top", "zero_bottom"] and ops[0][1] == ops[1][1]:
+        return "dmscore_sub"
+    return None
+
+
+def _apply(op, X):
+    """One score transform on ballots X (voters x the field it acts on)."""
+    if op == "normalize":
+        return normalize_ballots(X)
+    lo, hi = X.min(axis=1, keepdims=True), X.max(axis=1, keepdims=True)
+    if op == "max_top":                # the highest-rated count the top score; a ballot rating all alike stays
+        return np.where((X >= hi) & (hi > lo), float(M.MAXS), X)
+    return np.where(X <= lo, 0.0, X)    # zero_bottom: the lowest-rated count 0 (all alike: 0 for all)
+
+
+def transform_ballots(B, norm, field):
+    """Score ballots after the transforms norm ((name, field) steps, fields narrowing), on the field."""
+    Y = np.asarray(B, float).copy()
+    for op, F in norm:
+        F = list(F)
+        Y[:, F] = _apply(op, Y[:, F])
+    return Y[:, list(field)]
+
+
+def _sum_need(ctx):
+    """What a score total needs after the transforms so far: a subset table, else the exact fallback."""
+    t = _table(ctx["tops"])
+    if t is not None:
+        return _need(t, ctx)
+    ctx["fallback"].add("sum")
+    return set()
 
 
 # ---------- the parts ----------
@@ -265,10 +312,10 @@ class Reading(Part):
         if self.scored and not (rated(b) and BALLOTS[b].score_range):
             raise CompositionError(f"{self.name} needs score ballots, not {b}")
         if self.scored and ctx["normalized"] and not ctx["poll"]:
-            raise CompositionError(f"{self.name} is not defined after normalize (stretched scores are not rounded)")
+            raise CompositionError(f"{self.name} is not available after {', '.join(o for o, _ in ctx['tops'])}")
         f = self.feat(b)
         if f == "sum" and ctx["normalized"] and not ctx["poll"]:
-            return {"nscore_sub"}
+            return _sum_need(ctx)
         return _need(f, ctx)
 
     def value(self, st):
@@ -336,6 +383,17 @@ def approvals(level):
             raise CompositionError(f"approvals({level}) is above the top score {len(x)}")
         return _f(x)[:len(x) - level + 1].sum(axis=0)       # levels: top score first
     return Reading(f"approvals({level})", "values", lambda b: "levels", fn, scored=True)
+
+
+def _median(x, st):
+    """Each candidate's median score (the lower median, as majority judgment reads it), from the voters
+    per score (grades: h[c, g] voters giving c the score g)."""
+    h = M._common_total(np.asarray(x, float))
+    pos = M.mj_order(int(round(h[0].sum())))[0]
+    return (np.cumsum(h, axis=1) <= pos).sum(axis=1).astype(float)
+
+
+median = Reading("median", "values", lambda b: "grades", _median, scored=True)
 
 
 FIRSTS = {"rank": "firsts", "strict": "firsts", "trunc": "firsts_ex", "trunc3": "firsts_ex", "weak": "firsts_eq"}
@@ -517,6 +575,98 @@ class Smith(Set):
 
 
 smith = Smith()
+
+
+def _closure(R):
+    """Transitive closure of a boolean relation (beatpaths)."""
+    R = R.copy()
+    for k in range(len(R)):
+        R |= R[:, [k]] & R[[k], :]
+    return R
+
+
+def _schwartz_of(D):
+    """The candidates i such that whoever has a path of defeats D to i, i has one back: the union of
+    the minimal sets no outsider defeats."""
+    R = _closure(D)
+    return [i for i in range(len(D)) if all(R[i, j] or not R[j, i] for j in range(len(D)))]
+
+
+class Schwartz(Set):
+    def text(self):
+        return "schwartz"
+
+    def check(self, ctx):
+        return margins.check(ctx)
+
+    def field(self, st):
+        D = margins.value(st) > M.EPS                    # strict pairwise defeats
+        return [st.field[i] for i in _schwartz_of(D)]
+
+
+schwartz = Schwartz()
+
+
+class CDTT(Set):
+    def text(self):
+        return "cdtt"
+
+    def check(self, ctx):
+        return po.check(ctx) | n.check(ctx)
+
+    def field(self, st):
+        D = po.value(st) > n.value(st) / 2 + M.EPS      # majority defeats: more than half of all voters
+        return [st.field[i] for i in _schwartz_of(D)]
+
+
+cdtt = CDTT()
+
+_BANKS = {}
+
+
+def _banks_of(D):
+    """The tops of the maximal chains: subsets ordered by strict defeats D with every pair decided and no
+    cycle, that no further candidate can join; ties keep a pair out of a chain."""
+    key = D.tobytes()
+    if key in _BANKS:
+        return _BANKS[key]
+    k = len(D)
+    beats = [sum(1 << j for j in range(k) if D[i, j]) for i in range(k)]
+    dec = [sum(1 << j for j in range(k) if D[i, j] or D[j, i]) for i in range(k)]
+    chain = [False] * (1 << k)
+    chain[0] = True
+    for S in range(1, 1 << k):
+        i = (S & -S).bit_length() - 1
+        rest = S & ~(1 << i)
+        # S is a chain if S minus i is one, i is decided against all of it, and i's wins within S
+        # differ from everyone else's (a transitive tournament has wins k-1, ..., 0)
+        if chain[rest] and (dec[i] & rest) == rest:
+            wins = sorted(bin(beats[j] & S).count("1") for j in range(k) if S >> j & 1)
+            chain[S] = wins == list(range(len(wins)))
+    out = set()
+    for S in range(1, 1 << k):
+        if chain[S] and not any(chain[S | 1 << x] for x in range(k) if not S >> x & 1):
+            members = [j for j in range(k) if S >> j & 1]
+            out.add(max(members, key=lambda j: bin(beats[j] & S).count("1")))
+    res = sorted(out)
+    if len(_BANKS) < 100000:
+        _BANKS[key] = res
+    return res
+
+
+class Banks(Set):
+    def text(self):
+        return "banks"
+
+    def check(self, ctx):
+        return margins.check(ctx)
+
+    def field(self, st):
+        D = margins.value(st) > M.EPS
+        return [st.field[i] for i in _banks_of(D)]
+
+
+banks = Banks()
 
 
 class Best(Set):
@@ -736,7 +886,9 @@ class Repeat(Set):
         # every round after the first is on a narrower field; with a proxy inside, the voters' ballots
         # are only read in the first round (later rounds count the candidates' ballots)
         has_proxy = any(isinstance(p, Proxy) for p in _walk(self.inner))
-        c = {**ctx} if has_proxy else {**ctx, "narrowed": True}
+        c = {**ctx, "tops": list(ctx["tops"]), "nset": ctx["nset"] + 1}
+        if not has_proxy:
+            c["narrowed"] = True
         feats = set()
         for p in self.inner.steps:
             feats |= p.check(c)
@@ -744,9 +896,10 @@ class Repeat(Set):
                 p.after(c)
             elif p.kind == "set":
                 c["narrowed"] = True
+                c["nset"] += 1
         ctx["fallback"] |= c["fallback"]
         if c.get("proxied"):                                     # proxy changes the ballots for good
-            ctx.update(proxied=True, normalized=False, poll=False, ballot=c["ballot"])
+            ctx.update(proxied=True, normalized=False, poll=False, ballot=c["ballot"], tops=[])
         return feats
 
     def branches(self, st, memo):
@@ -834,25 +987,36 @@ class SetOp(Set):
         return out
 
 
-class Normalize(Part):
+class ScoreTransform(Part):
+    """A transform of the score ballots over the current field (normalize, max_top, zero_bottom)."""
     kind = "transform"
 
+    def __init__(self, name):
+        self.name = name
+
     def text(self):
-        return "normalize"
+        return self.name
 
     def check(self, ctx):
         if not rated(ctx["ballot"]) or not BALLOTS[ctx["ballot"]].score_range:
-            raise CompositionError(f"normalize needs score ballots, not {ctx['ballot']}")
+            raise CompositionError(f"{self.name} needs score ballots, not {ctx['ballot']}")
         return set()
 
     def after(self, ctx):
         ctx["normalized"] = True
+        step = (self.name, ctx["nset"])
+        # normalize after anything gives what normalize alone gives (it stretches every ballot anew)
+        ctx["tops"] = [step] if self.name == "normalize" else ctx["tops"] + [step]
 
     def transform(self, st):
-        return st.but(norm=tuple(st.field))
+        step = (self.name, tuple(st.field))
+        return st.but(norm=(step,) if self.name == "normalize" or st.norm is None else st.norm + (step,))
 
 
-normalize = Normalize()
+normalize = ScoreTransform("normalize")
+max_top = ScoreTransform("max_top")
+zero_bottom = ScoreTransform("zero_bottom")
+Normalize = ScoreTransform
 
 
 VOTER_SHARES = ("fav", "rank", "strict", "weak", "trunc", "trunc3", "approval", "score", "grade3")
@@ -903,7 +1067,7 @@ class Proxy(Part):
         return firsts.check(ctx) if b in FIRSTS or b == "fav" else _need(M.SHARE_FEATURE[b], ctx)
 
     def after(self, ctx):
-        ctx.update(proxied=True, normalized=False, poll=False, ballot=self._type(ctx))
+        ctx.update(proxied=True, normalized=False, poll=False, ballot=self._type(ctx), tops=[])
 
     def transform(self, st):
         pt = self._type(st)
@@ -992,8 +1156,9 @@ class Quoted(Part):
         if ctx["normalized"] and not ctx["poll"]:
             bad = [f for f in m.feats if f not in AFTER_NORMALIZE]
             if bad:
-                raise CompositionError(f"{self.name} reads {', '.join(bad)}, which normalize does not provide")
-            return set().union(*[_need("nscore_sub" if f == "sum" else f, ctx) for f in m.feats])
+                raise CompositionError(f"{self.name} reads {', '.join(bad)}, which is not available after "
+                                       f"{', '.join(o for o, _ in ctx['tops'])}")
+            return set().union(*[_sum_need(ctx) if f == "sum" else _need(f, ctx) for f in m.feats])
         return set().union(*[_need(f, ctx) for f in m.feats])
 
     def lottery(self, st):
@@ -1143,24 +1308,26 @@ class State:
         if f in self.cache:
             return self.cache[f]
         norm = None if self.poll else self.norm
-        have = f in self.s or (f == "sum" and norm is not None and "nscore_sub" in self.s)
-        full = len(self.field) == self.C and (f != "sum" or norm is None)
-        if self.B is None or (have and (full or (not self.exact and
-                                                  (restrictable(f, self.ballot) or (f == "sum" and norm is not None))))):
-            x = restrict(self.s, f, self.field, self.C, norm)
-        else:
-            W = None if self.W is None else self.W[:, None]    # after proxy: each ballot weighted
-            if f == "sum" and norm is not None:          # the ballots stretched over the field normalize saw
-                Bn = normalize_ballots(self.B[:, list(norm)])
-                pos = {c: i for i, c in enumerate(norm)}
-                Bn = Bn[:, [pos[c] for c in self.field]]
+        W = None if self.W is None else self.W[:, None]        # after proxy: each ballot weighted
+        if f == "sum" and norm is not None:                   # scores after normalize, max_top, zero_bottom
+            t = _table([(o, F) for o, F in norm])
+            if t is not None and t in self.s and (self.B is None or not self.exact):
+                x = self.s[t][int(sum(1 << c for c in norm[0][1]))][list(self.field)]
+            else:                                              # the transformed ballots, on the field
+                Bn = transform_ballots(self.B, norm, self.field)
                 x = (Bn if W is None else Bn * W).sum(axis=0)
-            else:
-                Bf = self.B if len(self.field) == self.C else restrict_ballots(self.B, self.field, self.ballot)
-                k = len(self.field)
-                X = M.FEATURES[f][0](Bf).reshape(len(Bf), -1).astype(float)
-                x = (X if W is None else X * W).sum(axis=0).reshape(M.FEATURES[f][1](k))
-                x = x if x.shape else float(x)
+            self.cache[f] = x
+            return x
+        have = f in self.s
+        full = len(self.field) == self.C
+        if self.B is None or (have and (full or (not self.exact and restrictable(f, self.ballot)))):
+            x = restrict(self.s, f, self.field, self.C)
+        else:
+            Bf = self.B if len(self.field) == self.C else restrict_ballots(self.B, self.field, self.ballot)
+            k = len(self.field)
+            X = M.FEATURES[f][0](Bf).reshape(len(Bf), -1).astype(float)
+            x = (X if W is None else X * W).sum(axis=0).reshape(M.FEATURES[f][1](k))
+            x = x if x.shape else float(x)
         self.cache[f] = x
         return x
 
@@ -1187,7 +1354,7 @@ def check(expr, ballot, poll=False):
     """Static check of the whole composition: (features needed from totals, features that need the
     exact fallback)."""
     ctx = {"ballot": ballot, "narrowed": False, "normalized": False, "poll": poll, "fallback": set(),
-           "proxy_type": proxy_type(expr)}
+           "proxy_type": proxy_type(expr), "tops": [], "nset": 0}
     feats = set()
     _final(expr)
     for p in _steps(expr):
@@ -1196,6 +1363,7 @@ def check(expr, ballot, poll=False):
         feats |= p.check(ctx)
         if p.kind == "set":
             ctx["narrowed"] = True
+            ctx["nset"] += 1
         elif p.kind == "transform":
             p.after(ctx)
     return feats, ctx["fallback"]
@@ -1288,7 +1456,7 @@ def composed(expr, ballot=None):
     poll = None
     if pfallback or not all(M.poll_like(f) for f in pfeats):
         poll = None                     # the lab's default poll reading (score totals or first preferences)
-    elif fallback or set(pfeats) != set(feats) or any(isinstance(p, Normalize) for p in parts) or \
+    elif fallback or set(pfeats) != set(feats) or any(isinstance(p, ScoreTransform) for p in parts) or \
             any(p.method.poll_view() is not p.method for p in parts if isinstance(p, Quoted)):
         poll = (tuple(sorted(pfeats)), lambda s: evaluate(expr, s, _C_of(s), ballot, poll=True, pt=pt))
     if fallback:                        # counted from the ballots (features of the field as needed)
@@ -1315,7 +1483,8 @@ def composed(expr, ballot=None):
 
 # ---------- reading the text ----------
 NAMES = {"score": score, "margins": margins, "wv": wv, "po": po, "n": n, "levels": levels, "points": points,
-         "firsts": firsts, "smith": smith, "normalize": normalize, "runoff": runoff, "random_ballot": random_ballot,
+         "firsts": firsts, "median": median, "smith": smith, "schwartz": schwartz, "cdtt": cdtt, "banks": banks,
+         "normalize": normalize, "max_top": max_top, "zero_bottom": zero_bottom, "runoff": runoff, "random_ballot": random_ballot,
          "proxy": proxy, "delegate": delegate, "held": held}
 CALLS = {"share": share, "worst": worst, "total": total, "diff": diff, "best": best, "top": top, "buck": buck,
          "drop": drop, "btr": btr, "bottom_two": bottom_two, "repeat": repeat, "ballots": ballots, "challenger": challenger, "soft": soft,

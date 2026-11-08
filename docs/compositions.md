@@ -33,7 +33,7 @@ The code is in compose.py. Many built-in methods carry their composition as a co
 A composition is a chain of steps, joined by `>>` (read "then"). It works on two things: the **field**, the candidates still in, and the **readings** of the ballots known so far (score totals, the pairwise matrix, ...). Each step changes only what it is about:
 
 - a **set** (`smith`, `top(2, score)`, ...) narrows the field and leaves the readings as they are;
-- a **transform** (`normalize`) replaces a reading; later steps see the new one;
+- a **transform** (`normalize`, `max_top`, `zero_bottom`) replaces a reading; later steps see the new one;
 - a **reading** or a **last step** takes the latest version of what it needs, on the current field.
 
 So `smith >> "Score"` is: the score ballots; `smith` narrows the field to the Smith set and leaves the scores untouched; `"Score"` takes the same score totals, on the Smith set only, and the highest wins. That is Smith//Score.
@@ -57,6 +57,7 @@ So `smith >> "Score"` is: the score ballots; `smith` narrows the field to the Sm
 | `levels` | per level | voters per score level and candidate, top level first (score ballots) |
 | `points` | per level | the same, each level weighted by its score (the top level of 0–5 counts 5 per voter, the next 4, ...) |
 | `approvals(k)` | values | voters scoring a candidate at least k (score ballots) |
+| `median` | values | each candidate's median score, the lower median as majority judgment reads it (score ballots). `best(median)` is MJ's set of median winners, before its tie-break |
 
 On two-round ballots the pairwise readings come from the round-1 marks; the runoff rankings are read only by `runoff`.
 
@@ -77,6 +78,9 @@ A set narrows the field. A tie inside a set branches: each way the tie can go is
 | Part | Meaning |
 |---|---|
 | `smith` | the Smith set: the smallest set of candidates each of whom beats or ties everyone outside it head to head |
+| `schwartz` | the Schwartz set: the candidates who, if anyone has a path of pairwise defeats to them, have one back (the union of the smallest sets nobody outside defeats). Only strict defeats count, so ties can make it smaller than the Smith set; without ties the two are the same |
+| `cdtt` | Woodall's CDTT set: the Schwartz set of majority defeats, where A defeats B only if more than half of all voters prefer A to B. Voters who rate the two alike or leave them unranked count against both, so with ties or truncated ballots the set is larger than the Schwartz set; with complete strict rankings and an odd number of voters the three sets agree |
+| `banks` | the Banks set: the top candidates of the maximal chains, subsets in which every pair is decided and the defeats run in one order, that no further candidate can join (a tied pair cannot both be in a chain). Within the Smith set (within the uncovered set, for a complete tournament); counted over every subset of the field |
 | `best(values)` | everyone tied for the highest value (no branching: the tied candidates stay together) |
 | `top(k, values)` | the k highest; a tie at the k-th place branches with equal weights. `top(1, ...)` is "the highest", with a tie branching |
 | `drop(values)` | everyone but the lowest; a tie for lowest branches (each of them dropped, equal weights) |
@@ -100,7 +104,11 @@ A set narrows the field. A tie inside a set branches: each way the tie can go is
 | Part | Meaning |
 |---|---|
 | `normalize` | every score ballot stretched over the current field: its lowest candidate there 0, its highest the top score, the rest in proportion; not rounded. A ballot that rates the whole field alike counts 0 for all. Later steps read these scores (`score`, and a quoted method's score totals). Pairwise readings are unchanged, since stretching keeps each ballot's order |
+| `max_top` | every score ballot's highest-rated candidates in the current field count the top score, the rest as given; a ballot rating the whole field alike is left as it is. The first step of IMDS |
+| `zero_bottom` | every score ballot's lowest-rated candidates in the current field count 0, the rest as given; a ballot rating the whole field alike counts 0 for all. The second step of IMDS: `repeat(max_top >> zero_bottom >> drop(score))` is IMDS, `repeat(zero_bottom >> drop(score))` IDS (the add-on) |
 | `proxy`, `proxy("type")` | asset voting ([methods.md](methods.md), Asset voting and delegation): every vote is given to candidates of the current field as the voter's ballot divides it (`methods.vote_shares`: one name or a ranking to the first choice; approval in equal parts to the approved, as a cumulative vote; scores and grades by the Kotze-Pereira transformation), and from then on the candidates cast it, each with their own sincere ballot of the type given. A bare `proxy` takes the ballot type of the composition's last quoted method, else rankings; the candidates' type must order more than one candidate (not one name, veto or two-round). The electorate is then the candidates, each weighted by the votes they hold, and every later reading counts their ballots. A candidate who is out of the field still holds their votes, and the readings follow that candidate's own ballot among the field. Inside a `repeat` the holdings carry over: a proxy in a later round passes everything a candidate out of the field holds on as their own ballot divides a vote, and candidates in the field keep what they hold. So `repeat(proxy >> drop(firsts))` passes piles by the holder's list, and `proxy >> repeat(drop(firsts))` by the list of the candidate a vote first went to. In a poll only the holdings come from the poll; what the candidates' ballots then give is counted exactly |
+
+**Several transforms.** Transforms act in turn, each on the ballots as the one before left them and on the field at its step. `normalize` after any of them gives what `normalize` alone gives, since it stretches every ballot anew. Scores after `max_top` and `zero_bottom` keep each ballot's order, so the pairwise readings and first preferences are unchanged, as after `normalize`; readings by score level (`levels`, `points`, `approvals`, `median`) are not available after any transform. Score totals after the transforms come from totals over every subset where the lab keeps them (`normalize` alone; `max_top` and `zero_bottom` on the same field, as in IMDS), else from the ballots (the exact fallback).
 
 ### Last steps
 
@@ -125,7 +133,7 @@ On two-round ballots, a quoted method of the first round's type counts the round
 Voters see a poll only as totals a real poll could publish ([model.md](model.md), What a poll shows), so every composition has a poll view, built from its parts:
 
 - if every reading of the composition is such a total (per candidate, per pair, per score level), the composition counts its own polls;
-- otherwise each part brings its poll reading: `normalize` counts as nothing (the raw scores); a quoted method counts by its own poll view (its stand-in, if it has one); `firsts` is estimated from the first preferences and the transfer table, as the IRV family's stand-in;
+- otherwise each part brings its poll reading: `normalize`, `max_top` and `zero_bottom` count as nothing (the raw scores); a quoted method counts by its own poll view (its stand-in, if it has one); `firsts` is estimated from the first preferences and the transfer table, as the IRV family's stand-in;
 - a composition whose poll would itself need the exact fallback is polled by the lab's default poll reading: score totals on score ballots, first preferences otherwise.
 
 What a poll publishes also shapes the voters' arithmetic: individual voters project their moves on every published total. ESR written as a composition publishes the score levels (which `buck` reads) besides the score totals, while the hand-written ESR's stand-in publishes the score totals only. The poll winners are the same, but voters can answer slightly differently (2 of 1,440 values in a trial).
@@ -167,11 +175,13 @@ ballots("trunc3") >> repeat(drop(firsts))                IRV-3
 ballots("weak") >> repeat(drop(firsts))                  ER-IRV
 ballots("rank") >> repeat(drop(total(po)))               Baldwin
 repeat(normalize >> drop(score))                         INS
+repeat(max_top >> zero_bottom >> drop(score))            IMDS
 ballots("rank") >> repeat(bottom_two(firsts, margins))   BTR-IRV
 btr(score, margins, score)                               BTR-score
 btr(score, margins + n * diff(share(score)))             MARS
 ballots("fav") >> repeat(proxy >> drop(firsts))          Asset
 delegate >> "321"                                        Delegated 321
+repeat(zero_bottom >> drop(score))                       IDS (the add-on)
 ("Score" | challenger("Score", margins)) >> runoff(score)                  SCR (the add-on)
 ```
 
