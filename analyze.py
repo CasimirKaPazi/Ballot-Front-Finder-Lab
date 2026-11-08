@@ -1116,7 +1116,8 @@ def main():
                     help="methods or groups left out of the scatter plots (they stay in tables and heatmaps); "
                          "default: the references and inverse groups; give --hide with no names to show all")
     ap.add_argument("--show", nargs="+", default=None,
-                    help="only these methods or groups in the scatter and chain plots (overrides --hide)")
+                    help="only these methods or groups in the scatter and chain plots; --hide still leaves out its "
+                         "methods (by default the references and inverse groups) unless --show names them")
     ap.add_argument("--errorbars", action="store_true",
                     help="arrow plots: 95%% intervals relative to the average of the methods shown; track plots: "
                          "each point's own interval")
@@ -1133,8 +1134,12 @@ def main():
     check_folder(a.out, ANALYSIS_FILES, hint="give another --out (an analysis folder is new, empty or an earlier analysis)")
     os.makedirs(a.out, exist_ok=True)
     write_command(a.out)
-    if a.show:
+    if a.show:              # --hide still applies within --show (by default the references and inverse
+        # groups, which some sets contain), except for what --show names itself
         keep = set(select(a.show))
+        drop = [h for h in a.hide if h not in a.show]
+        if drop:
+            keep -= set(select(drop))
         a.hide = [m for m in METHODS if m not in keep]
     elif a.hide:
         a.hide = select(a.hide)

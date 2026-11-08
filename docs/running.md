@@ -111,7 +111,7 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--points` | rb rc coin nuw mwm mirror cwrb pair median mean | which reference points to draw, of rb, rc, ml, coin (a coin between the best worst margin and the best normalized total), nuw (normalized utility winner), mwm (best worst margin), mirror (the trivial rule mirroring CW//random ballot), cwrb, cwuw, pair, median, mean; ml and cwuw are left out by default since they lie next to cwrb (the report gives all values) |
 | `--compare` | none | pairs `"A:B"` for paired differences |
 | `--hide` | `references` | methods or groups left out of the scatter and chain plots; `--hide` alone shows all |
-| `--show` | all | only these methods or groups in the scatter and sweep plots (overrides `--hide`), e.g. `--show condorcet STAR` |
+| `--show` | all | only these methods or groups in the scatter and sweep plots, e.g. `--show condorcet STAR`; `--hide` still leaves out its methods (by default the references and inverse groups, which sets such as `max-score` contain) unless `--show` names them |
 | `--errorbars` | off | arrow plots: 95% intervals of each method relative to the average of the methods shown (per bootstrap replicate, the value minus the mean over the shown methods), which removes the variation all methods share; clearly separated bars suggest a real difference, an approximation of the paired comparison. Track plots: each point's own interval |
 | `--track` | none | methods or groups to follow across all conditions: `track-<method>.png` each (see below) |
 | `--seed` | 0 | bootstrap random seed |
