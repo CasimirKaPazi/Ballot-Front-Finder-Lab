@@ -97,6 +97,10 @@ Version numbers have three parts, major.minor.patch (currently 2.1.0, `run.VERSI
 - **minor** (1.x.0): changes that alter some results (a fixed bug, a changed rule for some methods); the journal names which;
 - **major** (x.0.0): larger, breaking changes, or ones that alter all or almost all results (e.g. a new default model).
 
+## Authors and AI Use
+
+The lab is developed by Hiveism together with Claude, an AI model by Anthropic, in conversation. Hiveism sets the questions and the direction, decides the model's assumptions, runs the reference runs and reviews the results; Claude writes most of the code and the documentation and checks them with the tests and the regression check (`test_methods.py`, `regression.py`). The development journal ([docs/journal.md](docs/journal.md)) records the experiments and decisions. Results come from the code and can be made again from the commands given; the interpretations in the documentation may contain errors.
+
 ## License
 
 Ballot Front Finder Lab is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but without any warranty; see [LICENSE](LICENSE) for details.
