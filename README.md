@@ -87,6 +87,7 @@ Every run or sweep writes into its own folder in `output/`, and `analyze.py` wri
 | [docs/reference-runs.md](docs/reference-runs.md) | The reference runs: the main experiments as commands, their cost, the analysis, and what to publish |
 | [docs/addons.md](docs/addons.md) | Tutorial: writing your own method as an add-on |
 | [docs/journal.md](docs/journal.md) | Development journal: how the lab developed, the experiments, what they showed and the decisions they led to, with the settings and commands |
+| [docs/roadmap.md](docs/roadmap.md) | What is planned or under consideration for later versions, by area |
 | [docs/pipelines.md](docs/pipelines.md) | Composing methods from parts: the plan and its reasons, phase 1 built (compositions on the command line and in add-ons; the parts in [methods.md](docs/methods.md), Compositions) |
 
 ## Versions
