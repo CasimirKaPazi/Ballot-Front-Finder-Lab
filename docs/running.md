@@ -144,6 +144,7 @@ Column names are the option names with underscores, except for the options of th
 | adaptive, adapted | 2026-10-16 | read as 0 (no adaptive voters); adapted blank |
 | lazy | 2026-10-13 | read as 0.0 (full ballots). From 2026-10-16 each voter has their own cut between 0 and `lazy`; lazy runs from before (one cut for everyone) are read the same way, so do not combine them with newer ones |
 | fidelity | 2026-10-12 | blank; their sincerity column holds the earlier measure (the report warns) |
+| fidelity (current measure) | 2026-11-09, version 2.2.0 | the column holds the earlier measure (the format included); the analysis leaves it out and says so |
 | bcw, p_bcw | 2026-10-12 | blank |
 | split, zero_margins | 2026-10-26 | blank (ties not recorded) |
 | U_ml, WM_ml | 2026-10-26 | blank (no maximal lottery reference point) |

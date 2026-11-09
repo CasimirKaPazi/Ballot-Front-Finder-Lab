@@ -47,7 +47,7 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 **Measures** ([analysis](docs/analysis.md))
 - VSE and WME with the same reference points (random ballot and best candidate), with honest and with strategic ballots, plus Condorcet efficiency and how often the winner is a poor candidate (below the median candidate), which averages hide.
 - The reachable frontier and region: what any rule could reach knowing every voter's utilities; and the frontier of normalized ballots: what is within reach when every voter uses their own scale, as ballots do.
-- Sincerity (how far strategic ballots go against the voters' own preferences, scaled per ballot format) and fidelity (how much of their preferences the ballots convey), the kinds of strategy used (compromise, burial, push-over), the Condorcet winner as cast ballots would show it, and ties (results decided by lot, pairs the ballots leave tied).
+- Sincerity (how far strategic ballots go against the voters' own preferences, scaled per ballot format) and fidelity (how much of what the honest ballot says the strategic ballots keep), the kinds of strategy used (compromise, burial, push-over), the Condorcet winner as cast ballots would show it, and ties (results decided by lot, pairs the ballots leave tied).
 
 **Analysis** ([analysis](docs/analysis.md), Analysis)
 - Paired bootstrap over elections, so methods are compared on the same electorates; the Pareto front and the methods no other clearly beats; paired differences.
@@ -92,7 +92,7 @@ Every run or sweep writes into its own folder in `output/`, and `analyze.py` wri
 
 ## Versions
 
-Version numbers have three parts, major.minor.patch (currently 2.1.0, `run.VERSION`; every results row records it together with a fingerprint of each method's results, and the reports warn when files of different versions or code are combined):
+Version numbers have three parts, major.minor.patch (currently 2.2.0, `run.VERSION`; every results row records it together with a fingerprint of each method's results, and the reports warn when files of different versions or code are combined):
 
 - **patch** (1.0.x): changes that leave every existing result as it is: plots, documentation, new methods;
 - **minor** (1.x.0): changes that alter some results (a fixed bug, a changed rule for some methods); the journal names which;

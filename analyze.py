@@ -21,8 +21,8 @@ Axes (higher is better):
                  0 = random ballot, 100 = best candidate, as ratios of sums over elections
     VSE*, WME*   the same with learned ballots
     sincerity    of the learned ballots, within each method's ballot format (strategy.sincerity;
-                 higher is more honest); fidelity (how well the ballots reproduce the utility
-                 differences, learned and honest) is reported alongside
+                 higher is more honest); fidelity (how much of what the honest ballot says the
+                 learned ballots keep; strategy.fidelity) is reported alongside
 The front is VSE*, WME* and sincerity: what happens with real (strategic) voters, and how honest
 they can afford to be. Honest VSE and WME depend more on modelling assumptions; they are reported
 alongside, as are CE, CE* (Condorcet efficiency), not used for dominance.
@@ -41,7 +41,7 @@ Outputs in the analysis folder (--out: a bare name goes into output/):
     arrows-<c>.png             per condition: honest -> strategic in the VSE/WME plane, all methods together
     shift-<c>.png              per condition: the same shifts as one row per method (VSE and WME panels)
     sincerity-<c>.png          per condition: VSE* and WME* against sincerity
-    fidelity-<c>.png           per condition: honest -> learned ballots in the fidelity / sincerity plane
+    fidelity-<c>.png           per condition: the learned ballots in the fidelity / sincerity plane
     tradeoff-<c>.png           per condition: ternary map of the Pareto front (best method per weighting)
     axes-heatmap.png           VSE*, WME*, sincerity, VSE, WME: methods x conditions (if several conditions)
     chain-<param>.png          per parameter varied around the base: each method's chain of results
@@ -191,6 +191,7 @@ ADDED_COLUMNS = {
 REQUIRED_COLUMNS = ["WM_best", "U_rb", "sincerity", "U_cands", "nom_changed", "noshow"]
 LACKING = {}           # input -> added columns it lacks (filled as in ADDED_COLUMNS)
 OLD_SINCERITY = []     # inputs written before the current sincerity measure (no fidelity column)
+OLD_FIDELITY = []      # inputs before version 2.2.0: their fidelity column holds the earlier measure (left out)
 RENAMED_SEEN = {}      # old method name -> current name, for names renamed since the input was written
 
 
@@ -216,6 +217,10 @@ def load(paths):
                     raise SystemExit(f"{p} holds results of convergent learning (--converge), which was removed "
                                      "after version 1.0.0; analyse it with that version")
                 r.update(fill)                   # columns added later (ADDED_COLUMNS)
+                if r.get("fidelity") and _older(r.get("version"), (2, 2, 0)):
+                    r["fidelity"] = ""           # the earlier fidelity (format included), not comparable
+                    if source_name(p) not in OLD_FIDELITY:
+                        OLD_FIDELITY.append(source_name(p))
                 if "coordination" in fill and r["campaign"] not in ("", "0", "0.0"):
                     r["coordination"], r["campaign"] = r["campaign"], "1.0"   # until 2026-10-29 --campaign was the share
                 new = current_name(r["method"])  # methods renamed since (methods.RENAMED)
@@ -227,6 +232,14 @@ def load(paths):
     if not rows:
         raise SystemExit("no rows in the input CSVs")
     return rows
+
+
+def _older(version, than):
+    """Whether a version string (major.minor.patch) is older than the tuple than; unknown: older."""
+    try:
+        return tuple(int(x) for x in str(version).split(".")[:3]) < than
+    except ValueError:
+        return True
 
 
 def lacking_lines():
@@ -1154,6 +1167,9 @@ def main():
     if OLD_SINCERITY:
         print(f"note: {', '.join(OLD_SINCERITY)} predate(s) the current sincerity measure: their sincerity is an "
               "earlier one, and fidelity is missing; rerun for the current measures")
+    if OLD_FIDELITY:
+        print(f"note: {', '.join(OLD_FIDELITY)} predate(s) version 2.2.0: their fidelity is the earlier measure "
+              "and is left out; rerun for the current one")
     present = {r["method"] for r in rows_all}
     all_hidden = not (present - set(a.hide))
     if all_hidden:          # e.g. a run of the inverse group only, with the default --hide
@@ -1251,6 +1267,10 @@ def main():
               + ("Combined with newer runs, methods from different files use different measures and should not be "
                  "compared on sincerity. " if len(OLD_SINCERITY) < len(a.csv) else "")
               + "Rerun for the current measure.", ""]
+    if OLD_FIDELITY:
+        L += [f"**Note:** {', '.join(OLD_FIDELITY)} predate(s) version 2.2.0, whose fidelity measures what strategy "
+              "takes from the honest ballot; their fidelity column holds the earlier measure (the format included) "
+              "and is left out (—). Rerun for the current one.", ""]
     if combined:
         L += ["Combined runs (a method in a later file replaces the same method from earlier files in the "
               "elections both have):", ""] + [f"- {x}" for x in combined] + [""]
@@ -1270,10 +1290,11 @@ def main():
           "- **Sincerity**: how far the learned ballots go against the voters' own preferences, within each "
           "method's ballot format: the utility-weighted pairs a ballot puts in the wrong order, relative to the most "
           "dishonest ballot the format allows (100 = no reversed preference, 0 = as far against one's preferences as "
-          "the format permits). Ties (exaggeration, levelling) are not reversals. **Fidelity**: how well the ballots "
-          "reproduce the voters' utility differences (100 = exactly, a tie loses half a pair, a mirrored pair all of "
-          "it); it includes what the format cannot express. **(honest)** is the fidelity of the sincere ballots: the "
-          "format's own loss; the drop from there to Fidelity is what strategy adds (docs/analysis.md, Sincerity and fidelity). "
+          "the format permits). Ties (exaggeration, levelling) are not reversals. **Fidelity**: how much of what the "
+          "honest ballot says the learned ballots keep, over the utility-weighted pairs the honest ballot puts in order "
+          "(100 = all of it; a pair tied loses half, a pair reversed all of it). It counts exaggeration and levelling, "
+          "which sincerity leaves out, and not what the format itself cannot express, since the honest ballot is 100 "
+          "(docs/analysis.md, Sincerity and fidelity; since version 2.2.0). "
           "Both are undefined (—) for TRASH and the Inverse-* methods, whose honest ballot works against the voter's "
           "own interest; on the front they count as ties on sincerity.",
           "- The intervals in the tables are for each value on its own. They are wide because elections differ "
@@ -1412,15 +1433,15 @@ def main():
               + ", ".join(r["methods"][j] for j in np.argsort(-r["VSE*"], kind="stable") if not r["dominated_by"][j])
               + ".", "",
               ] + baseline_text(r) + [
-              "| Method | Group | VSE* | WME* | Lead* | Gap* | Jury* | Sincerity | Fidelity | (honest) | VSE | WME | Lead | Gap | Jury | CE | CE* | NUCW | NUCW* "
+              "| Method | Group | VSE* | WME* | Lead* | Gap* | Jury* | Sincerity | Fidelity | VSE | WME | Lead | Gap | Jury | CE | CE* | NUCW | NUCW* "
               "| Span | Span* | Low | Low* | Compromise | Burial | Push-over | Exaggeration | Dominated by |",
-              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for j in np.argsort(-r["VSE*"], kind="stable"):
             L.append(f"| {r['methods'][j]} | {group_of(r['methods'][j])} | "
                      + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in ["VSE*", "WME*", "Lead*", "Gap*"])
                      + " | " + fmt_jury(r, "Jury*", j) + " | " + fmt(r["sincerity"][j], r["sincerity_lo"][j], r["sincerity_hi"][j])
                      + " | " + " | ".join("—" if np.isnan(r[x][j]) else f"{r[x][j] * 100:.1f}"
-                                          for x in ["fidelity", "fidelity_honest"])
+                                          for x in ["fidelity"])
                      + " | " + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in ["VSE", "WME", "Lead", "Gap"])
                      + " | " + fmt_jury(r, "Jury", j)
                      + " | " + " | ".join(fmt(r[x][j], r[x + '_lo'][j], r[x + '_hi'][j]) for x in EXTRA)

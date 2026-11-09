@@ -685,21 +685,28 @@ print("combine ok")
 
 # Sincerity (reversals within the format) and fidelity: utilities 0.5 / 0.3 / 0.15 / 0.05 (docs/analysis.md, Sincerity and fidelity)
 from strategy import sincerity, fidelity, _max_separated
+from methods import sincerity_defined
 from itertools import product as _prod
 u1 = np.array([[0.5, 0.3, 0.15, 0.05]])
-for name, B, sin, fid in [("Plurality", [1, 0, 0, 0], 1.0, 0.717), ("Plurality", [0, 1, 0, 0], 0.75, 0.317),
-                          ("Plurality", [0, 0, 0, 1], 0.0, 0.05), ("Borda", [2, 3, 1, 0], 0.867, 0.633),
-                          ("Borda", [0, 1, 2, 3], 0.0, 0.0), ("Score", [5, 3, 1, 0], 1.0, 0.97),
-                          ("Score", [5, 5, 0, 0], 1.0, 0.7), ("Approval", [1, 1, 0, 0], 1.0, 0.7),
+# fidelity against the honest ballots given here (approval: this voter approves only the favourite)
+_H = {"Plurality": [1, 0, 0, 0], "Borda": [3, 2, 1, 0], "Score": [5, 3, 1, 0], "Approval": [1, 0, 0, 0],
+      "TTR": [3 + 4, 2, 1, 0]}
+for name, B, sin, fid in [("Plurality", [1, 0, 0, 0], 1.0, 1.0), ("Plurality", [0, 1, 0, 0], 0.75, 0.4),
+                          ("Plurality", [0, 0, 0, 1], 0.0, 0.1), ("Borda", [2, 3, 1, 0], 0.867, 0.867),
+                          ("Borda", [0, 1, 2, 3], 0.0, 0.0), ("Score", [5, 3, 1, 0], 1.0, 1.0),
+                          ("Score", [5, 5, 0, 0], 1.0, 0.9), ("Approval", [1, 1, 0, 0], 1.0, 0.9),
                           ("Approval", [0, 0, 1, 1], 0.0, -0.1),
-                          ("TTR", [3, 2 + 4, 1, 0], 0.75, 0.317)]:   # TTR: round-1 mark on the 2nd choice = plurality
+                          ("TTR", [3, 2 + 4, 1, 0], 0.75, 0.4)]:   # TTR: round-1 mark on the 2nd choice = plurality
     X = np.array([B], float)
-    got = (float(sincerity(METHODS[name], X, u1)[0]), float(fidelity(METHODS[name], X, u1)[0]))
+    got = (float(sincerity(METHODS[name], X, u1)[0]),
+           float(fidelity(METHODS[name], X, u1, np.array([_H[name]], float))[0]))
     assert abs(got[0] - sin) < 1e-3 and abs(got[1] - fid) < 2e-3, (name, B, got, sin, fid)
 for name in METHODS:                                               # sincere ballots never reverse a preference
     m = METHODS[name]
     uu = r.random((20, 5))
     assert np.allclose(sincerity(m, m.sincere(uu), uu), 1), name
+    if sincerity_defined(name):                                    # and keep all they say: fidelity 1
+        assert np.allclose(fidelity(m, m.sincere(uu), uu), 1), name
 # the worst ballot with k levels (dynamic programme) = brute force over all ballots with k levels
 for k in (2, 3):
     for _ in range(10):
@@ -1864,6 +1871,10 @@ for _i, _j in [(0, 1), (1, 2), (2, 0), (0, 3), (3, 1), (3, 2)]:
 assert _cp3._schwartz_of(_tour > 0) == [0, 1, 2, 3]              # one cycle through all four
 assert _cp3._banks_of(_tour > 0) == [0, 2, 3]                    # D covers B: B tops no maximal chain
 assert sorted(_mm.smith_set(_tour)) == [0, 1, 2, 3]
+assert _cp3.composed(_cp3.parse("uncovered")).tally(np.zeros((1, 4))) is not None
+_D = _tour > 0
+_cov = _D & ~(_D[None, :, :] & ~_D[:, None, :]).any(axis=2)
+assert [j for j in range(4) if not _cov[:, j].any()] == [0, 2, 3]   # D covers B (beats B and C, which B beats)
 # CDTT: majority defeats count all voters. 2 voters A5 B5, 1 voter A5 B0, 2 voters A0 B5: B is
 # preferred by 2 of 5, A by 1 of 5, so nobody has a majority over the other and both stay; Schwartz
 # (by margins) keeps only B

@@ -436,31 +436,30 @@ def sincerity(r, path, hide):
 
 
 def fidelity(r, path, hide):
-    """What strategy does to the ballots: honest (open) -> learned (filled) in the plane of fidelity
-    (x: how well the ballots reproduce the utility differences) and sincerity (y: how far they go
-    against the voters' own preferences). Honest ballots sit at sincerity 100, at the fidelity the
-    format allows; going left is information lost to strategy (exaggeration, levelling), going down
-    is preferences reversed. Returns False when the input has no fidelity (older CSVs)."""
+    """What strategy does to the ballots, in the plane of fidelity (x: how much of what the honest ballot
+    says the learned ballots keep) and sincerity (y: how far they go against the voters' own
+    preferences). Honest ballots are at 100 / 100 (top right); going left is information lost to
+    strategy (exaggeration, levelling: ties the honest ballot does not have), going down is preferences
+    reversed. Returns False when the input has no fidelity of the current measure."""
     idx = [j for j in _visible(r, hide) if not np.isnan(r["fidelity"][j])]
     if not idx:
         return False
     fig, ax = plt.subplots(figsize=(9.2, 6.6))
     texts, anchors = [], []
     for j in idx:
-        x0, y0 = r["fidelity_honest"][j] * 100, 100.0
         x1, y1 = r["fidelity"][j] * 100, r["sincerity"][j] * 100
-        ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
-                    arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.0, shrinkA=4, shrinkB=5, mutation_scale=9))
-        ax.scatter([x0], [y0], s=DOT * 30, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.1, zorder=3)
         ax.scatter([x1], [y1], s=DOT * 60, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=4)
         anchors.append((x1, y1))
         texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
-    ax.set_xlabel("fidelity: how well the ballots reproduce the utility differences (%)")
+    ax.scatter([100], [100], marker="x", s=40, color=MUTED, zorder=3)
+    ax.annotate("honest ballots", (100, 100), textcoords="offset points", xytext=(-6, -12), ha="right",
+                fontsize=7.5, color=MUTED)
+    ax.set_xlabel("fidelity: what the learned ballots keep of what the honest ballot says (%)")
     ax.set_ylabel("sincerity: no preference reversed = 100 (%)")
     _pad(ax)
     _unreachable(ax, "xy", extend=False)
-    ax.set_title("What strategy does to the ballots: honest (open, at sincerity 100) → learned (filled)\n"
-                 f"left: information lost, down: preferences reversed; {r['label']}", loc="left")
+    ax.set_title("What strategy does to the ballots (honest ballots at 100 / 100)\n"
+                 f"left: information lost (ties), down: preferences reversed; {r['label']}", loc="left")
     fig.tight_layout()
     _repel(ax, texts, anchors)
     save(fig, path)

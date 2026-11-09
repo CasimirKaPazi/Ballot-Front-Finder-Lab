@@ -172,7 +172,7 @@ def one_election(job):
             defined = sincerity_defined(name)          # blank for TRASH and the Inverse-* methods
             sincere_row = {**election_row(u, P_h, m_cand), **estats, **(jury if name == names[0] else {"jury": ""}),
                            "sincerity": 1.0 if defined else "",
-                       "fidelity": float(fidelity(m, m.sincere(uf), uf).mean()) if defined else "", "settled": 1,
+                       "fidelity": 1.0 if defined else "", "settled": 1,
                            "adapted": "", "compromise": 0.0, "pushover": 0.0, "burial": 0.0, "exaggeration": 0.0, **nstats, **check(m.sincere(uf))}
             # Each method learns with a fresh copy of the same stream (common random numbers: the same
             # polls for every method as long as they draw alike), so results stay the same when methods
@@ -202,6 +202,7 @@ def one_election(job):
             sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
             sincere_row.update(ties(m, m.sincere(uf), P_h))
             sincere_row.update(manip.manipulation(m, m.sincere(uf), uf, u, back) if manipulating else manip.NAN)
+            honest_B = m.sincere(uf)
             for r, (B, settled, sin) in zip(rounds, res):
                 P_l = back(m.tally(B))
                 out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row,
@@ -211,7 +212,7 @@ def one_election(job):
                             **election_row(u, P_l, m_cand), **estats, "jury": "", **ballot_condorcet(m, B, u, back, P_l),
                             **ties(m, B, P_l),
                             "sincerity": sin if defined else "",
-                            "fidelity": float(fidelity(m, B, uf).mean()) if defined else "",
+                            "fidelity": float(fidelity(m, B, uf, honest_B).mean()) if defined else "",
                             "settled": int(settled), "adapted": act[r] if adaptive is not None else "",
                             **strategy_types(B, m.pref(uf), lead.get(r), m.sincere(uf)), **nstats, **check(B), **manip.NAN,
                             # campaigns and risk (docs/campaigns.md): blank when off
@@ -225,7 +226,7 @@ def one_election(job):
 
 
 OUTPUT_DIR = "output"
-VERSION = "2.1.0"      # written into every row (column "version") and shown in the analysis report
+VERSION = "2.2.0"      # written into every row (column "version") and shown in the analysis report
 
 
 def out_path(name):

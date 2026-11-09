@@ -103,22 +103,26 @@ def implied_values(method, X):
     return BALLOTS[method.ballot].implied(_marks(method, X))
 
 
-def fidelity(method, B, u):
-    """Per voter, how well the ballot reproduces the voter's utility differences: utilities stretched
-    to 0..1 (favourite 1, least liked 0) against the ballot's implied values (implied_values). Over all
-    pairs: 1 - sum |du - dv| / sum 2 |du|, with du, dv the differences in utility and in implied
-    value. 1 = the ballot shows the differences exactly; a tie loses half of a pair (0.5 if
-    everything were tied); a mirrored pair loses all of it; below 0 is possible. It includes what the
-    format cannot express (a ranking spaces candidates evenly, approval has two values): the sincere
-    ballot's fidelity is the format's own loss, the drop from there what strategy adds."""
+def fidelity(method, B, u, honest=None):
+    """Per voter, how much of what the honest ballot says about the voter's preferences the ballot B
+    keeps (since 2026-11-09). Over the pairs the voter prefers a > b, weighted by u[a] - u[b]: a pair
+    the honest ballot puts in order loses half its weight if B ties it and all of it if B reverses it;
+    a pair the honest ballot ties loses half if B reverses it. Fidelity is 1 - loss / (the weight of
+    the pairs the honest ballot puts in order): 1 = B says everything the honest ballot says (the
+    honest ballot itself, so the format's own limits do not count), 0.5 = B ties all of it, 0 = B
+    reverses all of it; below 0 only if B also reverses pairs the honest ballot ties. Ballots are
+    compared by their implied values (implied_values: two-round ballots by their round-1 marks).
+    honest: the voters' honest ballots (default: the method's sincere ballots for u)."""
     P = method.pref(u)
-    mn, mx = P.min(axis=1, keepdims=True), P.max(axis=1, keepdims=True)
-    p = (P - mn) / np.where(mx - mn > 1e-12, mx - mn, 1)
-    v = implied_values(method, B)
-    du = p[:, :, None] - p[:, None, :]
-    dv = v[:, :, None] - v[:, None, :]
-    den = 2 * np.abs(du).sum(axis=(1, 2))
-    return 1 - np.abs(du - dv).sum(axis=(1, 2)) / np.where(den > 1e-12, den, 1)
+    H = method.sincere(u) if honest is None else honest
+    vh, vl = implied_values(method, H), implied_values(method, B)
+    du = P[:, :, None] - P[:, None, :]
+    w = np.where(du > 1e-12, du, 0.0)                  # each preferred pair once, weighted
+    sh = np.sign(np.round(vh[:, :, None] - vh[:, None, :], 9))
+    sl = np.sign(np.round(vl[:, :, None] - vl[:, None, :], 9))
+    loss = (w * np.maximum(sh - sl, 0) / 2).sum(axis=(1, 2))
+    den = (w * (sh > 0)).sum(axis=(1, 2))
+    return np.where(den > 1e-12, 1 - loss / np.where(den > 1e-12, den, 1), 1.0)
 
 
 def strategy_types(B, u, leaders=None, sincere=None):
