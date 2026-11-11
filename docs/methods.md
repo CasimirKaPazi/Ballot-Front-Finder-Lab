@@ -137,7 +137,7 @@ The grade a candidate reaches with a majority of the voters: the median grade, o
 | Soft Minimax | 0–5 | proposed in this lab: Minimax on soft margins. For each pair, every ballot's score difference is clipped to ±20% of the range and divided by that, so a difference of a fifth of the range or more is a full vote for one side and smaller ones count in proportion; the candidate whose worst soft margin is best wins. With the default 0–5 scale the clip is 1 point, so on integer scores this is exactly Minimax by margins on the score ballots; with a wider range (`--max-score 10`) small differences count in part. Clipping at the whole range would give Score |
 | Soft Minimax-40 | 0–5 | the same with the clip at 40% of the range (2 points on 0–5): 1-point differences count half; between Soft Minimax and Score |
 | Soft Minimax-L | 0–5 | Soft Minimax with an adaptive clip per pair: the mean of the two candidates' average scores (A averages 3, B 2: clip 2.5 points). Pairs of well-liked candidates are compared more by score difference, pairs of little-liked ones more by majority vote |
-| Soft Minimax-D | 0–5 | Soft Minimax with an adaptive clip per pair: 1 point plus the difference of the two candidates' average scores. Pairs close in average score are compared by majority vote, pairs far apart more by score difference |
+| Soft Minimax-D | 0–5 | Soft Minimax with an adaptive clip per pair: 1 point plus the difference of the two candidates' average scores. Pairs close in average score are compared by majority vote, pairs far apart more by score difference. As a composition: `best(-worst(soft(1 + abs(diff(score / n)))))`, with variants by winning votes and as a weighted mix ([compositions.md](compositions.md), Readings and Arithmetic) |
 
 **positional**
 

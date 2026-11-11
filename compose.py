@@ -19,14 +19,16 @@ methods.py ("# composed: ..."), e.g.
 
 Parts:
     readings   score (totals; on two-round ballots the round-1 marks), firsts (first preferences among
-               the field, rankings), held (after proxy: the votes each candidate holds), margins, wv (winning votes), po (pairwise opposition), soft(f)
-               (soft margins, 0 < f <= 1), n (voters), levels (voters per score level, top first),
+               the field, rankings), held (after proxy: the votes each candidate holds), margins, wv (winning votes), po (pairwise opposition), soft(k)
+               and soft(k, "margins"/"wv"/"po") (soft counts, k a share of the range or a clip per pair in
+               points), n (voters), levels (voters per score level, top first),
                points (the same times the level's score), approvals(k) (voters scoring at least k),
                median (each candidate's lower median score, as MJ)
     arithmetic share(values) = values / (n x top score); worst(pairs) (each candidate's worst defeat);
-               total(pairs) (row sums); diff(values) (pairs: row minus column); + - * / and unary minus
+               total(pairs) (row sums); diff(values) (pairs: row minus column); + - * / and unary minus;
+               abs(x), minimum(a, b), maximum(a, b) (element by element)
     sets       smith, schwartz, cdtt (majority defeats by more than half of all voters), banks (tops of
-               the maximal chains), best(values), top(k, values), drop(values) (all but the lowest), buck(levels or
+               the maximal chains), uncovered (covered by nobody), best(values), top(k, values), drop(values) (all but the lowest), buck(levels or
                points), challenger(set, pairs), bottom_two(order, pairs[, tiebreak]) (one round of
                bottom-two runoff), btr(order, pairs[, tiebreak]) (the bottom-two climb: the winner),
                repeat(steps) (until one is left or nothing changes); a | b, a & b. Ties branch; the
@@ -265,6 +267,7 @@ class Part:
     def __truediv__(self, o): return BinOp("/", self, _part(o))
     def __rtruediv__(self, o): return BinOp("/", _part(o), self)
     def __neg__(self): return Neg(self)
+    def __abs__(self): return Abs(self)
 
     def __repr__(self):
         return self.text()
@@ -360,17 +363,86 @@ points = Reading("points", "levels", lambda b: "levels",
                  lambda x, st: (len(x) - np.arange(len(x)))[:, None] * _f(x), scored=True)
 
 
-def soft(frac):
-    """Soft margins (as Soft Minimax): per voter the score difference a - b, clipped to +-frac of the
-    range and divided by that, summed over voters; 0 < frac <= 1 (0.2 and 0.4 are the lab's features
-    soft20 and soft40; another fraction gets its feature on first use)."""
-    if isinstance(frac, bool) or not isinstance(frac, (int, float)) or not 0 < frac <= 1:
-        raise CompositionError(f"soft needs a fraction of the score range above 0 and at most 1, not {frac!r}")
-    frac = float(frac)
+SOFT_COUNTS = ("margins", "wv", "po")
+
+
+def soft(clip, count="margins"):
+    """Soft pairwise counts (as Soft Minimax): every voter's score difference d for a pair counts by
+    g(d) = clip(d, -k, k) / k, a difference of k or more as a full vote, smaller ones in proportion.
+    clip: a number, k as a share of the score range (0 < k <= 1; 0.2 and 0.4 are the lab's features
+    soft20 and soft40, another share gets its feature on first use), or pairs, k per pair in score
+    points (soft(1 + abs(diff(score / n))) is Soft Minimax-D). count: "margins" (the soft support for
+    the row minus that for the column), "wv" (the support for the row where it wins the pair, else 0)
+    or "po" (the support for the row whether it wins or not), as margins, wv and po are for majorities."""
+    if count not in SOFT_COUNTS:
+        raise CompositionError(f"soft counts {', '.join(SOFT_COUNTS)}, not {count!r}")
+    if isinstance(clip, Part):
+        if clip.kind not in ("pairs", "scalar"):
+            raise CompositionError(f"soft needs a share of the score range or pairs (a clip per pair, in score "
+                                   f"points), {clip.text()} is {_kind_name(clip)}")
+        if clip.kind == "pairs":
+            return SoftPairs(clip, count)
+        if not isinstance(clip, Const):
+            raise CompositionError(f"soft needs a number (a share of the score range) or pairs, not {clip.text()}")
+        clip = clip.x
+    if isinstance(clip, bool) or not isinstance(clip, (int, float)) or not 0 < clip <= 1:
+        raise CompositionError(f"soft needs a share of the score range above 0 and at most 1 (or pairs: a clip "
+                               f"per pair, in score points), not {clip!r}")
+    frac = float(clip)
+    if count != "margins":
+        return SoftPairs(Const(frac), count, share=True)
     key = f"soft{round(frac * 100, 6):g}"
     if key not in M.FEATURES:
         M.FEATURES[key] = ((lambda f: lambda B: M._soft_margins(B, f))(frac), lambda C: (C, C))
     return Reading(f"soft({frac:g})", "pairs", lambda b: key, lambda x, st: _f(x), scored=True)
+
+
+_diffhist = Reading("diffhist", "pairs", lambda b: "diffhist", lambda x, st: _f(x), scored=True)
+
+
+def soft_counts(H, k, count):
+    """Soft counts from the difference counts H (C, C, 2 MAXS + 1: voters per integer score difference
+    of a pair) and a clip k per pair (C, C, points); a pair with k <= 0 counts 0."""
+    x = np.arange(H.shape[2]) - M.MAXS
+    kk = np.maximum(k, 1e-9)[:, :, None]
+    if count == "margins":
+        out = (H * np.clip(x[None, None, :], -kk, kk)).sum(axis=2) / kk[:, :, 0]
+    else:
+        out = (H * np.clip(x[None, None, :], 0, kk)).sum(axis=2) / kk[:, :, 0]     # support for the row
+    out = np.where(k > 0, out, 0.0)
+    if count == "wv":
+        out = np.where(out > out.T, out, 0.0)
+    np.fill_diagonal(out, 0.0)
+    return out
+
+
+class SoftPairs(Part):
+    """soft(clip, count) from the counts of score differences per pair (feature diffhist): any clip,
+    also one per pair, and the one-sided counts (wv, po). Score ballots are whole numbers, so the
+    counts are exact."""
+    kind = "pairs"
+
+    def __init__(self, clip, count, share=False):
+        self.clip, self.count, self.share = clip, count, share
+
+    def text(self):
+        c = f"{self.clip.x:g}" if self.share else self.clip.text()
+        return f"soft({c})" if self.count == "margins" else f'soft({c}, "{self.count}")'
+
+    def check(self, ctx):
+        b = ctx["ballot"]
+        if not (rated(b) and BALLOTS[b].score_range):
+            raise CompositionError(f"{self.text()} needs score ballots, not {b}")
+        if ctx["normalized"] and not ctx["poll"]:
+            raise CompositionError(f"{self.text()} is not available after {', '.join(o for o, _ in ctx['tops'])} "
+                                   "(it counts whole score differences)")
+        return _need("diffhist", ctx) | self.clip.check(ctx)
+
+    def value(self, st):
+        H = _diffhist.value(st)
+        k = self.clip.value(st)
+        k = np.full(H.shape[:2], k * M.MAXS if self.share else k, float) if np.ndim(k) == 0 else np.asarray(k, float)
+        return soft_counts(H, k, self.count)
 
 
 def approvals(level):
@@ -508,8 +580,10 @@ def share(x):
 
 
 def worst(x):
-    """Each candidate's worst defeat: the largest value a rival has against them (0 if none)."""
-    return Func("worst", _part(x), "values", ("pairs",), lambda p, st: np.clip(p, 0, None).max(axis=0))
+    """Each candidate's worst defeat: the largest value a rival has against them (0 if none; a candidate's
+    value against themselves, the diagonal, does not count)."""
+    return Func("worst", _part(x), "values", ("pairs",),
+                lambda p, st: np.clip(np.where(np.eye(len(p), dtype=bool), 0.0, p), 0, None).max(axis=0))
 
 
 class BinOp(Part):
@@ -532,6 +606,45 @@ class BinOp(Part):
     def value(self, st):
         x, y = self.a.value(st), self.b.value(st)
         return {"+": np.add, "-": np.subtract, "*": np.multiply, "/": np.divide}[self.op](x, y)
+
+
+class Abs(Part):
+    """abs(x): the size of values, pairs or a number."""
+    def __init__(self, a):
+        if a.kind not in ("values", "pairs", "scalar"):
+            raise CompositionError(f"abs needs values, pairs or a number, {a.text()} is {_kind_name(a)}")
+        self.a, self.kind = a, a.kind
+
+    def text(self):
+        return f"abs({self.a.text()})"
+
+    def check(self, ctx):
+        return self.a.check(ctx)
+
+    def value(self, st):
+        return np.abs(self.a.value(st))
+
+
+class Extreme(BinOp):
+    """minimum(a, b), maximum(a, b): the smaller or larger of two values, pairs or numbers, element by
+    element (a number with values or pairs: with each of them)."""
+    def __init__(self, op, a, b):
+        super().__init__(op, a, b)
+        self.prec = 9
+
+    def text(self):
+        return f"{self.op}({self.a.text()}, {self.b.text()})"
+
+    def value(self, st):
+        return (np.minimum if self.op == "minimum" else np.maximum)(self.a.value(st), self.b.value(st))
+
+
+def minimum(a, b):
+    return Extreme("minimum", _part(a), _part(b))
+
+
+def maximum(a, b):
+    return Extreme("maximum", _part(a), _part(b))
 
 
 class Neg(Part):
@@ -620,6 +733,23 @@ class CDTT(Set):
 
 
 cdtt = CDTT()
+
+
+class Uncovered(Set):
+    def text(self):
+        return "uncovered"
+
+    def check(self, ctx):
+        return margins.check(ctx)
+
+    def field(self, st):
+        D = margins.value(st) > M.EPS                    # strict pairwise defeats
+        # A covers B: A defeats B and everyone B defeats (Miller); the uncovered are covered by nobody
+        cov = D & ~(D[None, :, :] & ~D[:, None, :]).any(axis=2)
+        return [st.field[j] for j in range(len(D)) if not cov[:, j].any()]
+
+
+uncovered = Uncovered()
 
 _BANKS = {}
 
@@ -1483,12 +1613,13 @@ def composed(expr, ballot=None):
 
 # ---------- reading the text ----------
 NAMES = {"score": score, "margins": margins, "wv": wv, "po": po, "n": n, "levels": levels, "points": points,
-         "firsts": firsts, "median": median, "smith": smith, "schwartz": schwartz, "cdtt": cdtt, "banks": banks,
+         "firsts": firsts, "median": median, "smith": smith, "schwartz": schwartz, "cdtt": cdtt, "banks": banks, "uncovered": uncovered,
          "normalize": normalize, "max_top": max_top, "zero_bottom": zero_bottom, "runoff": runoff, "random_ballot": random_ballot,
          "proxy": proxy, "delegate": delegate, "held": held}
 CALLS = {"share": share, "worst": worst, "total": total, "diff": diff, "best": best, "top": top, "buck": buck,
          "drop": drop, "btr": btr, "bottom_two": bottom_two, "repeat": repeat, "ballots": ballots, "challenger": challenger, "soft": soft,
-         "approvals": approvals, "runoff": runoff, "proxy": proxy}
+         "approvals": approvals, "runoff": runoff, "proxy": proxy, "abs": lambda x: Abs(_part(x)), "minimum": minimum,
+         "maximum": maximum}
 
 
 def parse(text):

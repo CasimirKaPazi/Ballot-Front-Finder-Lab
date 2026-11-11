@@ -98,6 +98,13 @@ SHORT = {"maximal lottery": "max. lottery", "Condorcet winner, else random ballo
          "nearest the median voter": "median voter", "nearest the mean voter": "mean voter",
          "normalized utility winner": "NUW", "best worst margin": "best WM",
          "mirror of CW//random ballot": "mirror"}   # labels in the plots
+NAME_MAX = 32       # method names longer than this (compositions) are cut in the plots; the reports keep them whole
+
+
+def name_label(m):
+    """A method's name as a plot shows it: cut after NAME_MAX characters, with "…"."""
+    m = str(m)
+    return m if len(m) <= NAME_MAX else m[:NAME_MAX - 1].rstrip() + "…"
 
 
 def save(fig, path):
@@ -366,7 +373,7 @@ def arrows(r, path, hide, errorbars=False):
         ax.scatter([x1], [y1], s=DOT * 64, color=MUTED if np.isnan(sj) else cmap(norm(sj * 100)), edgecolors=MUTED,
                    linewidths=0.6, zorder=4)
         anchors.append((x1, y1))
-        texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
+        texts.append(ax.text(x1 + 0.12, y1, name_label(r["methods"][j]), fontsize=7.5, color=INK2, va="center", zorder=5))
     if errorbars:
         _errorbars(ax, r, idx, "VSE", "WME", MUTED, 0.35)
         _errorbars(ax, r, idx, "VSE*", "WME*", INK2, 0.7)
@@ -392,7 +399,7 @@ def arrows(r, path, hide, errorbars=False):
 def shift(r, path, hide):
     """The same shifts as a dumbbell chart: one row per method, VSE and WME panels. Rows sorted by VSE."""
     idx = sorted(_visible(r, hide), key=lambda j: r["VSE"][j])
-    names = [r["methods"][j] for j in idx]
+    names = [name_label(r["methods"][j]) for j in idx]
     fig, axs = plt.subplots(1, 2, figsize=(10.5, 0.9 + 0.32 * len(idx)), sharey=True)
     for ax, (a0, a1, title) in zip(axs, [("VSE", "VSE*", VSE_LABEL), ("WME", "WME*", WME_LABEL)]):
         for y, j in enumerate(idx):
@@ -424,7 +431,7 @@ def sincerity(r, path, hide):
             x, y = r["sincerity"][j] * 100, r[axis][j] * 100
             anchors.append((x, y))
             ax.scatter([x], [y], s=DOT * 60, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=3)
-            texts.append(ax.text(x + 0.12, y, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=4))
+            texts.append(ax.text(x + 0.12, y, name_label(r["methods"][j]), fontsize=7.5, color=INK2, va="center", zorder=4))
         ax.set_xlabel("sincerity of learned ballots (%)")
         ax.set_ylabel(name)
         _unreachable(ax, "y", extend=False)
@@ -450,7 +457,7 @@ def fidelity(r, path, hide):
         x1, y1 = r["fidelity"][j] * 100, r["sincerity"][j] * 100
         ax.scatter([x1], [y1], s=DOT * 60, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=4)
         anchors.append((x1, y1))
-        texts.append(ax.text(x1 + 0.12, y1, r["methods"][j], fontsize=7.5, color=INK2, va="center", zorder=5))
+        texts.append(ax.text(x1 + 0.12, y1, name_label(r["methods"][j]), fontsize=7.5, color=INK2, va="center", zorder=5))
     ax.scatter([100], [100], marker="x", s=40, color=MUTED, zorder=3)
     ax.annotate("honest ballots", (100, 100), textcoords="offset points", xytext=(-6, -12), ha="right",
                 fontsize=7.5, color=MUTED)
@@ -544,7 +551,7 @@ def tradeoff(r, path, axes=("VSE*", "WME*", "sincerity"), hide=()):
         cx, cy = gx[0, xx].mean(), gy[yy, 0].mean()
         j = idx[k]
         small = len(yy) < 0.02 * inside.sum()        # small region: name only, smaller
-        ax.text(cx, cy, r["methods"][j] + ("" if small else "\n" + " / ".join(f"{r[a][j] * 100:.1f}" for a in axes)),
+        ax.text(cx, cy, name_label(r["methods"][j]) + ("" if small else "\n" + " / ".join(f"{r[a][j] * 100:.1f}" for a in axes)),
                 ha="center", va="center", fontsize=6.5 if small else 7.5, color=INK, zorder=3)
     names = [f"{a} ({lo[i] * 100:.1f}–{hi[i] * 100:.1f})" for i, a in enumerate(axes)]
     ax.text(-0.02, -0.03, names[0], ha="left", va="top", fontsize=9, color=INK)
@@ -618,7 +625,7 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
                 # (skipped when the honest end lies on the learned end: one label is enough there)
                 if abs(hx[-1] - lx[-1]) + abs(hy[-1] - ly[-1]) > 0.3:
                     anchors.append((hx[-1], hy[-1]))
-                    texts.append(ax.text(hx[-1], hy[-1], m, fontsize=6.5, color=MUTED, style="italic",
+                    texts.append(ax.text(hx[-1], hy[-1], name_label(m), fontsize=6.5, color=MUTED, style="italic",
                                          va="center", zorder=5))
             for (x0, y0), (x1, y1) in zip(pts[:-1], pts[1:]):
                 ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
@@ -627,7 +634,7 @@ def chain(results, param, values, path, hide, learning_only, groups, same_electo
             for i in range(k):
                 ax.scatter([lx[i]], [ly[i]], s=DOT * 40, color=shades[i], edgecolors=SURFACE, linewidths=0.8, zorder=4)
             anchors.append((lx[-1], ly[-1]))
-            texts.append(ax.text(lx[-1], ly[-1], m, fontsize=7.5, color=INK2, va="center", zorder=5))
+            texts.append(ax.text(lx[-1], ly[-1], name_label(m), fontsize=7.5, color=INK2, va="center", zorder=5))
         ax.set_title(g, loc="left", fontsize=10)
         labelled.append((ax, texts, anchors))
     for ax in axs.flat[len(panels):]:
@@ -721,7 +728,7 @@ def track(conds, method, varying, names, path, same_electorates, errorbars=False
             for (x, y), (r, p, j) in zip(X, line):
                 anchors.append((x, y)); texts.append(ax.text(x, y, p[k1], fontsize=7, color=INK2, va="center", zorder=5))
         ax.legend(frameon=False, fontsize=8, loc="lower left", title=f"labels: {lab(k1)}", title_fontsize=8)
-        title = f"{method}: {lab(k1)} (labels, lines) × {lab(k2)} (colour)"
+        title = f"{name_label(method)}: {lab(k1)} (labels, lines) × {lab(k2)} (colour)"
     else:
         order = sorted(pts, key=lambda t: num(t[1][varying[0]])) if len(varying) == 1 else pts
         X = [xy(r, j) for r, p, j in order]
@@ -732,7 +739,7 @@ def track(conds, method, varying, names, path, same_electorates, errorbars=False
                        linewidths=0.7, zorder=4)
             t = p[varying[0]] if len(varying) == 1 else r["tag"]
             anchors.append((x, y)); texts.append(ax.text(x, y, t, fontsize=7, color=INK2, va="center", zorder=5))
-        title = f"{method}: " + (f"{lab(varying[0])} (labels, light → dark)" if len(varying) == 1 else "conditions (tags)")
+        title = f"{name_label(method)}: " + (f"{lab(varying[0])} (labels, light → dark)" if len(varying) == 1 else "conditions (tags)")
     if errorbars:
         for r, p, j in pts:
             x, y = xy(r, j)
@@ -769,7 +776,7 @@ def _row_order(results):
 def _heat(ax, data, rows, cols, fmt, vmin, vmax, cmap):
     ax.imshow(data, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
     ax.set_xticks(range(len(cols)), cols, rotation=30, ha="right")
-    ax.set_yticks(range(len(rows)), rows)
+    ax.set_yticks(range(len(rows)), [name_label(m) for m in rows])
     ax.grid(False)
     for s in ax.spines.values():
         s.set_visible(False)
@@ -841,7 +848,7 @@ def beatpath(nodes, edges, path, groups, share):
     names = list(dict.fromkeys(groups.get(n, "") for n in nodes))
     tint = {g: TINTS[i % len(TINTS)] for i, g in enumerate(names)}
     for n in nodes:
-        ax.text(x[n], y[n], n, fontsize=7, ha="center", va="center", zorder=3, color=INK,
+        ax.text(x[n], y[n], name_label(n), fontsize=7, ha="center", va="center", zorder=3, color=INK,
                 bbox=dict(boxstyle="round,pad=0.3", facecolor=tint[groups.get(n, "")], edgecolor=GRID, lw=0.8))
     ax.set_xlim(-width / 2 - 0.4, width / 2 + 0.4)
     ax.set_ylim(min(y.values()) - 0.5, 0.9)
@@ -876,7 +883,7 @@ def method_map(names, H, L, groups, path, explained=float("nan")):
                     arrowprops=dict(arrowstyle="-|>", color=c, alpha=0.55, lw=0.9, shrinkA=3, shrinkB=4))
         ax.scatter([x0], [y0], s=DOT * 30, facecolors=SURFACE, edgecolors=c, linewidths=1.1, zorder=3)
         ax.scatter([x1], [y1], s=DOT * 55, color=c, edgecolors=SURFACE, linewidths=1.2, zorder=4)
-        texts.append(ax.text(x1, y1, m, fontsize=7.5, color=INK2, va="center", zorder=5))
+        texts.append(ax.text(x1, y1, name_label(m), fontsize=7.5, color=INK2, va="center", zorder=5))
         anchors.append((x1, y1))
     ax.set_xticks([]), ax.set_yticks([])
     ax.set_aspect("equal", adjustable="datalim")

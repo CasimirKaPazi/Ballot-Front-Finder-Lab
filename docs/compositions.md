@@ -51,7 +51,7 @@ So `smith >> "Score"` is: the score ballots; `smith` narrows the field to the Sm
 | `margins` | pairs | for A against B: voters preferring A minus voters preferring B (equal scores or ranks count for neither) |
 | `wv` | pairs | winning votes: for A against B, the voters preferring A if A wins the pair, else 0 |
 | `po` | pairs | pairwise opposition: for A against B, the voters preferring A, whoever wins the pair |
-| `soft(f)` | pairs | soft margins (as Soft Minimax): per voter the score difference A − B, clipped to ±f of the score range and divided by f × range, summed over voters. 0 < f ≤ 1. With small f every difference counts as a full vote (majority margins); with f = 1 the score differences themselves, so the best worst soft margin is the Score winner |
+| `soft(k)`, `soft(k, "count")` | pairs | soft counts (as Soft Minimax): each voter's score difference d between A and B counts as clip(d, −k, k) / k, so a difference of k or more is a full vote and a smaller one counts in proportion. k is a number, a share of the score range (0 < k ≤ 1), or pairs, a clip per pair in score points: `soft(1 + abs(diff(score / n)))` clips each pair at 1 point plus the difference of the two average scores, as Soft Minimax-D. What is counted: `"margins"` (the default; the soft support for A minus that for B), `"wv"` (the support for A if A wins the pair, else 0, as `wv`) or `"po"` (the support for A whoever wins, as `po`). With a small k every difference counts as a full vote (majority margins, winning votes, opposition); with k = 1 (the whole range) the score differences themselves, so the best worst soft margin is the Score winner. Score ballots only, and not after a transform |
 | `n` | number | the number of voters |
 | `held` | values | after `proxy`: the votes each candidate of the field holds. `repeat(proxy("score") >> drop(held))` is weakest first with candidates who pass on by their score ballots |
 | `levels` | per level | voters per score level and candidate, top level first (score ballots) |
@@ -66,10 +66,20 @@ On two-round ballots the pairwise readings come from the round-1 marks; the runo
 | Part | Kind | Meaning |
 |---|---|---|
 | `share(values)` | values | values / (n × top score): a score total as a share of the most it could be |
-| `worst(pairs)` | values | each candidate's worst defeat: the largest value any rival has against them, 0 if none is positive. `worst(margins)` is Minimax's measure |
+| `worst(pairs)` | values | each candidate's worst defeat: the largest value any rival has against them, 0 if none is positive (a candidate's value against themselves, the diagonal, does not count). `worst(margins)` is Minimax's measure |
 | `total(pairs)` | values | each candidate's sum of values against all others. `total(po)` counts, over voters, how many candidates each voter puts below the candidate: on strict rankings, Borda points among the field |
 | `diff(values)` | pairs | turns values into pairs: for A against B, value(A) − value(B). Used to mix a per-candidate measure into a pairwise match, as MARS does: `margins + n * diff(share(score))` adds to each margin the difference of the two score totals divided by the top score |
 | `+ - * /`, `-x` | | values with values, pairs with pairs, each with numbers |
+| `abs(x)` | as x | the size of values, pairs or a number: `abs(diff(score / n))` is, for each pair, how far apart the two average scores are |
+| `minimum(a, b)`, `maximum(a, b)` | as a and b | the smaller or larger of the two, element by element (values with values, pairs with pairs, each with numbers): `minimum(1, abs(diff(score / n)))` caps the gap at one point |
+
+**Mixing majority and scores per pair.** The arithmetic can weigh each pair's majority against its score difference, without clipping any ballot, so no part of a difference is lost. `n * diff(share(score))` is the score difference of a pair in votes (the difference of the two totals divided by the top score), on the same scale as `margins`. With a weight w per pair between 0 and 1,
+
+```
+best(-worst(margins * (1 - w) + n * diff(share(score)) * w))
+```
+
+is Minimax on majority margins where w = 0 and on score differences where w = 1. Soft Minimax-D's idea, majority between candidates of similar average score and score differences between those far apart, is then `w = abs(diff(share(score)))` (the gap of the average scores as a share of the range), or a steeper `minimum(1, abs(diff(score / n)))` (full weight on the scores from a gap of one point). Unlike `soft`, such a mix counts every voter's whole difference, weighted; it is linear in the ballots for each pair.
 
 ### Sets
 
@@ -169,6 +179,7 @@ ballots("rank") >> best(-worst(margins))                 Minimax
 ballots("weak") >> best(-worst(po))                      MMPO
 best(-worst(soft(0.2)))                                  Soft Minimax
 best(-worst(soft(0.4)))                                  Soft Minimax-40
+best(-worst(soft(1 + abs(diff(score / n)))))             Soft Minimax-D (the election count; see below)
 top(2, score) >> runoff(score)                           Score runoff
 ballots("app_run") >> top(2, score) >> runoff(score)     Approval runoff
 ballots("rank") >> repeat(drop(firsts))                  IRV
@@ -187,6 +198,8 @@ repeat(zero_bottom >> drop(score))                       IDS (the add-on)
 ```
 
 The built-in methods stay hand-written, because a composition takes longer per count: about 1.4 to 3 times as long, measured on these.
+
+Soft Minimax-D is polled by Soft Minimax's soft margins (methods.py, `POLL`), while its composition is polled by its own counts. Its election count is the same, but the voters see other polls and can answer differently: to compare a variant of Soft Minimax-D with the original, run the composition above beside it as the baseline. Soft Minimax-L has no composition: its clip is the mean of the two average scores, and the arithmetic has no sum of a pair.
 
 ## Design notes
 

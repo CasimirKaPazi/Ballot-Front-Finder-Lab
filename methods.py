@@ -2158,6 +2158,7 @@ METHODS = {
     # composed: best(-worst(soft(0.4)))
     "Soft Minimax-40": M_("score", soft_minimax("soft40"), ("soft40",)),
     "Soft Minimax-L": M_("score", d_soft_level, ("n", "sum", "diffhist")),
+    # composed: best(-worst(soft(1 + abs(diff(score / n)))))
     "Soft Minimax-D": M_("score", d_soft_diff, ("n", "sum", "diffhist")),
     # positional
     "Borda": M_("rank", d_sum, ("sum",)),

@@ -923,6 +923,9 @@ assert len(_comps) >= 17, _comps
 if "SCR" in METHODS:                               # the add-on, if present: two spellings
     _comps["SCR"] = "(top(1, score) | challenger(top(1, score), margins)) >> runoff(score)"
     _comps["SCR "] = '("Score" | challenger("Score", margins)) >> runoff(score)'   # methods as sets
+# built-in methods whose polls are read by another count (methods.POLL): their compositions are polled by
+# their own counts, so only the election count is the same
+_POLLED_OTHERWISE = {"Soft Minimax-D"}
 _rgc = np.random.default_rng(31)
 _rgp = np.random.default_rng(32)                                # candidates' positions: their own stream
 for _nm, _tx in _comps.items():
@@ -941,7 +944,8 @@ for _nm, _tx in _comps.items():
         else:
             _Bc = _h.sincere(_rgc.random((_nv, _C)), _rgc.random(_nv) * 0.5)   # some laziness (truncation)
         assert np.allclose(_h.tally(_Bc), _c.tally(_Bc)), (_nm, _Bc.tolist())
-        assert np.allclose(_h.poll_view().tally(_Bc), _c.poll_view().tally(_Bc)), (_nm, "poll", _Bc.tolist())
+        if _nm not in _POLLED_OTHERWISE:
+            assert np.allclose(_h.poll_view().tally(_Bc), _c.poll_view().tally(_Bc)), (_nm, "poll", _Bc.tolist())
 _methods_mod.set_candidates(None)
 # the canonical spelling: the same composition always has the same name, and reads back as itself
 assert _cp.canonical('buck(points)>>normalize>>"score"') == 'buck(points) >> normalize >> "Score"'
@@ -1944,3 +1948,53 @@ _run.check_params(_ns(engine="arithmetic", campaign=1.0), _errs.append)
 assert not _errs, _errs
 assert _run.default_params()["engine"] == "pooled" and _run.default_params()["search"] == 0
 print("strategy engines ok")
+
+
+# Soft counts (compose.soft): a clip per pair, winning votes and pairwise opposition; abs, minimum,
+# maximum; worst leaves out the diagonal
+import compose as _cps
+_H = np.zeros((2, 2, 2 * _methods_mod.MAXS + 1))
+_z = _methods_mod.MAXS
+_H[0, 1, _z + 1], _H[0, 1, _z + 4], _H[0, 1, _z - 2] = 3, 1, 2      # A over B by 1 (3 voters), by 4 (1); B by 2 (2)
+_H[1, 0] = _H[0, 1][::-1]
+_k2 = np.full((2, 2), 2.0)                                       # clip 2 points: 1 counts half, 2 or more whole
+assert np.allclose(_cps.soft_counts(_H, _k2, "po"), [[0, 2.5], [2, 0]])
+assert np.allclose(_cps.soft_counts(_H, _k2, "margins"), [[0, 0.5], [-0.5, 0]])
+assert np.allclose(_cps.soft_counts(_H, _k2, "wv"), [[0, 2.5], [0, 0]])
+_rs = np.random.default_rng(41)
+for _t in range(100):
+    _Bs2 = _rs.integers(0, _methods_mod.MAXS + 1, (int(_rs.integers(3, 30)), int(_rs.integers(3, 7)))).astype(float)
+    _st = {_f: _methods_mod.FEATURES[_f][0](_Bs2).sum(axis=0) for _f in ("diffhist", "sum", "n")}
+    _avg = _st["sum"] / len(_Bs2)
+    _kd = 1 + np.abs(_avg[:, None] - _avg[None, :])
+    _po = _cps.soft_counts(_st["diffhist"].reshape(len(_avg), len(_avg), -1).astype(float), _kd, "po")
+    _mg = _cps.soft_counts(_st["diffhist"].reshape(len(_avg), len(_avg), -1).astype(float), _kd, "margins")
+    assert np.allclose(_mg, _po - _po.T)                          # margins: support for minus support against
+    # a numeric share as a clip: as the lab's soft margins (soft20 by the Soft Minimax feature)
+    assert np.allclose(_cps.composed(_cps.parse("best(-worst(soft(0.2)))")).tally(_Bs2),
+                       _cps.composed(_cps.parse("best(-worst(soft(1 + 0 * margins)))")).tally(_Bs2))
+    # on a narrower field the same as the composition on the ballots restricted to that field
+    _top3 = _cps.composed(_cps.parse('top(3, score) >> best(-worst(soft(1 + abs(diff(score / n)), "wv")))'))
+    _w = _top3.tally(_Bs2)
+    _F = sorted(np.argsort(-_Bs2.sum(axis=0), kind="stable")[:3])
+    if len(set(_Bs2.sum(axis=0))) == _Bs2.shape[1]:              # no tie at the cut
+        _full = _cps.composed(_cps.parse('best(-worst(soft(1 + abs(diff(score / n)), "wv")))')).tally(_Bs2[:, _F])
+        assert np.allclose(_w[_F], _full) and np.isclose(_w.sum(), 1), (_Bs2.tolist(), _w, _full)
+assert np.allclose(_cps.worst(_cps.margins).fn(np.array([[5.0, 1.0], [2.0, 7.0]]), None), [2, 1])   # diagonal left out
+for _tx in ['best(-worst(soft(1 + abs(diff(score / n)), "wv")))', 'best(-worst(soft(0.4, "po")))',
+            "best(-worst(minimum(margins, 3) + maximum(0, diff(score))))",
+            "best(-worst(margins * (1 - abs(diff(share(score)))) + diff(share(score)) * n * abs(diff(share(score)))))"]:
+    assert _cps.canonical(_tx) == _tx and _cps.canonical(_cps.canonical(_tx)) == _tx, _cps.canonical(_tx)
+assert _cps.canonical('best(-worst(soft(0.2, "margins")))') == "best(-worst(soft(0.2)))"
+for _tx, _msg in [('normalize >> best(-worst(soft(1 + abs(diff(score / n)))))', "not available after normalize"),
+                  ('best(-worst(soft(0.2, "x")))', "soft counts margins, wv, po"),
+                  ('best(-worst(soft(n)))', "soft needs a number"),
+                  ('best(-worst(soft(2)))', "at most 1"),
+                  ('ballots("rank") >> best(-worst(soft(0.2, "wv")))', "needs score ballots"),
+                  ("best(abs(smith))", "abs needs values, pairs or a number")]:
+    try:
+        _cps.composed(_cps.parse(_tx))
+        raise AssertionError(_tx)
+    except _cps.CompositionError as _e:
+        assert _msg in str(_e), (_tx, str(_e))
+print("soft counts ok")
