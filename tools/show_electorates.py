@@ -1,8 +1,8 @@
 """Look at the electorates a model draws, to see by eye whether something is off.
 
-    python show_electorates.py --model clusters ks ks-quinn --out look
-    python show_electorates.py --model ks --width 0.5 --ks-alpha 5 --out look-ks
-    python show_electorates.py --utility exp linear quadratic --out look-utility
+    python tools/show_electorates.py --model clusters ks ks-quinn --out look
+    python tools/show_electorates.py --model ks --width 0.5 --ks-alpha 5 --out look-ks
+    python tools/show_electorates.py --utility exp linear quadratic --out look-utility
 
 Takes the electorate parameters of run.py (one value each, except --model and --utility, which may
 list several values to compare side by side: every model with every utility form, each a row of
@@ -25,6 +25,20 @@ examples.png and a colour in summary.png) and writes into output/<out>/ (or the 
                    - distances from voters to candidates
     summary.txt    the same as numbers, plus how often a Condorcet winner exists and is the
                    utility winner, and the number of dimensions the model drew
+    space.png      with --space: the space of outcomes the electorates offer, on the axes of the
+                   method plots (VSE and WME, 0 = random ballot, 100 = the best candidate), one row
+                   per model:
+                   - where the candidates lie: every candidate of every election, a density map;
+                     each election weighted by its share of the denominators (as VSE and WME sum
+                     over elections), so the weighted mean of the candidates a rule elects is about
+                     its VSE and WME
+                   - where the trade-off comes from: the elections in which the candidate with the
+                     best worst margin is not the utility winner, each as the VSE lost by electing
+                     the first and the WME lost by electing the second, in units of an average
+                     election's scale (so the mean over all elections is the loss of always
+                     electing that candidate)
+                   - how concentrated it is: the elections sorted by their part of the trade-off,
+                     and the share of all of it the largest ones carry
 
 Principal components are of the voters' positions. In the ks models every person weighs the
 dimensions differently; the positions are scaled by the voters' average weights first, so the plot
@@ -33,13 +47,16 @@ strategy, so this is fast.
 """
 import argparse
 import os
+import sys
 
 import numpy as np
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # the lab's modules
 import plots   # noqa: F401  (the lab's plot style)
 import matplotlib.pyplot as plt
 
 from ballots import approves
+from metrics import worst_margins
 from models import MODELS, draw_electorate
 from run import out_path, check_folder
 from scenario import Scenario
@@ -84,6 +101,106 @@ def stats(e):
                           / np.maximum(np.ptp(u, axis=1, keepdims=True), 1e-12)).ravel(),
             "has_cw": len(cw) == 1, "cw_is_util": len(cw) == 1 and cw[0] == U.argmax(),
             "cw_loss": (U.max() - U[cw[0]], U.max() - rb @ U) if len(cw) == 1 else None}
+
+
+def space_stats(e):
+    """One election on the axes of the method plots: every candidate's total utility and worst margin
+    relative to the random ballot, the denominators of VSE and WME (best candidate minus random
+    ballot), and the utility winner and the candidate with the best worst margin. None if the random
+    ballot is already the best on either axis (nothing to normalise by)."""
+    u = e.u
+    n, C = u.shape
+    U, m = u.sum(axis=0), worst_margins(u)
+    rb = np.bincount(u.argmax(axis=1), minlength=C) / n
+    du, dw = U.max() - rb @ U, m.max() - rb @ m
+    if du <= 1e-12 or dw <= 1e-12:
+        return None
+    return {"U": U - rb @ U, "m": m - rb @ m, "du": du, "dw": dw, "uw": int(U.argmax()), "mw": int(m.argmax())}
+
+
+SPACE_LOW = -200     # the density map's lower edge (%); candidates further down are drawn at the edge
+
+
+def space_summary(R):
+    """Per model: the candidates as points (%), their weights, the trade-off per election, and its
+    concentration (see draw_space)."""
+    R = [r for r in R if r is not None]
+    mdu, mdw = np.mean([r["du"] for r in R]), np.mean([r["dw"] for r in R])
+    X, Y, Wt, cost = [], [], [], []
+    for r in R:
+        w = 0.5 * (r["du"] / mdu + r["dw"] / mdw)
+        X += list(100 * r["U"] / r["du"]); Y += list(100 * r["m"] / r["dw"]); Wt += [w] * len(r["U"])
+        # VSE lost electing the best-margin candidate, WME lost electing the utility winner (absolute, and
+        # as % of the election's denominators)
+        cv, cw = r["du"] - r["U"][r["mw"]], r["dw"] - r["m"][r["uw"]]
+        cost.append((cv, cw, 100 * cv / r["du"], 100 * cw / r["dw"], w))
+    cost = np.array(cost)
+    tot_du, tot_dw = sum(r["du"] for r in R), sum(r["dw"] for r in R)
+    return {"x": np.array(X), "y": np.array(Y), "w": np.array(Wt), "cost": cost, "elections": len(R), "mdu": mdu, "mdw": mdw,
+            "same": float(np.mean(cost[:, 0] <= 1e-12)),
+            "vse_at_best_wme": 100 * (1 - cost[:, 0].sum() / tot_du), "wme_at_best_vse": 100 * (1 - cost[:, 1].sum() / tot_dw)}
+
+
+def concentration(c):
+    """Share of elections (largest first) against the share of the total they carry."""
+    c = np.sort(c)[::-1]
+    return np.arange(1, len(c) + 1) / len(c), np.cumsum(c) / max(c.sum(), 1e-12)
+
+
+def carry_half(c):
+    """The smallest share of elections that carries half of the total."""
+    f, cum = concentration(c)
+    return float(f[np.searchsorted(cum, 0.5)])
+
+
+def draw_space(models, T, path):
+    fig, axs = plt.subplots(len(models), 3, figsize=(15, 4.6 * len(models)), squeeze=False)
+    for row, name in zip(axs, models):
+        t = T[name]
+        ax = row[0]
+        x, y = np.clip(t["x"], SPACE_LOW, 100), np.clip(t["y"], SPACE_LOW, 100)
+        h = ax.hist2d(x, y, bins=60, range=[[SPACE_LOW, 100], [SPACE_LOW, 100]], weights=t["w"], cmap="Blues",
+                      norm=plt.matplotlib.colors.LogNorm(), cmin=1e-9)
+        fig.colorbar(h[3], ax=ax, label="weighted candidates (log)")
+        ax.plot([0], [0], "x", color=INK2)
+        ax.annotate("random ballot", (0, 0), xytext=(4, -10), textcoords="offset points", fontsize=7, color=INK2)
+        ax.axhline(100, color=MUTED, lw=0.6); ax.axvline(100, color=MUTED, lw=0.6)
+        ax.set_xlabel("VSE of the candidate (%)"); ax.set_ylabel("WME of the candidate (%)")
+        ax.set_title(f"{name}: where the candidates lie ({t['elections']} elections)", fontsize=9)
+        ax = row[1]
+        c = t["cost"][t["cost"][:, 0] > 1e-12]
+        # each election's loss in units of the average election's denominator: the mean over all elections
+        # (those without a trade-off count 0) is the loss of always electing that candidate
+        ax.scatter(100 * c[:, 0] / t["mdu"], 100 * c[:, 1] / t["mdw"], s=10, alpha=0.45, color=MODEL_COLOURS[0],
+                   edgecolor="none")
+        ax.set_xlabel("VSE lost electing the best worst margin\n(% of an average election's VSE scale)")
+        ax.set_ylabel("WME lost electing the utility winner\n(% of an average election's WME scale)")
+        ax.set_title(f"where the trade-off comes from: {100 * (1 - t['same']):.0f}% of elections "
+                     f"(the rest: one candidate best on both)", fontsize=9)
+        ax = row[2]
+        for k, lab, col in ((0, "VSE lost by the best worst margin", MODEL_COLOURS[0]),
+                            (1, "WME lost by the utility winner", MODEL_COLOURS[1])):
+            f, cum = concentration(t["cost"][:, k])
+            ax.plot(100 * f, 100 * cum, color=col, label=f"{lab}: half in {100 * carry_half(t['cost'][:, k]):.1f}% of elections")
+        ax.plot([0, 100], [0, 100], color=MUTED, lw=0.6, ls="--")
+        ax.set_xlabel("elections, largest part first (%)"); ax.set_ylabel("share of the whole trade-off (%)")
+        ax.set_title("how concentrated the trade-off is", fontsize=9)
+        ax.legend(fontsize=7, loc="lower right")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def space_text(models, T):
+    L = ["Space of outcomes (--space): candidates on the axes of the method plots"]
+    for name in models:
+        t = T[name]
+        L.append(f"  {name}: {t['elections']} elections; one candidate best on both in {100 * t['same']:.1f}%; "
+                 f"electing the best worst margin always gives VSE {t['vse_at_best_wme']:.1f}, the utility winner "
+                 f"always WME {t['wme_at_best_vse']:.1f}; half of that VSE loss comes from "
+                 f"{100 * carry_half(t['cost'][:, 0]):.1f}% of the elections, half of that WME loss from "
+                 f"{100 * carry_half(t['cost'][:, 1]):.1f}%")
+    return "\n".join(L)
 
 
 def draw_examples(models, scs, examples, seed, path):
@@ -363,11 +480,13 @@ def main():
     ap.add_argument("--sav-noise", type=float, default=1.0,
                     help="--sav: blur utilities before approving, x each voter's own utility spread (0 = none); "
                          "the default 1 leaves no pair of candidates that nobody approves together")
+    ap.add_argument("--space", action="store_true",
+                    help="also draw space.png: the candidates and the trade-off on the axes of the method plots")
     ap.add_argument("--out", default="electorates", help="folder (in output/ unless it has a directory)")
     a = ap.parse_args()
 
     out = out_path(a.out)
-    check_folder(out, ["examples.png", "summary.png", "sav.png", "summary.txt"])
+    check_folder(out, ["examples.png", "summary.png", "sav.png", "space.png", "summary.txt"])
     os.makedirs(out, exist_ok=True)
     combos = [(m, ut) for m in a.model for ut in a.utility]
     if len(combos) > len(MODEL_COLOURS):
@@ -391,10 +510,16 @@ def main():
         T = {n: sav_stats(sc, a.sav_elections, a.sav_voters, a.sav_noise, a.seed) for n, sc in zip(labels, scs)}
         draw_sav(labels, T, a.cands, os.path.join(out, "sav.png"))
         text += "\n" + sav_text(labels, T, a) + "\n"
+    if a.space:
+        T = {n: space_summary([space_stats(draw_electorate(sc, np.random.default_rng([a.seed, e])))
+                               for e in range(a.elections)]) for n, sc in zip(labels, scs)}
+        draw_space(labels, T, os.path.join(out, "space.png"))
+        text += "\n" + space_text(labels, T) + "\n"
     with open(os.path.join(out, "summary.txt"), "w") as f:
         f.write(text)
     print(text)
-    print(f"wrote {out}/: examples.png, summary.png, " + ("sav.png, " if a.sav else "") + "summary.txt")
+    print(f"wrote {out}/: examples.png, summary.png, " + ("sav.png, " if a.sav else "") + ("space.png, " if a.space else "")
+          + "summary.txt")
 
 
 if __name__ == "__main__":

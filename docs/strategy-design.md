@@ -1,10 +1,10 @@
 # Strategy: Design Note for the Next Engine
 
-Status: a proposal under discussion (2026-11-10, revised 2026-11-11). Nothing here is implemented. The engine in use is described in [model.md](model.md) (Individual voters); this note says what is wrong with it, proposes one principle to replace its separate motivations, and lists what is still open.
+Status: a proposal under discussion (2026-11-10, revised 2026-11-11). Nothing here is implemented. It would be a further engine (`--engine inertia`, a module of the `strategy/` package next to the others, in the poll rounds they share); the existing engines stay for comparison. The engine in use is described in [model.md](model.md) (Individual voters); this note says what is wrong with it, proposes one principle to replace its separate motivations, and lists what is still open.
 
 ## Why a New Design
 
-The current engine (pooled discovery, version 2.x) values a move as if a fixed share of a voter's type made it (`--coordination`, 0.25), and each voter then decides alone, by the move's value against a personal cost of voting insincerely. Three problems:
+The current engine (pooled discovery, `--engine pooled`, versions 2.x and 3.0) values a move as if a fixed share of a voter's type made it (`--coordination`, 0.25), and each voter then decides alone, by the move's value against a personal cost of voting insincerely. Three problems:
 
 1. **The assumed share is a free parameter, and it can be wrong.** With adaptive voters, the share of a type that actually follows a move is 0.17–0.32 (median, by method; 100 elections), close to 0.25. With all voters always strategic it is 1.0, four times the assumed share. Valued consistently (`--coordination 1`), that condition gives different results (300 elections, VSE\* / WME\*):
 

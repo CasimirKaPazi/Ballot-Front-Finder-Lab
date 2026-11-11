@@ -6,7 +6,7 @@ Every method returns its outcome as winner probabilities P: one number per candi
 worst margin, ...) is its expected value: value(P, v).
 
 All code that judges an outcome goes through value():
-    strategy.py      what a group gains from a ballot, over the polls
+    strategy/        what a voter or group gains from a ballot, over the polls
     metrics.py       VSE and WME (total utility and worst margin of the winner, and of random ballot)
     nomination.py    what a candidate gains from exiting, re-entering or fielding a clone
     participation.py what absent voters gain (no-show paradox)

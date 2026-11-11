@@ -34,12 +34,12 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 **Electorates** ([model](docs/model.md), Electorates)
 - Five electorate models: fractal-noise clumps (the default, tuned against real data: Condorcet winners as often as in real ranked elections, an approval map close to that of real ballots with a few candidates), voter clusters with Zipf dimensions and per-group salience, scale-free opinion fields, and Quinn's hierarchical model (as the lab's version and as in vse-sim's code).
 - Three shapes of utility: falling off exponentially with distance (the default; far-away voters are nearly indifferent), linearly (as vse-sim) or quadratically, which put the best candidate near a dense group of voters, the median or the mean of the electorate.
-- `show_electorates.py` draws and measures the electorates without any method: example plots, dimensionality, how costly the Condorcet winner is, and the candidates' map from approval ballots compared with real data.
+- `tools/show_electorates.py` draws and measures the electorates without any method: example plots, dimensionality, how costly the Condorcet winner is, and the candidates' map from approval ballots compared with real data.
 - Candidates can be made unlike the electorate (clustered in the centre, spread out or shifted).
 
 **Voters and strategy** ([model](docs/model.md), Strategy engine)
-- Poll rounds: voters see only totals a real poll could show, with realistic poll error, and answer them all at once. Individual voters (the default) each decide alone, by how close the race is and what a move would do if 1 to a quarter of the electorate did the same; they trust moves less that did not keep their promise, and act only when the gain beats the poll's error. Candidates' campaigns are an option. The engine of version 1.0.0, ranking groups acting as blocs, is still available.
-- Who strategises: by default adaptive voters, who strategise in a round when the race between the two leaders matters enough to them, so attack and defence come from the same rule; or a fixed share of always-strategic voters, as in other simulations.
+- Poll rounds: voters see only totals a real poll could show, with realistic poll error, and answer them all at once. The strategy engine is chosen with `--engine`: by default individual voters, each picking among the moves found for voters who see the race as they do, counted on the polls, and making one if it gains more than their personal cost of voting insincerely; they trust moves less that did not keep their promise. Two variants value moves by arithmetic on the averaged poll or by counting it again, and the engine of version 1.0.0, ranking groups acting as blocs, is still available. Candidates' campaigns are an option.
+- Who strategises: by default adaptive voters, who strategise in a round when it is worth it to them (individual voters: when a move gains more than their cost; ranking groups: when the race between the two leaders matters enough to them), so attack and defence come from the same rule; or a fixed share of always-strategic voters, as in other simulations.
 - Laziness: truncated rankings and fewer approvals or scores, each voter with their own cut.
 - Honest approval fitted to real approval elections: each voter approves above a personal threshold between their mean and their favourite, so approvals stay few as the field grows ([model](docs/model.md), Honest approval).
 - Also: strategic nomination (candidates withdraw or field clones; on by default), a first poll from a previous election (does a method let the electorate leave a strategic state?), a check of the no-show paradox, and a manipulation test (how often and how badly an informed coalition can manipulate from honest ballots, one- and two-sided).
@@ -66,12 +66,13 @@ The model builds on voter satisfaction efficiency (Jameson Quinn's VSE simulatio
 Python 3.9 or newer + NumPy; the analysis also needs matplotlib (`pip install -r requirements.txt`).
 
 ```
-python test_methods.py                                   # hand-built checks
-python regression.py                                     # same numbers as before? (after a code change)
+python tests/test_methods.py                             # hand-built checks
+python tools/regression.py                               # same numbers as before? (after a code change)
 python run.py --out base                                 # one condition at the defaults -> output/base/
 python sweep.py --rounds 1 2 3 --coordination 0.1 0.25 0.5 --out rounds   # grid of conditions -> output/rounds/
+python sweep.py --engine pooled groups --out engines     # the default engine against the ranking groups
 python analyze.py rounds --compare "BTR-score:STAR"      # -> output/rounds/analysis/
-python show_electorates.py --model noise clusters --out look        # look at the electorates, no methods
+python tools/show_electorates.py --model noise clusters --out look        # look at the electorates, no methods
 ```
 
 Every run or sweep writes into its own folder in `output/`, and `analyze.py` writes its report (`report.md`, tables and plots) into an `analysis/` folder inside it. A run uses the standard set of 29 methods; `--methods all` runs every one (200 elections with all methods take about 20 minutes), and `--methods` takes methods, groups or sets by name.
@@ -89,11 +90,11 @@ Every run or sweep writes into its own folder in `output/`, and `analyze.py` wri
 | [docs/journal.md](docs/journal.md) | Development journal: how the lab developed, the experiments, what they showed and the decisions they led to, with the settings and commands |
 | [docs/roadmap.md](docs/roadmap.md) | What is planned or under consideration for later versions, by area |
 | [docs/strategy-design.md](docs/strategy-design.md) | Design note for the next strategy engine: what is wrong with the current one, the proposed principle, open questions (a proposal, not implemented) |
-| [docs/pipelines.md](docs/pipelines.md) | Composing methods from parts: the plan and its reasons, phase 1 built (compositions on the command line and in add-ons; the parts in [methods.md](docs/methods.md), Compositions) |
+| [docs/compositions.md](docs/compositions.md) | Composing methods from parts: the plan and its reasons, phase 1 built (compositions on the command line and in add-ons; the parts in [methods.md](docs/methods.md), Compositions) |
 
 ## Versions
 
-Version numbers have three parts, major.minor.patch (currently 2.2.0, `run.VERSION`; every results row records it together with a fingerprint of each method's results, and the reports warn when files of different versions or code are combined):
+Version numbers have three parts, major.minor.patch (currently 3.0.0, `run.VERSION`; every results row records it together with a fingerprint of each method's results, and the reports warn when files of different versions or code are combined):
 
 - **patch** (1.0.x): changes that leave every existing result as it is: plots, documentation, new methods;
 - **minor** (1.x.0): changes that alter some results (a fixed bug, a changed rule for some methods); the journal names which;
@@ -101,7 +102,7 @@ Version numbers have three parts, major.minor.patch (currently 2.2.0, `run.VERSI
 
 ## Authors and AI Use
 
-The lab is developed by Hiveism together with Claude, an AI model by Anthropic, in conversation. Hiveism sets the questions and the direction, decides the model's assumptions, runs the reference runs and reviews the results; Claude writes most of the code and the documentation and checks them with the tests and the regression check (`test_methods.py`, `regression.py`). The development journal ([docs/journal.md](docs/journal.md)) records the experiments and decisions. Results come from the code and can be made again from the commands given; the interpretations in the documentation may contain errors.
+The lab is developed by Hiveism together with Claude, an AI model by Anthropic, in conversation. Hiveism sets the questions and the direction, decides the model's assumptions, runs the reference runs and reviews the results; Claude writes most of the code and the documentation and checks them with the tests and the regression check (`tests/test_methods.py`, `tools/regression.py`). The development journal ([docs/journal.md](docs/journal.md)) records the experiments and decisions. Results come from the code and can be made again from the commands given; the interpretations in the documentation may contain errors.
 
 ## License
 

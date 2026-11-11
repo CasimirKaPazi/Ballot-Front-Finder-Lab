@@ -1,6 +1,6 @@
 """How wrong is the individual engine's response model? A diagnostic; it changes nothing in the engine.
 
-The individual engine (individual.py) values a move by arithmetic: the change of the poll totals it makes
+The arithmetic engine (strategy/individual.py) values a move by arithmetic: the change of the poll totals it makes
 (with the voter's bloc) is worth so many voters switching from the poll winner A to the runner-up B, or
 to the next place T (the projection on one switching voter's change), plus the cross-effects of the
 scenario table. This script runs the engine as usual and, in every poll round, also works out the same
@@ -21,19 +21,23 @@ Per method, over every (voter, move) with a change, in every round:
   voters than T (exactly): a race the engine cannot see opens;
 - flips: share of moves that change the winner of the averaged poll exactly / by the arithmetic.
 
-Usage: python response_check.py [run.py options]   (e.g. --elections 200 --methods standard)
+Usage: python tools/response_check.py [run.py options]   (e.g. --elections 200 --methods standard)
+It runs the arithmetic engine (--engine arithmetic is added; another --engine is refused).
 The run's own output goes to a temporary folder; the table is printed and written to
-response_check.md in the current folder.
+response_check.md in the current folder (tools/response_check.md is the one kept with the lab).
 """
+import os
 import sys
 import tempfile
 from collections import defaultdict
 
 import numpy as np
 
-import individual as ind
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # the lab's modules
+
+from strategy import individual as ind
 import methods
-import moves as mv
+from strategy import moves as mv
 
 GAIN_TOL = 1e-3        # a gain counts above this share of the voter's utility range
 NAMES = {id(M): name for name, M in methods.METHODS.items()}
@@ -198,16 +202,17 @@ def table():
 
 
 def main():
-    ind.answer = answer                      # strategy.py looks it up at call time
+    ind.answer = answer                      # the arithmetic engine looks it up at call time
     import run
     out = tempfile.mkdtemp(prefix="response_check_")
-    sys.argv = ["run.py"] + sys.argv[1:] + ["--workers", "0", "--out", out, "--overwrite"]
+    if "--engine" in sys.argv[1:]:
+        sys.exit("response_check.py runs the arithmetic engine (--engine arithmetic); leave --engine out")
+    sys.argv = ["run.py"] + sys.argv[1:] + ["--engine", "arithmetic", "--workers", "0", "--out", out, "--overwrite"]
     run.main()
     t = table()
     print(t)
-    import os
     with open(os.environ.get("RESPONSE_CHECK_OUT", "response_check.md"), "w") as fh:
-        fh.write("# Response check\n\n" + " ".join(sys.argv[1:-5]) + "\n\n" + t + "\n")
+        fh.write("# Response check\n\n" + " ".join(sys.argv[1:-7]) + "\n\n" + t + "\n")
 
 
 if __name__ == "__main__":

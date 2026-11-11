@@ -203,7 +203,7 @@ def test():
     assert np.allclose(METHODS["IDS"].tally(B), [1, 0, 0])
 ```
 
-The test builds a small election whose result was worked out by hand (written in the file's comment): 2 voters `A5 B4 C0`, 1 voter `A5 B5 C1`, 3 voters `A2 B3 C3`. `[[5, 4, 0]] * 2` repeats a row twice, and `+` joins the lists of rows. The test checks that IDS elects A: `assert` stops with an error if the check fails, and `python test_methods.py` runs every add-on's test. A hand-checked example like this is the best protection against a counting rule that does something other than you meant.
+The test builds a small election whose result was worked out by hand (written in the file's comment): 2 voters `A5 B4 C0`, 1 voter `A5 B5 C1`, 3 voters `A2 B3 C3`. `[[5, 4, 0]] * 2` repeats a row twice, and `+` joins the lists of rows. The test checks that IDS elects A: `assert` stops with an error if the check fails, and `python tests/test_methods.py` runs every add-on's test. A hand-checked example like this is the best protection against a counting rule that does something other than you meant.
 
 ## 4. Exercise: two variants of IDS
 
@@ -223,7 +223,7 @@ The names are placeholders; choose your own. Only the feature changes: the decis
 5. For IDMS: compute both `lowest` and `highest`, and decide what a ballot that rates everyone in the set alike should do. IDS lets it count for nobody, and that is a sensible choice here too: then `highest > lowest` must hold for a candidate to be raised.
 6. Register both methods. One file can hold several features and methods: put them all into the same `FEATURES` and `METHODS` dictionaries. Since the decision only differs in the feature name, a `lambda` is enough: `lambda s: methods.d_iterated_normalized_score(s, "mscore_sub")`.
 7. Work out a small election by hand and write it as a test (Section 3). The IDS example works: with the default range 0–5, both variants elect B there. (By hand for IMS: in {A, B, C} the third group's ballot `A2 B3 C3` becomes `A2 B5 C5`, giving A 21, B 28, C 16; C is out. In {A, B} it becomes `A2 B5`, giving A 21, B 28: B wins.)
-8. Run `python test_methods.py`, then a small run: `python run.py --methods IDS IMS IDMS INS --elections 50 --out ids-variants`.
+8. Run `python tests/test_methods.py`, then a small run: `python run.py --methods IDS IMS IDMS INS --elections 50 --out ids-variants`.
 
 To look at what your feature does for one ballot, try it in `python` (from the project folder):
 
@@ -357,7 +357,7 @@ def test():
 **Step 6: run it.**
 
 ```
-python test_methods.py                                   # all checks, including "add-on bucklin.py ok"
+python tests/test_methods.py                                   # all checks, including "add-on bucklin.py ok"
 python run.py --methods Bucklin IRV Schulze --elections 50 --out bucklin-test
 python analyze.py bucklin-test
 ```

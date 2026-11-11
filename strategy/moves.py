@@ -1,5 +1,5 @@
 """Moves: how a voter changes their ballot, as a sequence of steps naming candidates, and the ballot
-that follows (render). Used by the individual voters (individual.py) and by the tests that check the
+that follows (render). Used by the individual voters (individual.py, pooled.py) and by the tests that check the
 moves against the naive exaggerations and push-over of the ranking-group model (_naive, _push). (Until
 2026-10-31 also an experimental engine of moves shared within audiences, run.py --moves 1.)
 

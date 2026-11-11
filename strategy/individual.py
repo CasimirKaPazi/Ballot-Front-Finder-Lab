@@ -1,5 +1,6 @@
-"""Individual voters reading the polls (run.py --individual 1, the default since 2026-10-31). Called by strategy.respond
-once per round instead of the ranking groups.
+"""Individual voters reading the average of the polls (run.py --engine arithmetic, and exact: the same
+with each move's poll counted again; individual voters since 2026-10-31). strategy.rounds calls the engine
+(ArithmeticEngine, ExactEngine) once per round.
 
 - The polls of a round, averaged (a poll of polls): the totals of `samples` samples of the voters (as
   voters count them, Method.poll_view), scaled up to the electorate; read as one poll of their
@@ -36,11 +37,18 @@ from math import erf, isfinite, sqrt
 import numpy as np
 
 import methods
-import moves as mv
 from ballots import BALLOTS
+from . import moves as mv
+from .common import IndividualVoters, judge, trust, aims  # noqa: F401 (aims: for the tests)
+from .polls import poll_totals
+
 
 STEPS_FULL = 14      # bisection steps for the closeness of a candidate, over 0 .. n voters
+
+
 GRID = (-24, -12, -6, -2, 0, 2, 6, 12, 24)   # scenario table: voters switching between A and another
+
+
 STEPS_TABLE = 10     # bisection steps in the table (0.1 voter)
 
 
@@ -150,7 +158,7 @@ class Reading:
 
     def __init__(self, count, ballot, T, C, n, m, poll_error, exact=False):
         self.count, self.C, self.n = count, C, n
-        self.exact = exact               # run.py --response exact: moves valued by _value_exact
+        self.exact = exact               # --engine exact: moves valued by _value_exact
         self.sigma = max(poll_error, 1e-9) * n * 0.5 / sqrt(m)
         P = count.decide_many(T[None], C)[0]
         self.A = A = int(np.argmax(P))
@@ -225,46 +233,6 @@ def burial(ballot, A, Bo):
     return (("downfrom", Bo),)
 
 
-RATIO_LOW = -3.0     # judge: a move can backfire up to three times as badly as it promised
-
-
-def aims(move):
-    """What a move aims at: ("up", c) for each candidate it raises, ("down", c) for each it lowers, and
-    ("campaign", c) when it follows candidate c's recommendation. Trust attaches to these, not to the exact ballot, so that a distrusted aim is not simply tried again in
-    another form."""
-    out = set()
-    for st in move:
-        if st[0] in ("top", "upto", "above"):
-            out.add(("up", st[1]))
-        elif st[0] in ("bottom", "downfrom", "below"):
-            out.add(("down", st[1]))
-        elif st[0] == "campaign":                 # following candidate c's campaign: trust in c's campaigns
-            out.add(("campaign", st[1]))
-    return tuple(sorted(out))
-
-
-def judge(u, reading, memory):
-    """Feedback: each voter who made a move in the last round compares what it promised (the gain in
-    their expected outcome over keeping their ballot) with what the new poll shows (their expected
-    outcome now against before). The ratio, from RATIO_LOW (backfired three times as badly as
-    promised) to 1 (kept its promise), updates their trust in each aim of the move like a running
-    average with a prior of one kept promise: trust = (trust * n + ratio) / (n + 1). Trust below 0
-    turns the promise into a threat: the voter expects the move to hurt."""
-    eu_now = u @ reading.P
-    for v, (key, promised, before) in list(memory["last"].items()):
-        if promised > 0:
-            ratio = float(np.clip((eu_now[v] - before) / promised, RATIO_LOW, 1.0))
-            for a in aims(key):
-                rho, k = memory["trust"].get((v, a), (1.0, 1))
-                memory["trust"][(v, a)] = ((rho * k + ratio) / (k + 1), k + 1)
-    memory["last"] = {}
-
-
-def trust(memory, v, move):
-    """A voter's trust in a move: the least trust in any of its aims (1 if never tried)."""
-    return min([memory["trust"].get((v, a), (1.0, 1))[0] for a in aims(move)] or [1.0])
-
-
 def _value(r, S, U, C):
     """Chances and expected outcome after a change S of the poll totals (rows, one per row of U): its
     worth in voters switching from A to each candidate of the races (projection on delta), with the
@@ -294,7 +262,7 @@ def _value(r, S, U, C):
 
 
 def _value_exact(r, S, U, C):
-    """_value with the exact response (run.py --response exact): the averaged poll counted again with each
+    """_value with the exact response (run.py --engine exact): the averaged poll counted again with each
     change, and the closeness of the races found by the same bisection as for the poll itself (from 0 to
     n voters switching from A; for a race leading after the change, how far, down to 3 sigma below 0,
     where the counts still mean something). The belief is the arithmetic's: the same races, spread and
@@ -316,146 +284,6 @@ def _value_exact(r, S, U, C):
     for c, p in zip(r.races, ps):
         P[:, c] += p
     return P, (P * U).sum(axis=1)
-
-
-class _PollChances:
-    """What judge needs of a reading: the winner chances of the round's polls."""
-    def __init__(self, P):
-        self.P = P
-
-
-POOL_LIBRARY = 8     # pooled discovery: moves a type keeps from its search (the most recent)
-POOL_STEPS = 6       # pooled discovery: the longest move the search builds
-
-
-def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, share, memory, search=0, rng=None):
-    """One round with pooled discovery (run.py --response pooled, a variant). Discovery is shared, the
-    decision individual:
-    - Types: the voters by their order of the poll's places (up to three: the leaders and the next place,
-      as the ranking groups find them), six types for three places.
-    - Discovery: for each type the moves of the ranking groups (moves._naive: the naive exaggerations
-      for the leader the type prefers against the other; moves._push: the push-over for the next place),
-      each rendered by every voter of the type on their own utilities. A share `share` (--coordination)
-      of the type's change of ballots (from what they voted in the last round) is added to each of the
-      round's polls (polls_T: one row of totals per poll), and the polls are counted again: the winner
-      chances the move promises. The type returning to its sincere ballots is counted the same way.
-      Nobody sees individual ballots: discovery counts published totals, as anyone knowing the method can.
-    - Search (search > 0, with rng): each type also tries `search` random proposals per round, each one
-      random step (moves.random_move) after its best move so far (its sincere ballots if none gains),
-      as the ranking groups search. A proposal that raises the type's mean gain (each voter's gain over
-      the type's sincere ballots as a share of their utility range, all voters of the type) is kept in
-      the type's library (memory["library"], per type: its order of the places; the POOL_LIBRARY most
-      recent, moves of up to POOL_STEPS steps) and offered again in later rounds, published like the
-      rest.
-    - Decision: each strategic voter values every published move of their type by their own utilities
-      against their type's sincere ballots (as a share of their utility range), its promise over the
-      polls as they are weighted by their trust (judge, trust), and makes the most valuable move if
-      that exceeds their cost (threshold), else votes sincerely.
-    Every voter of a type counts in its change, strategic or not: discovery does not know who follows.
-    Returns the new ballots and the voters who vote strategically this round."""
-    n, C = u.shape
-    P0 = count.decide_many(polls_T, C).mean(axis=0)
-    judge(u, _PollChances(P0), memory)
-    newB = sincere.copy()
-    memory["follow"] = np.zeros(C)
-    active = np.zeros(n, bool)
-    able = np.isfinite(threshold)
-    for v in [v for v in memory.get("held", {}) if not able[v]]:
-        memory["held"].pop(v)
-    places = [c for c in places if c is not None]
-    if len(places) < 2 or not able.any():
-        return newB, active
-    lo_u, hi_u = u.min(axis=1), u.max(axis=1)
-    span = np.where(hi_u > lo_u, hi_u - lo_u, 1.0)
-    F_cur = count.features(B)
-    order = np.argsort(-u[:, places], axis=1, kind="stable")
-    types = {}
-    for v in range(n):
-        types.setdefault(tuple(places[i] for i in order[v]), []).append(v)
-
-    memo = {}
-
-    def chances(D):                                # the same change counted once per round (exactly equal)
-        key = np.round(D, 9).tobytes()
-        if key not in memo:
-            memo[key] = count.decide_many(polls_T + D[None], C).mean(axis=0)
-        return memo[key]
-
-    for key, mem in types.items():
-        mem = np.array(mem)
-        V = mem[able[mem]]
-        if not len(V):
-            continue
-        A = min(places[:2], key=key.index)                   # the leader the type prefers
-        Bo = places[1] if A == places[0] else places[0]
-        moves = list(mv._naive(method.ballot, A, Bo))
-        if len(places) > 2:
-            p = mv._push(method.ballot, A, Bo, places[2])
-            if p is not None:
-                moves.append(p)
-        lib = memory.setdefault("library", {}).setdefault(key, [])
-        moves = list(dict.fromkeys(moves + lib))
-        lazy, appr = mv.own_params(mem)
-        D_s = share * (count.features(sincere[mem]) - F_cur[mem]).sum(axis=0)
-        P_s = chances(D_s)
-        Us = u[mem] @ P_s
-        Xs, Ps, Ds = [], [], []
-
-        def tryout(m):
-            X = mv.render(method, u[mem], m, sincere[mem], lazy, appr)
-            D = share * (count.features(X) - F_cur[mem]).sum(axis=0)
-            P = chances(D)
-            return X, P, float(np.mean((u[mem] @ P - Us) / span[mem])), D    # the type's mean gain
-
-        best_m, best_g = (), 0.0
-        for m in moves:
-            X, P, g, D = tryout(m)
-            Xs.append(X)
-            Ps.append(P)
-            Ds.append(D)
-            if g > best_g + 1e-12:
-                best_m, best_g = m, g
-        if search > 0 and rng is not None:
-            for _ in range(search):
-                m = mv.random_move(best_m if len(best_m) < POOL_STEPS else best_m[:POOL_STEPS - 1], C, rng)
-                if m in moves:
-                    continue
-                X, P, g, D = tryout(m)
-                if g > best_g + 1e-12:
-                    best_m, best_g = m, g
-                    moves.append(m)
-                    Xs.append(X)
-                    Ps.append(P)
-                    Ds.append(D)
-                    lib.append(m)
-            del lib[:-POOL_LIBRARY]
-        sel = able[mem]                                     # the strategic voters of the type
-        U = u[V]
-        before = U @ P0
-        EU = np.stack([U @ P_s] + [U @ P for P in Ps])     # sincere first
-        tr = memory.get("trust", {})
-        for j in range(1, len(EU)):
-            gain = EU[j] - before
-            if not tr or not (gain > 0).any():          # nobody's trust shaken yet, or no gain to discount
-                continue
-            ks = aims(moves[j - 1])                 # once per move, not per voter
-            rho = np.array([min((tr.get((int(v), k), (1.0, 1))[0] for k in ks), default=1.0) for v in V])
-            EU[j] = before + np.where(gain > 0, rho * gain, gain)
-        best = np.argmax(EU, axis=0)
-        promised = {j: Ps[j - 1] for j in range(1, len(EU))}
-        value = (EU[best, np.arange(len(V))] - EU[0]) / span[V]
-        best = np.where(value > threshold[V], best, 0)
-        for i, v in enumerate(V):
-            v = int(v)
-            j = int(best[i])
-            if j > 0:
-                newB[v] = Xs[j - 1][np.flatnonzero(sel)[i]]
-                memory["last"][v] = (moves[j - 1], float(U[i] @ promised[j] - before[i]), float(before[i]))
-                memory.setdefault("held", {})[v] = moves[j - 1]
-                active[v] = True
-            else:
-                memory.setdefault("held", {}).pop(v, None)
-    return newB, active
 
 
 CAMPAIGN_SEARCH = 1  # random variations of their last recommendation each candidate tries per round
@@ -664,3 +492,37 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
     active = np.zeros(n, bool)
     active[V[best > 0]] = True
     return newB, active
+
+
+class ArithmeticEngine(IndividualVoters):
+    """Individual voters (--engine arithmetic), one round at a time: the average of the round's polls is
+    read (Reading) and each voter answers it alone (answer), a move valued by arithmetic (_value).
+    campaign: None (off) or {"share", "cand_u"} (plan)."""
+    OPTIONS = IndividualVoters.OPTIONS + ("campaign",)
+    exact = False
+
+    def __init__(self, ctx, coordination=0.25, honesty=0.3, campaign=None):
+        super().__init__(ctx, coordination, honesty)
+        self.campaign = campaign
+
+    def round(self, r, polls):
+        """One round: the new ballots, the share of all voters following a campaign recommendation and
+        the candidate whose recommendation has the most followers (-1: none)."""
+        ctx = self.ctx
+        F, tot, WF = poll_totals(ctx.pm, ctx.B, polls, ctx.n, ctx.m)
+        T0 = tot + ctx.poll_error * (WF.mean(axis=0) - tot)      # the average of the polls
+        reading = Reading(ctx.pm, ctx.method.ballot, T0, ctx.C, ctx.n, ctx.m * ctx.samples, ctx.poll_error,
+                          exact=self.exact)
+        if ctx.leaders is not None:
+            ctx.leaders[r] = (reading.A, reading.B)
+        # (answer is looked up when called, so that tools/response_check.py can put its own in)
+        B, ctx.active = answer(ctx.method, ctx.pm, ctx.u, ctx.B, ctx.sincere, reading, threshold=self.threshold,
+                               followers=self.coordination, memory=self.memory, rng=self.rng, search=ctx.search,
+                               campaign=self.campaign)
+        fw = self.memory["follow"]
+        return B, float(fw.sum()) / ctx.n, int(np.argmax(fw)) if fw.sum() > 0 else -1
+
+
+class ExactEngine(ArithmeticEngine):
+    """--engine exact: as arithmetic, each move's poll counted again (_value_exact; a variant for analysis)."""
+    exact = True

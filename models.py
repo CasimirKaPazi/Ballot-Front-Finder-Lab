@@ -229,7 +229,7 @@ def _ks_structure(sc, rng, quinn=False):
     candidates do not depend on the number of voters, and the first voters of a larger electorate are
     the electorate of fewer; each bundle draws from streams of its own), and each
     bundle's faction of every person (list of arrays) and the number of dimensions of each bundle
-    (for the tests and show_electorates.py). quinn=True: the ks-quinn
+    (for the tests and tools/show_electorates.py). quinn=True: the ks-quinn
     variant (one offset per person and bundle; ks_shared ignored)."""
     n = sc.n_voters + sc.n_cands
     st = Streams(rng)

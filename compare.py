@@ -65,6 +65,7 @@ from analyze import PARAMS, PARAM_NAMES, FRONT, ADDED_COLUMNS, dominance, input_
 from metrics import pareto, FRONT_TOLERANCE
 from methods import select, GROUPS, group_of, current_name, sincerity_defined
 from run import write_command, default_params, VERSION
+from strategy import engine_params, ENGINE_PARAMS
 
 AXES_SHOWN = ["VSE*", "WME*", "sincerity"]
 NEAR = (1.0, 2.0)          # points: "near the front" if no method is better by this much on both VSE* and WME*
@@ -154,9 +155,12 @@ def same_value(a, b):
 
 
 def describe(params, defaults):
-    """The parameters in which a condition differs from the defaults: {name: value}."""
+    """The parameters in which a condition differs from the defaults: {name: value}. A parameter blank in
+    the condition is not one of its engine's; one blank in the defaults (another engine's) is compared
+    with its default (strategy.ENGINE_PARAMS)."""
+    ref = lambda k: ENGINE_PARAMS[k][1] if defaults[k] == "" and k in ENGINE_PARAMS else defaults[k]
     return OrderedDict((k, params[k]) for k in PARAMS
-                       if k in defaults and not same_value(params[k], defaults[k]) and k != "salience")
+                       if k in defaults and k != "salience" and params[k] != "" and not same_value(params[k], ref(k)))
 
 
 def label_of(diff):
@@ -222,11 +226,15 @@ def scan(path, keep, versions, notes, prints):
                    if k not in col and k not in ADDED_COLUMNS]
         if missing:
             raise SystemExit(f"{path} lacks {', '.join(missing)}; regenerate it with the current run.py or sweep.py")
-        fill = {k: ADDED_COLUMNS[k][0] for k in PARAMS if k not in col}
+        fill = {k: ADDED_COLUMNS[k][0] or "" for k in PARAMS if k not in col}
         if fill:
-            notes.setdefault("lack columns added later: " + ", ".join(f"{k} read as {v}" for k, v in fill.items()),
-                             []).append(name)
-        pidx = [(k, col.get(k)) for k in PARAMS]
+            notes.setdefault("lack columns added later: " + ", ".join(
+                f"{k} derived from individual and response" if k == "engine" else f"{k} read as {v}"
+                for k, v in fill.items()), []).append(name)
+        # the parameters as written, with the older individual and response (strategy.engine_params reads them)
+        raw = PARAMS + [k for k in ("individual", "response") if k in col]
+        pidx = [(k, col.get(k)) for k in raw]
+        keys = {}                                   # the parameters as written -> the condition key
         vidx = [col[k] for k in VALUES]
         iv, im, ib, isd, iel = col.get("version"), col["method"], col["ballots"], col["seed"], col["election"]
         ifp = col.get("fingerprint")
@@ -248,7 +256,11 @@ def scan(path, keep, versions, notes, prints):
             versions.add(row[iv] if iv is not None and row[iv] else "unknown")
             if ifp is not None and row[ifp]:
                 prints.setdefault(m, {}).setdefault(row[ifp], set()).add(name)
-            key = tuple(row[i] if i is not None else fill[k] for k, i in pidx)
+            rk = tuple(row[i] if i is not None else fill[k] for k, i in pidx)
+            key = keys.get(rk)
+            if key is None:
+                q = engine_params(dict(zip(raw, rk)))
+                key = keys[rk] = tuple(q[k] for k in PARAMS)
             part = parts.get(key)
             if part is None:
                 part = parts[key] = Part(name)

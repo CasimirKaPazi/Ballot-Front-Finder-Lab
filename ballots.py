@@ -232,7 +232,7 @@ def grade3_ballots(u, lazy=0.0):
 
 
 # ---------- strategic changes: one small random change to a single ballot ----------
-# Used by the random search of the strategy models (strategy.py). Each takes a ballot vector b
+# Used by the random search of the ranking groups (strategy/groups.py). Each takes a ballot vector b
 # (length C, a copy the function may change) and the random generator, and returns the changed ballot.
 def _mutate_fav(b, rng):
     C = len(b)

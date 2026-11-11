@@ -1,6 +1,6 @@
 # Compositions: methods built from parts
 
-A voting method can be written as a composition of parts instead of as Python code: on the command line, or in an add-on. A composition runs like any other method, with both strategy engines, all measures and the reports.
+A voting method can be written as a composition of parts instead of as Python code: on the command line, or in an add-on. A composition runs like any other method, with every strategy engine, all measures and the reports.
 
 ```
 python run.py --methods 'smith >> "Score"' 'best(share(score) - worst(wv) / n)' Score
@@ -81,6 +81,7 @@ A set narrows the field. A tie inside a set branches: each way the tie can go is
 | `schwartz` | the Schwartz set: the candidates who, if anyone has a path of pairwise defeats to them, have one back (the union of the smallest sets nobody outside defeats). Only strict defeats count, so ties can make it smaller than the Smith set; without ties the two are the same |
 | `cdtt` | Woodall's CDTT set: the Schwartz set of majority defeats, where A defeats B only if more than half of all voters prefer A to B. Voters who rate the two alike or leave them unranked count against both, so with ties or truncated ballots the set is larger than the Schwartz set; with complete strict rankings and an odd number of voters the three sets agree |
 | `banks` | the Banks set: the top candidates of the maximal chains, subsets in which every pair is decided and the defeats run in one order, that no further candidate can join (a tied pair cannot both be in a chain). Within the Smith set (within the uncovered set, for a complete tournament); counted over every subset of the field |
+| `uncovered` | the uncovered set: the candidates nobody covers, where A covers B if A defeats B and everyone B defeats (strict pairwise defeats, Miller's definition). Within the Smith set; contains the Banks set (for a complete tournament) |
 | `best(values)` | everyone tied for the highest value (no branching: the tied candidates stay together) |
 | `top(k, values)` | the k highest; a tie at the k-th place branches with equal weights. `top(1, ...)` is "the highest", with a tie branching |
 | `drop(values)` | everyone but the lowest; a tie for lowest branches (each of them dropped, equal weights) |

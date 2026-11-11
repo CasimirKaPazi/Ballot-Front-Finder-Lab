@@ -1,5 +1,11 @@
-"""Hand-built checks. Run: python test_methods.py"""
+"""Hand-built checks. Run: python tests/test_methods.py"""
+import os
+import sys
+
 import numpy as np
+
+_LAB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path[:0] = [_LAB, os.path.join(_LAB, "tools")]   # the lab's modules, and its tools (show_electorates)
 from methods import METHODS
 from metrics import election_row, worst_margins
 import methods as _methods_mod
@@ -195,7 +201,7 @@ check("worst margins, 2:1 cycle", worst_margins(cyc3), [-1 / 3, -1 / 3, -1 / 3])
 # Score range (set_max_score): sincere scores stretch to 0..max; ARA approves above the middle;
 # feature sums stay exact; learning runs. Restored to the default afterwards.
 import methods as _m
-from strategy import mutate
+from strategy.groups import mutate
 for S in (10, 100):
     _m.set_max_score(S)
     B = METHODS["Score"].sincere(u)
@@ -490,7 +496,7 @@ B2 = METHODS["TTR"].sincere(tr2)
 check("TTR honest (A, C in the runoff, A wins 7:4)", METHODS["TTR"].tally(B2), [1, 0, 0])
 B2[:2, :] = B2[:2, :] % 3 + 3 * np.eye(3)[1]
 check("TTR: finalists by marks, runoff by rankings", METHODS["TTR"].tally(B2), [0, 1, 0])
-from strategy import mutate as _mut
+from strategy.groups import mutate as _mut
 bb = METHODS["Approval runoff"].sincere(r.random((1, 5)))[0]
 for _ in range(50):
     nb = _mut(bb, "app_run", r)
@@ -684,7 +690,8 @@ except SystemExit:
 print("combine ok")
 
 # Sincerity (reversals within the format) and fidelity: utilities 0.5 / 0.3 / 0.15 / 0.05 (docs/analysis.md, Sincerity and fidelity)
-from strategy import sincerity, fidelity, _max_separated
+from strategy import sincerity, fidelity
+from ballots import _max_separated
 from methods import sincerity_defined
 from itertools import product as _prod
 u1 = np.array([[0.5, 0.3, 0.15, 0.05]])
@@ -742,7 +749,7 @@ assert ties(METHODS["Plurality"], METHODS["Plurality"].sincere(u2), np.ones(4) /
 print("ties ok")
 
 # Campaigns (docs/campaigns.md; strategy._move_ballots, _campaigns, _answer with promises)
-import strategy as _stc
+from strategy import groups as _stc
 _methods_mod.set_voter_lazy(None); _methods_mod.set_voter_approval(None)
 # the move "W above X" for a voter A 1.0, B 0.7, X 0.3, W 0.0 on 0..5 scores: W lifted to just above X,
 # which rounds to a tie at the bottom (half a vote less for X over W)
@@ -780,9 +787,9 @@ assert _stc._answer(_gain, "fav", np.array([9.0]), _c3, 0, _rng0, eager=True, pr
 assert _stc._answer(_gain, "fav", np.array([9.0]), _c3[2:], 0, _rng0, eager=True, promises=[0.5]) is None
 assert _stc._answer(_gain, "fav", np.array([9.0]), _c3[2:], 0, _rng0, eager=True, tol=0.1, promises=[0.5])[0] == 2
 print("campaigns ok")
-# Moves (moves.py): the naive exaggerations and push-over of the ranking-group model, written as
+# Moves (strategy/moves.py): the naive exaggerations and push-over of the ranking-group model, written as
 # moves, render to today's ballots (for the leader the voter prefers; one voter, no laziness, 5 candidates)
-import moves as _mvm
+from strategy import moves as _mvm
 from ballots import BALLOTS as _BL
 _rep = {}
 for _n, _m in METHODS.items():
@@ -835,9 +842,9 @@ _ud = np.array([[1.0, 0.6, 0.3, 0.0]] * 3 + [[0.0, 1.0, 0.6, 0.3]] * 2)
 assert np.allclose(METHODS["DSC"].poll_view().tally(METHODS["DSC"].sincere(_ud, 0.0)), [1, 0, 0, 0])   # first preferences
 assert METHODS["Geometric median"].poll_view().full is None
 print("poll views ok")
-# Individual voters reading one poll (individual.py, --individual 1): closeness is the number of voters
+# Individual voters reading one poll (strategy/individual.py, --engine arithmetic): closeness is the number of voters
 # switching from the poll winner that makes a candidate win; for Plurality half the gap in first preferences
-import individual as _ind
+from strategy import individual as _ind
 _pl = METHODS["Plurality"]
 _T = np.array([40.0, 30.0, 20.0, 9.0])
 _rd = _ind.Reading(_pl.poll_view(), "fav", _T, 4, 99, 49, 2.0)
@@ -853,10 +860,10 @@ for _bn in ("fav", "approval", "score", "grade3", "rank", "strict", "weak", "tru
 # the engine runs for every method, also on 2 candidates, and gives the same ballots with the same stream
 _ui = np.random.default_rng(9).random((30, 5))
 for _n, _m in METHODS.items():
-    _r1 = respond(_m, _ui, np.random.default_rng(1), rounds=2, search=1, individual=True)[0]
-    _r2 = respond(_m, _ui, np.random.default_rng(1), rounds=2, search=1, individual=True)[0]
+    _r1 = respond(_m, _ui, np.random.default_rng(1), rounds=2, search=1, engine="arithmetic", coordination=0.0)[0]
+    _r2 = respond(_m, _ui, np.random.default_rng(1), rounds=2, search=1, engine="arithmetic", coordination=0.0)[0]
     assert np.array_equal(_r1, _r2), _n
-    respond(_m, _ui[:, :2], np.random.default_rng(1), rounds=2, search=1, individual=True)
+    respond(_m, _ui[:, :2], np.random.default_rng(1), rounds=2, search=1, engine="arithmetic", coordination=0.0)
 # feedback (individual.judge): a move that backfired loses trust in what it aims at, a kept promise keeps it
 class _Rd:
     P = np.array([0.2, 0.8, 0.0])
@@ -1105,7 +1112,7 @@ check("CL else Score winner, in a cycle", _methods_mod.d_cl_else_score_winner(_s
 
 # Truncated rankings (unranked = 0, tied last) and laziness
 import methods as _mm
-from strategy import mutate as _mutate
+from strategy.groups import mutate as _mutate
 Bt = np.array([[0, 0, 2]] * 3 + [[2, 1, 0]] * 4 + [[1, 2, 0]] * 4, dtype=float)   # 3 bullet votes for C
 check("IRV: bullet ballots are exhausted once their candidate is out", METHODS["IRV"].tally(Bt), [0.5, 0.5, 0])
 check("ER-IRV: the same with level-0 ties", METHODS["ER-IRV"].tally(Bt), [0.5, 0.5, 0])
@@ -1164,7 +1171,8 @@ print("truncated rankings and laziness ok")
 
 # Ballot types (ballots.py, also those from add-ons): every entry is complete and consistent
 from ballots import BALLOTS as _BT
-from strategy import worst_reversal as _wr, implied_values as _iv, exaggerations as _ex
+from strategy import worst_reversal as _wr, implied_values as _iv
+from strategy.groups import exaggerations as _ex
 _rb = np.random.default_rng(11)
 for _name, _b in _BT.items():
     for C in (2, 3, 5):
@@ -1392,7 +1400,7 @@ for _old in _mm.RENAMED_GROUPS:
     assert _mm.select([_old]) == _mm.select([_mm.current_name(_old, _mm.RENAMED_GROUPS)]), _old
 assert _mm.current_name("IRV") == "IRV"
 import analyze as _an, csv as _csv, tempfile as _tf, os as _os
-with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "regression.csv"), newline="") as _f:
+with open(_os.path.join(_LAB, "tools", "regression.csv"), newline="") as _f:
     _old_rows = [r for r in _csv.DictReader(_f) if r["method"] == "TTR"]
 for r in _old_rows:
     r["method"] = "Top-two runoff"                                     # as a run from before 2026-10-07
@@ -1419,7 +1427,8 @@ with _tf.TemporaryDirectory() as _d:
         _w.writeheader()
         _w.writerows([{**r, "campaign": "0.5"} for r in _old_rows[:2]] + [{**r, "campaign": "0.0"} for r in _old_rows[2:4]])
     _ld = _an.load([_p])
-    assert [(r["campaign"], r["coordination"]) for r in _ld] == [("1.0", "0.5")] * 2 + [("0.0", "0.25")] * 2
+    # (the ranking groups: without campaigns the coordination share has no effect and is blank)
+    assert [(r["campaign"], r["coordination"]) for r in _ld] == [("1.0", "0.5")] * 2 + [("0.0", "")] * 2
 print("older campaign runs ok")
 
 # Honest approval: a personal threshold between the voter's mean and favourite (ballots.approves)
@@ -1511,7 +1520,7 @@ for _name, _ch in (("a", {}), ("b", {"utility": "linear"})):
         _w = _csv.DictWriter(_f, fieldnames=list(_rows[0]))
         _w.writeheader()
         _w.writerows(_rows)
-_cmp = lambda *args: subprocess.run([_sys.executable, "compare.py", _tmp, "--boot", "50", "--min-elections", "1", *args],
+_cmp = lambda *args: subprocess.run([_sys.executable, os.path.join(_LAB, "compare.py"), _tmp, "--boot", "50", "--min-elections", "1", *args],
                                     capture_output=True, text=True)
 _res = _cmp()
 assert _res.returncode == 0, _res.stderr
@@ -1761,10 +1770,10 @@ _js = _an.jury_size(np.array([[0.2, 0.6, 0.9, -0.1]]), np.array([[0.2, 0.6, 0.9,
 # (0.2, 0.2): lead 0.2 over size 1, -0.2 under size 4 -> halfway in log between 1 and 4 = 2; (0.6, 0.6) -> 8
 assert np.allclose(_js[0, :2], [2.0, 8.0]) and np.isinf(_js[0, 2]) and _js[0, 3] == 1
 print("random juries ok")
-# exact response (run.py --response exact): with no change it reads the poll as the arithmetic does; for an
+# exact response (run.py --engine exact): with no change it reads the poll as the arithmetic does; for an
 # additive count (Score) one voter's change moves the chances about as the arithmetic says (within a few
 # points: the arithmetic leaves out what the change does to the other candidates; response_check.md)
-import individual as _iv
+from strategy import individual as _iv, pooled as _pl2
 _ux = np.random.default_rng(11).normal(size=(99, 5))
 for _nm in ("Score", "Copeland", "IRV"):
     _M = METHODS[_nm]
@@ -1781,7 +1790,7 @@ for _nm in ("Score", "Copeland", "IRV"):
         _pa, _px = _iv._value(_ra, _S, _ux[:20], 5)[0], _iv._value(_rx, _S, _ux[:20], 5)[0]
         assert np.abs(_pa - _px).max() < 0.05, np.abs(_pa - _px).max()   # third candidates' totals move too
 print("exact response ok")
-# pooled discovery (run.py --response pooled): under Plurality, with A 40, B 39 and C 20 first preferences,
+# pooled discovery (run.py --engine pooled): under Plurality, with A 40, B 39 and C 20 first preferences,
 # the type C > B > A finds that a quarter of it ranking B first makes B win, and its voters do so; nobody
 # else moves
 _up = np.array([[3., 2., 1.]] * 40 + [[2., 3., 1.]] * 39 + [[1., 2., 3.]] * 20)        # columns A, B, C
@@ -1790,7 +1799,7 @@ _pmp = _Mp.poll_view()
 _sp = _Mp.sincere(_up)
 _Tp = _pmp.features(_sp).sum(axis=0)[None]
 _memp = {"last": {}, "trust": {}}
-_Bp, _act = _iv.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], threshold=np.zeros(99), share=0.25,
+_Bp, _act = _pl2.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], threshold=np.zeros(99), share=0.25,
                               memory=_memp)
 assert _act[79:].all() and not _act[:79].any()
 assert (np.argmax(_Bp[79:], axis=1) == 1).all()
@@ -1798,13 +1807,13 @@ print("pooled discovery ok")
 # pooled search: a type's kept proposals go into its library and are offered again; a sincere-only round
 # (no strategic voters) leaves it empty
 _mems = {"last": {}, "trust": {}}
-_Bs, _ = _iv.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], threshold=np.zeros(99), share=0.25,
+_Bs, _ = _pl2.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], threshold=np.zeros(99), share=0.25,
                            memory=_mems, search=20, rng=np.random.default_rng(3))
 _lib = _mems.get("library", {})
-assert all(len(v) <= _iv.POOL_LIBRARY and all(len(m) <= _iv.POOL_STEPS for m in v) for v in _lib.values())
+assert all(len(v) <= _pl2.POOL_LIBRARY and all(len(m) <= _pl2.POOL_STEPS for m in v) for v in _lib.values())
 assert (np.argmax(_Bs[79:], axis=1) == 1).all()                 # the type C > B > A still compromises for B
 _mem0 = {"last": {}, "trust": {}}
-_iv.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], threshold=np.full(99, np.inf), share=0.25,
+_pl2.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], threshold=np.full(99, np.inf), share=0.25,
                   memory=_mem0, search=20, rng=np.random.default_rng(3))
 assert not _mem0.get("library")
 print("pooled search ok")
@@ -1826,7 +1835,7 @@ print("subset totals ok")
 # scores with the voter's own approval cutoff (ballot scorecut): the approved are always an upper set of
 # the scores (the favourite among them), through sincere ballots (with laziness), random changes and moves
 import ballots as _bl
-import moves as _mv2
+from strategy import moves as _mv2
 _rc = np.random.default_rng(31)
 
 
@@ -1907,3 +1916,31 @@ for _ in range(150):
     assert np.allclose(_cp3.evaluate(_imc, _sx, _C, "score"), _cp3.evaluate(_imc, _sx, _C, "score", B=_Bx, exact=True))
 print("composition sets and steps ok")
 
+
+# The strategy engine (run.py --engine, strategy.engine_params): older results files name it by their
+# individual and response columns; parameters of another engine are blank, those of the engine filled
+from strategy import engine_params as _ep2, engine_of as _eo
+assert _eo({}) == "groups" and _eo({"individual": "0", "response": "pooled"}) == "groups"
+assert _eo({"individual": "1"}) == "arithmetic" and _eo({"individual": "1", "response": "exact"}) == "exact"
+assert _eo({"engine": "pooled", "individual": "0"}) == "pooled"
+_q = _ep2({"individual": "1", "response": "pooled", "aggressive": "0.5", "campaign": "0.0", "risk": "0"})
+assert "individual" not in _q and "response" not in _q and _q["engine"] == "pooled"
+assert (_q["aggressive"], _q["campaign"], _q["risk"], _q["coordination"], _q["honesty"]) == ("", "", "", 0.25, 0.3)
+_q = _ep2({"engine": "groups", "risk": 1, "aggressive": 0.4})
+assert (_q["aggressive"], _q["risk_tolerance"], _q["coordination"], _q["honesty"]) == ("", 0.1, "", "")
+_q = _ep2({"engine": "groups", "campaign": 1.0, "coordination": 0.5})
+assert (_q["aggressive"], _q["coordination"], _q["risk_tolerance"]) == (0.5, 0.5, "")
+assert _ep2(_q) == _q                                            # idempotent
+import argparse as _ap
+_errs = []
+_ns = lambda **k: _ap.Namespace(**{**vars(_run.parser().parse_args([])), **k})
+_run.check_params(_ns(engine="pooled", aggressive=0.3), _errs.append)
+_run.check_params(_ns(engine="groups", coordination=0.5), _errs.append)
+_run.check_params(_ns(individual="1"), _errs.append)
+assert len(_errs) == 3 and "--aggressive" in _errs[0] and "--campaign 1" in _errs[1] and "--engine" in _errs[2], _errs
+_errs.clear()
+_run.check_params(_ns(engine="groups", campaign=1.0, coordination=0.5), _errs.append)
+_run.check_params(_ns(engine="arithmetic", campaign=1.0), _errs.append)
+assert not _errs, _errs
+assert _run.default_params()["engine"] == "pooled" and _run.default_params()["search"] == 0
+print("strategy engines ok")

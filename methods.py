@@ -2058,7 +2058,7 @@ class Method:
 M_ = Method
 # "# composed: ..." above a method: the same method written as a composition (compose.py,
 # docs/compositions.md), for copying as a starting point; the hand-written version is kept because it is faster.
-# test_methods.py checks that each of these gives exactly the method below it.
+# tests/test_methods.py checks that each of these gives exactly the method below it.
 METHODS = {
     # condorcet
     "Ranked pairs": M_("rank", d_ranked_pairs, ("gt",)),
@@ -2279,7 +2279,7 @@ def _load_addons(folder=ADDON_DIR):
     """Load every add-on file in `folder` (addons/*.py, except names starting with _). An add-on file
     defines METHODS = {name: Method(...)}, and may define FEATURES = {name: (per-voter function,
     shape)} for new ballot features, BALLOTS = {name: ballots.Ballot(...)} for new ballot types, GROUP = "a group name" (default "addons"; an existing group or
-    a new one; or a dict {method: group} for methods of one file in different groups, the rest in "addons") and test() for its own checks (run by test_methods.py). Its methods are then used like
+    a new one; or a dict {method: group} for methods of one file in different groups, the rest in "addons") and test() for its own checks (run by tests/test_methods.py). Its methods are then used like
     the built-in ones. Deleting the file removes them. See addons/_template.py and docs/methods.md, Add-ons."""
     if not os.path.isdir(folder):
         return

@@ -8,10 +8,12 @@ Usage:
     python sweep.py --one-at-a-time --noise-strength 5 3 7 --dims 6 3 10 --width 0.7 0.5 1.0 --out model
     python sweep.py --model clusters --cluster-count 20 5 --out clusters
     python sweep.py --rounds 1 2 3 4 5 --strategic 0.5 1 --elections 200 --out rounds
-    python sweep.py --aggressive 0 0.5 1 --methods STAR "BTR-score" Schulze
+    python sweep.py --engine pooled groups --methods STAR "BTR-score" Schulze
     python sweep.py --exclude "Random pair runoff" TRASH
 
-Conditions that differ only in --rounds come from one run (see strategy.respond).
+Conditions that differ only in --rounds come from one run (see strategy.respond). A flag that belongs to
+some engines only (run.py --engine; e.g. --aggressive, the ranking groups) applies to the runs of those
+engines; the others leave it blank, and conditions that then coincide run once.
 
 Output, in one folder per sweep (--out; a name without a directory goes into output/; default
 sweep-<date>-<time>). `python analyze.py <folder>` puts its analysis into <folder>/analysis/.
@@ -31,8 +33,8 @@ import time
 
 from models import MODELS
 from run import (simulate, fingerprints, check_resume_fingerprints, PARAMS, run_dir, write_command, check_params, run_key, valid_combination,
-                 resolve_adaptive, resolve_salience, resolve_search,
-                 resume_state, CsvSink, interrupted)
+                 resolve, resume_state, CsvSink, interrupted)
+from strategy import ENGINES, DEFAULT_ENGINE
 from methods import run_selection
 
 
@@ -72,21 +74,26 @@ def main():
     ap.add_argument("--clones", type=int, nargs="+", default=[2])
     ap.add_argument("--poll-size", type=int, nargs="+", default=[0])
     ap.add_argument("--search", type=int, nargs="+", default=[None],
-                    help="default: 1 for the ranking groups, 0 with --individual 1, per condition")
+                    help="default: 1 for the ranking groups (--engine groups), 0 for individual voters, per condition")
     ap.add_argument("--start", nargs="+", default=["honest"], choices=["honest", "previous"])
     ap.add_argument("--poll-error", type=float, nargs="+", default=[2.0])
-    ap.add_argument("--aggressive", type=float, nargs="+", default=[0.5])
     ap.add_argument("--lazy", type=float, nargs="+", default=[0.0])
-    ap.add_argument("--campaign", type=float, nargs="+", default=[0.0])
-    ap.add_argument("--coordination", type=float, nargs="+", default=[0.25])
-    ap.add_argument("--honesty", type=float, nargs="+", default=[0.3],
-                    help="individual voters: the largest cost of voting insincerely, a share of the utility range")
-    ap.add_argument("--individual", type=int, nargs="+", default=[1], choices=[0, 1],
-                    help="1 = individual voters (default since 2026-10-31), 0 = the ranking groups")
-    ap.add_argument("--response", nargs="+", default=["pooled"], choices=["arithmetic", "exact", "pooled"],
-                    help="individual voters: how a move is valued (run.py --response; pooled the default, exact a variant)")
-    ap.add_argument("--risk", type=int, nargs="+", default=[0], choices=[0, 1])
-    ap.add_argument("--risk-tolerance", type=float, nargs="+", default=[0.1])
+    ap.add_argument("--engine", nargs="+", default=[DEFAULT_ENGINE], choices=list(ENGINES),
+                    help="the strategy engine (run.py --engine)")
+    ap.add_argument("--individual", default=None, help=argparse.SUPPRESS)     # replaced by --engine (an error)
+    ap.add_argument("--response", default=None, help=argparse.SUPPRESS)
+    # the flags of some engines only (strategy.ENGINE_PARAMS): left out, their default (run.py)
+    ap.add_argument("--aggressive", type=float, nargs="+", default=[None], help="--engine groups (default 0.5)")
+    ap.add_argument("--risk", type=int, nargs="+", default=[None], choices=[0, 1], help="--engine groups (default 0)")
+    ap.add_argument("--risk-tolerance", type=float, nargs="+", default=[None],
+                    help="--engine groups with --risk 1 (default 0.1)")
+    ap.add_argument("--campaign", type=float, nargs="+", default=[None],
+                    help="--engine groups, arithmetic or exact (default 0)")
+    ap.add_argument("--coordination", type=float, nargs="+", default=[None],
+                    help="individual voters; also what campaigns plan with (default 0.25)")
+    ap.add_argument("--honesty", type=float, nargs="+", default=[None],
+                    help="individual voters: the largest cost of voting insincerely, a share of the utility range "
+                         "(default 0.3)")
     ap.add_argument("--seeds", type=int, nargs="+", default=[1])
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--methods", nargs="+", default=None, help="run only these methods or groups (start from none); \"all\" for every method")
@@ -115,7 +122,8 @@ def main():
         grid = [{**c, "seed": sd} for c in conds for sd in values["seed"]]
     else:
         grid = [dict(zip(PARAMS, combo)) for combo in itertools.product(*values.values())]
-    grid = [resolve_salience(resolve_search(resolve_adaptive(p))) for p in grid]   # --adaptive left out: the rest of the voters
+    # the engine's settings (blank where it has none), --search, --adaptive (left out: the rest of the voters)
+    grid = [resolve(p) for p in grid]
     skipped = [p for p in grid if not valid_combination(p)]
     if skipped:
         grid = [p for p in grid if valid_combination(p)]
@@ -160,7 +168,7 @@ def main():
                 print(f"[{i}/{len(grid)}] done before")
                 continue
             t = time.time()
-            varying = ", ".join(f"{k}={p[k]}" for k in PARAMS if len(values[k]) > 1)
+            varying = ", ".join(f"{k}={p[k]}" for k in PARAMS if len(values[k]) > 1 and p[k] != "")
             sink = CsvSink(path, header)
             try:
                 simulate(p, a.elections, a.workers, names, a.participation, sink=sink, skip=skip, fingerprint=fp,
@@ -183,7 +191,7 @@ def run_file(i, p, values):
     """File name of one run of the sweep: its number and the parameters that vary, e.g.
     03-lazy=0.5-seed=2.csv (single run: 01.csv)."""
     parts = [f"{k}={'-'.join(map(str, p[k])) if isinstance(p[k], list) else p[k]}"
-             for k in PARAMS if len(values[k]) > 1 and k != "rounds"]
+             for k in PARAMS if len(values[k]) > 1 and k != "rounds" and p[k] != ""]
     name = "-".join([f"{i:02d}"] + parts)
     return "".join(ch if ch.isalnum() or ch in "=-._" else "_" for ch in name) + ".csv"
 

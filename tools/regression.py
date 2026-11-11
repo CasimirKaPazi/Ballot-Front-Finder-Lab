@@ -1,7 +1,7 @@
 """Regression check: does the simulator still give exactly the same numbers?
 
-    python regression.py            compare a few small fixed runs with regression.csv
-    python regression.py --update   write regression.csv anew (after a change that is meant to change results)
+    python tools/regression.py            compare a few small fixed runs with regression.csv
+    python tools/regression.py --update   write regression.csv anew (after a change that is meant to change results)
 
 A refactor (moving code, renaming internals, splitting files) should not change a single number.
 This script runs a few tiny conditions (a few elections each, every method including the
@@ -30,8 +30,9 @@ import sys
 
 import numpy as np
 
-import run
-from methods import METHODS
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # the lab's modules
+import run  # noqa: E402
+from methods import METHODS  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REFERENCE = os.path.join(HERE, "regression.csv")
@@ -42,8 +43,8 @@ IGNORE = {"version"}
 BASE = {"voters": 25, "cands": 4, "model": "clusters", "dims": 3, "zipf": 1, "clusters": 3, "spread": 0.5,
         "ks_alpha": 1.5, "ks_cut": 0.2, "ks_shared": 0, "salience": "none", "salience_exponent": 1.0, "fixed_variance": 0, "field_kappa": 1.5, "field_salience": 0.0, "noise_strength": 3.0, "width": 1.0, "utility": "exp",
         "cand_dispersion": 1.0, "cand_shift": 0.0, "rounds": 2, "samples": 3,
-        "strategic": 0.5, "adaptive": 0.0, "aggressive": 0.5, "lazy": 0.0, "max_score": 5, "exits": 0, "clones": 0,
-        "poll_size": 0, "poll_error": 2.0, "search": 4, "start": "honest", "seed": 7}
+        "strategic": 0.5, "adaptive": 0.0, "lazy": 0.0, "max_score": 5, "exits": 0, "clones": 0,
+        "poll_size": 0, "poll_error": 2.0, "search": 4, "start": "honest", "seed": 7, "engine": "groups"}
 CONDITIONS = [
     ("default", {}),                                          # poll rounds, full ballots
     ("five-cands", {"cands": 5, "seed": 8}),                  # odd candidate count, other seed
@@ -58,18 +59,22 @@ CONDITIONS = [
     ("adaptive", {"strategic": 0.2, "adaptive": 0.6, "lazy": 0.4, "rounds": 3}),
     ("linear", {"utility": "linear", "exits": 1, "clones": 1}),   # linear utility, with nomination
     ("quadratic", {"utility": "quadratic"}),                     # quadratic utility
-    # individual voters (the default since 2026-10-31; the conditions above are the ranking groups)
-    ("individual", {"individual": 1, "search": 0, "strategic": 0.2, "adaptive": 0.8, "rounds": 3}),
-    ("individual-campaign", {"individual": 1, "campaign": 1.0, "coordination": 0.25, "search": 1, "strategic": 1.0,
+    # individual voters (pooled the default engine since 2026-11-06; the conditions above are the ranking groups)
+    ("individual", {"engine": "arithmetic", "search": 0, "strategic": 0.2, "adaptive": 0.8, "rounds": 3}),
+    ("individual-campaign", {"engine": "arithmetic", "campaign": 1.0, "coordination": 0.25, "search": 1, "strategic": 1.0,
                              "adaptive": 0.0, "rounds": 3}),           # with campaigns and discovery
-    ("individual-previous", {"individual": 1, "search": 0, "start": "previous"}),
-    ("individual-previous-nomination", {"individual": 1, "search": 0, "start": "previous", "exits": 1, "clones": 1,
+    ("individual-previous", {"engine": "arithmetic", "search": 0, "start": "previous"}),
+    ("individual-previous-nomination", {"engine": "arithmetic", "search": 0, "start": "previous", "exits": 1, "clones": 1,
                                         "rounds": 1}),       # the previous ballots carried to another field
-    ("pooled", {"individual": 1, "response": "pooled", "search": 0, "strategic": 0.2, "adaptive": 0.8, "rounds": 3}),
-    ("pooled-search", {"individual": 1, "response": "pooled", "search": 3, "strategic": 1.0, "adaptive": 0.0,
+    ("pooled", {"engine": "pooled", "search": 0, "strategic": 0.2, "adaptive": 0.8, "rounds": 3}),
+    ("pooled-search", {"engine": "pooled", "search": 3, "strategic": 1.0, "adaptive": 0.0,
                        "rounds": 2}),                       # pooled discovery (the default since 2026-11-06), with search
-    ("pooled-previous", {"individual": 1, "response": "pooled", "search": 0, "start": "previous"}),
-    ("exact", {"individual": 1, "response": "exact", "search": 0, "rounds": 2}),   # the exact response (a variant)
+    ("pooled-previous", {"engine": "pooled", "search": 0, "start": "previous"}),
+    ("exact", {"engine": "exact", "search": 0, "rounds": 2}),   # the exact response (a variant)
+    # the ranking groups with risk and with campaigns, campaigns with the exact response (since 3.0.0)
+    ("risk", {"risk": 1, "risk_tolerance": 0.2, "adaptive": 0.4, "strategic": 0.3, "rounds": 3}),
+    ("groups-campaign", {"campaign": 1.0, "coordination": 0.3, "rounds": 3}),
+    ("exact-campaign", {"engine": "exact", "campaign": 1.0, "coordination": 0.3, "search": 1, "rounds": 2}),
     ("cands-vote", {"voters": 9, "cands": 5, "cands_vote": 1, "exits": 1, "clones": 1, "rounds": 1}),   # candidates are voters
     ("cands-vote-biased", {"cands_vote": 1, "cand_shift": 0.5, "cand_dispersion": 0.7}),   # who stands, biased
 ]
@@ -179,12 +184,12 @@ def main():
         print(f"wrote {os.path.basename(REFERENCE)}: {len(rows)} rows, {len({r['method'] for r in rows})} methods")
         return
     if not os.path.exists(REFERENCE):
-        sys.exit("no regression.csv yet: run  python regression.py --update  once, on a version you trust")
+        sys.exit("no regression.csv yet: run  python tools/regression.py --update  once, on a version you trust")
     with open(REFERENCE, newline="") as f:
         old = list(csv.DictReader(f))
     n = compare(rows, old)
     if n:
-        sys.exit("differences found (see above). If they are intended: python regression.py --update")
+        sys.exit("differences found (see above). If they are intended: python tools/regression.py --update")
     print(f"all equal: {len(rows)} rows, {len({r['method'] for r in rows})} methods")
 
 

@@ -64,12 +64,12 @@ Five models are available: `noise` (the default), `clusters`, `field`, `ks` and 
 - `--ks-shared 1` (a test variant of `ks`, not in vse-sim): the factions of the first bundle are used in every bundle, so cleavages no longer cut across each other; positions and caring are still drawn per bundle.
 - Written anew from the algorithm; `ks` has one change: vse-sim's code gives a person one random offset for all dimensions of a bundle (it reads the offset by bundle number), which looks unintended; here each dimension has its own. With the exp utilities and this change, results are not directly comparable with Quinn's published numbers. `--dims`, `--cluster-count`, `--cluster-spread` and `--cluster-zipf` do not apply to this model.
 
-**Looking at the electorates.** `show_electorates.py` draws the electorates of one or more models without running any method, in a few seconds, to check by eye that they look as intended and to compare models:
+**Looking at the electorates.** `tools/show_electorates.py` draws the electorates of one or more models without running any method, in a few seconds, to check by eye that they look as intended and to compare models:
 
 ```
-python show_electorates.py --model clusters ks ks-quinn --out look       # -> output/look/
-python show_electorates.py --model ks --ks-cut 0.05 --width 0.5 --out look-ks
-python show_electorates.py --utility exp linear quadratic --out look-utility
+python tools/show_electorates.py --model clusters ks ks-quinn --out look       # -> output/look/
+python tools/show_electorates.py --model ks --ks-cut 0.05 --width 0.5 --out look-ks
+python tools/show_electorates.py --utility exp linear quadratic --out look-utility
 ```
 
 It takes run.py's electorate parameters (one value each; `--model` and `--utility` may list several, and every model is shown with every utility form) and the same random streams, so election e of a seed is the electorate run.py uses. It writes `examples.png` (a few elections per model: voters coloured by their favourite and the lettered candidates, on the voters' first two principal components; the Condorcet winner ringed), `summary.png` (over 300 elections: variance explained by the first principal components and how many reach 70%, favourite ÷ least liked (with linear or quadratic utility, which are negative, the utilities stretched per voter instead), the utilities, the distances, and the VSE lost by electing the Condorcet winner where it is not the utility winner) and `summary.txt` (the same as numbers). For the ks models, whose people weigh the dimensions differently, positions are scaled by the voters' average weights first: the space roughly as an average voter sees it.
@@ -77,7 +77,7 @@ It takes run.py's electorate parameters (one value each; `--model` and `--utilit
 With `--sav` it also maps the candidates the way Alós-Ferrer & Granić (2015, "Political space representations with approval data", *Electoral Studies* 39) mapped real parties and candidates from approval ballots in German field experiments, after Laslier's spatial approval voting (2006). This gives a dimensionality comparable with theirs (four or more dimensions to explain 70% for real voters):
 
 ```
-python show_electorates.py --model clusters ks --cands 9 --sav --out look-sav
+python tools/show_electorates.py --model clusters ks --cands 9 --sav --out look-sav
 ```
 
 - Each electorate is drawn with `--sav-voters` voters (1000), and every voter approves honestly, as in the methods (Honest approval below: a personal threshold between their mean and their favourite; until 2026-10-17 everyone above their mean). `--sav-noise s` (default 1) first blurs each utility by a normal error of s × the voter's own spread of utilities, so approvals are partly chance, as in real ballots (candidates a voter hardly knows, mistakes). Without it the model's approvals are so consistent that, in most elections, some pair of candidates is approved together by nobody, which the map can only patch (below); at 1 no such pair remains and the map comes closer to the real ones (2026-10-17; [journal.md](journal.md), Laziness and approval against real ballots).
@@ -161,14 +161,19 @@ Rules that refer to the range scale with it: ARA approves ratings above the midd
 
 ## Strategy engine
 
-Strategic voters answer polls before the vote (`strategy.py`). Two engines do this, on the same polls:
+Strategic voters answer polls before the vote (the `strategy/` package). An engine does this, chosen with `--engine`; all of them run on the same polls, in the same rounds, with the same voters taking part:
 
-- **Individual voters** (`--individual 1`, the default since 2026-10-31; individual.py): every voter decides alone, from moves found for voters who see the race as they do, counted on the published polls (pooled discovery, the default since 2026-11-06; until then by arithmetic on the poll totals).
-- **Ranking groups** (`--individual 0`, the engine of version 1.0.0): voters with the same sincere ranking answer as one group, by their expected gain over the polls, recounted with their ballot changed.
+- **Individual voters** (since 2026-10-31): every voter decides alone.
+  - `pooled` (the default since 2026-11-06; strategy/pooled.py): from moves found for voters who see the race as they do, counted on the published polls.
+  - `arithmetic` (the default from 2026-10-31 to 2026-11-06; strategy/individual.py): by arithmetic on the averaged poll totals.
+  - `exact` (strategy/individual.py): as `arithmetic`, each move counted on the averaged poll again; a variant for analysis.
+- **Ranking groups** (`groups`, the engine of version 1.0.0; strategy/groups.py): voters with the same sincere ranking answer as one group, by their expected gain over the polls, recounted with their ballot changed.
+
+Some options belong to some engines only: `--aggressive`, `--risk` and `--risk-tolerance` to the ranking groups, `--coordination` and `--honesty` to individual voters, `--campaign` to all but pooled ([running.md](running.md), Flags of one engine). Until version 3.0.0 the engine was chosen with `--individual` (0: the ranking groups, 1: individual voters) and `--response` (arithmetic, exact, pooled).
 
 The front-runners, the voters answering around them and the attention to both sides (attack and defence) take inspiration from John Huang's votesim ([summary report](http://votesim.usa4r.org/summary-report.html), [code](https://github.com/johnh865/election_sim)), which measures one-sided strategy (only the challenger's coalition uses tactics) and two-sided strategy (the honest winner's supporters answer with a bullet vote). Version 1.0.0 also had **convergent learning** (`--converge N`), a long-run model where groups take turns over many rounds; it was removed on 2026-10-29 and remains available in that version.
 
-### Poll rounds (both engines)
+### Poll rounds (every engine)
 
 One election, with a few polls before it. Voters see only published poll results, never anyone's preferences, and answer them all at the same time.
 
@@ -181,7 +186,7 @@ One election, with a few polls before it. Voters see only published poll results
 
 ### Individual voters (the default)
 
-`--individual 1` with pooled discovery (`--response pooled`), the default since 2026-11-06 (individual.py, `answer_pooled`). The rule in short:
+`--engine pooled`, pooled discovery, the default since 2026-11-06 (strategy/pooled.py, `answer_pooled`). The rule in short:
 
 > Discovery is shared, the decision individual, as with voters who learn from pundits and campaigns what pays under a method but decide for themselves. The voters are grouped by how they see the race: their order of the poll's top three candidates. For each such type, the obvious moves are tried on the published polls: what happens if a share `--coordination` of the type makes the move, counted by the method itself. Each voter then weighs what their type's moves promise with their own utilities.
 >
@@ -197,11 +202,11 @@ So there is one comparison per voter, value against cost, and what makes a move 
 - **Search** (`--search` k, default 0): each type also tries k random proposals per round, each one random step after its best move so far, as the ranking groups search; a proposal that raises the type's mean gain is kept in the type's library (the 8 most recent, moves of up to 6 steps) and offered again in later rounds. It changes the results clearly only for the IRV family, whose hard-to-predict count rewards odd moves, and there for the worse; the named moves cover the rest (journal, 2026-11-06).
 - **Cost.** Each voter's cost of voting insincerely, as a share of their utility range: always strategic voters 0 (`--strategic`), sincere voters never move, adaptive voters (the default, everyone else) their personal draw, uniform from 0 to `--honesty` (0.3), from their own random stream per election (the same for every method). The voter makes the most valuable move if its value exceeds their cost; ties go to the sincere ballot. `--honesty` sets how much strategy there is. It was set with the arithmetic (below): under Plurality, at the defaults, 0.3 let about 12% of the voters whose favourite is not one of the two poll leaders desert them, and about 5% of all voters move per poll, close to what surveys find in plurality elections (4–8% of all voters in Canada; of the supporters of the party third in their district, one in eight, Blais 2002); 1 gave about a third of that, 0.1 about twice. With pooled discovery about 4% of all voters move per poll under Plurality (300 elections), still in that range.
 - **Judging.** Each voter remembers what their move promised: the gain in expected outcome over the polls as they were. The next poll shows what happened. The ratio, from −3 (backfired three times as badly as promised) to 1 (kept its promise), updates their trust in what the move aims at (each candidate it raises or lowers), as a running average with a prior of one kept promise. A promise counts only as far as it is trusted; trust never makes a harmful move look good. The poll cannot tell a voter's own move from everyone else's, so the judgement is as crude as real voters' is.
-- **Campaigns** (`--campaign 1`) need the arithmetic (`--response arithmetic`): pooled discovery has none yet.
-- **Not available** with individual voters: `--aggressive` (no effect) and `--risk` (refused). The cost takes their place.
+- **Campaigns** (`--campaign 1`) need `--engine arithmetic` (or `exact`): pooled discovery has none yet.
+- **Not available** with individual voters: `--aggressive` and `--risk`, options of the ranking groups (refused with another engine). The cost takes their place.
 - **Settled**, **random streams**: as for the ranking groups. Discovery and the candidates' search draw from a stream of their own, so the polls stay those of a run without them.
 
-**The arithmetic** (`--response arithmetic`, the default from 2026-10-31 to 2026-11-06). Every voter decides alone from the round's poll totals, by arithmetic on them, and considers compromise and burial around the top three:
+**The arithmetic** (`--engine arithmetic`, the default from 2026-10-31 to 2026-11-06; strategy/individual.py). Every voter decides alone from the round's poll totals, by arithmetic on them, and considers compromise and burial around the top three:
 
 - **The poll of polls.** The round's `--samples` polls (each spread by `--poll-error` as above) are averaged and read as one poll of their combined size.
 - **Closeness, one rule for every method.** For each candidate c: the smallest number of voters switching from the poll winner A to c that makes c win the count of the totals. A switching voter turns a ballot supporting A over c into the same ballot with A and c swapped (rankings: A first, c second; one name: A to c; approval: A alone to c alone; scores: the top score from A to c). The runner-up B is the closest candidate, the next place T the next closest. No method needs a margin of its own.
@@ -214,13 +219,13 @@ So there is one comparison per voter, value against cost, and what makes a move 
 - **Cross-effects.** The races move each other. With the poll, a scenario table is read: B's closeness again for x voters switching from A to T (x from −24 to +24), and the same for T with voters switching to B. A move's worth in one race is carried into the other through it. Under a runoff method, T passing B in the first round can put B out of the runoff, so a push-over pays where the poll says so. Under a Condorcet method, T beating A can make a cycle that B wins, so burial of A under T can pay through it.
 - **Discovery** (`--search`, default 0): each voter who may move also tries that many random variations of the move they hold, valued and judged like every move. In its first trial it changed nothing beyond noise and cost about a third more run time, so it is off by default.
 - **Campaigns** (`--campaign 1`): candidates recommend moves to their audience, planned with `--coordination` of it following; each voter weighs the recommendation of the candidate they like most among those campaigning, if their own part alone does not harm them ([campaigns.md](campaigns.md), Campaigns for individual voters).
-- **Why it was replaced.** The arithmetic is close to exact for additive counts (Plurality, Approval, Score, Borda), but not for counts where the winner depends on several quantities at once: pairwise counts, eliminations, multi-stage counts. There a ballot change acts on combinations the switches from A do not cover. The response check (`response_check.py`, [response_check.md](../response_check.md)) measured it: under Condorcet methods the arithmetic sees a gain in well under 1% of the moves where counting again finds one in about 2.5%, and under multi-stage rated methods it promises gains that are not there in 12–21%. So it favoured some counts over others, Copeland and Baldwin most: there voters almost never saw a third candidate in the race.
-- **Exact response, a variant for analysis** (`--response exact`, since 2026-11-06): a move is valued by counting the averaged poll again with the change and finding the closeness of B and T by the same bisection as for the poll itself (for a candidate who leads after the change: how far, down to 3 sigma below 0). Everything else stays: the same moves, races, spread, chances, bloc, cost and trust. It is about six times slower than the arithmetic.
+- **Why it was replaced.** The arithmetic is close to exact for additive counts (Plurality, Approval, Score, Borda), but not for counts where the winner depends on several quantities at once: pairwise counts, eliminations, multi-stage counts. There a ballot change acts on combinations the switches from A do not cover. The response check (`tools/response_check.py`, [response_check.md](../tools/response_check.md)) measured it: under Condorcet methods the arithmetic sees a gain in well under 1% of the moves where counting again finds one in about 2.5%, and under multi-stage rated methods it promises gains that are not there in 12–21%. So it favoured some counts over others, Copeland and Baldwin most: there voters almost never saw a third candidate in the race.
+- **Exact response, a variant for analysis** (`--engine exact`, since 2026-11-06): a move is valued by counting the averaged poll again with the change and finding the closeness of B and T by the same bisection as for the poll itself (for a candidate who leads after the change: how far, down to 3 sigma below 0). Everything else stays: the same moves, races, spread, chances, bloc, cost and trust. It is about six times slower than the arithmetic.
 - **Until 2026-11-04** an adaptive voter first needed a stake (|u(A) − u(B)| × 4 P(A) P(B)) above their draw, a boldness drawn per voter from 1 to `--coordination` of the electorate, and a move worth more than the poll's uncertainty could account for (its gain larger than the change if the poll were off by σ), with chances never projected past an even race. Those filters were chained and partly counted the same thing twice (the closeness of the race in all three, the poll's uncertainty in the chances and the test), which left few voters strategic. They also carved out fixed sets of voters: a voter expecting fewer than about 0.75 σ followers never acted, whatever the stake, so `--coordination 0` gave no strategy at all and the share left out depended on the number of voters, and in near ties the runner-up's supporters rarely acted while the leader's still defended ([journal.md](journal.md)).
 
 ### Ranking groups
 
-`--individual 0`, the engine of version 1.0.0 (strategy.py).
+`--engine groups`, the engine of version 1.0.0 (strategy/groups.py).
 
 - **Groups.** Whole ranking groups (strategic voters with the same sincere ranking, no cap). Voters who share a ranking and see the same poll reach the same answer, so they act as a bloc. Factions across rankings are not built in; they emerge when groups answer the same poll alike (all who prefer the runner-up to the leader, say).
 - **Leaders.** The two candidates that win most often over the round's polls, the same for everyone. If one candidate wins every poll, the polls are widened (deviations × 2, 4, …; counts that would cross zero are clipped there) until another one wins somewhere: the race that would matter first.
@@ -243,7 +248,7 @@ So there is one comparison per voter, value against cost, and what makes a move 
 
 **Push-over** (since 2026-10-28). Besides the naive exaggerations for the leader they prefer (A, against the other leader B), strategic groups try one push-over: the ballot for A against B with a third candidate X supported as well, so that X rather than B faces A in a runoff or an elimination. X is the next place in the polls, found the way the runner-up is: the candidate other than the two leaders that wins most often, widening the polls until one of the rest wins somewhere (since 2026-10-29; before, every third candidate was tried). Only that one is tried because it is the one most likely to get past B; a push-over for a weaker candidate, who could be pushed past B only with many votes, is left to the random search. Per format: a single mark goes to X; approval approves X too; scores and grades give X the top as well; rankings put X first, A second and B last; truncated rankings rank X first, then down to A; two-round ballots support X in round 1 (TTR: mark X; approval runoffs: approve X too; Score runoff: the top score for X too), the runoff ranking staying sincere. Veto ballots have none. Like every option it is taken only when the polls show it pays, so it matters where a weak opponent can be steered into a later stage: TTR, Supplementary vote, the IRV family. Before, two-round ballots got it on 2026-10-28 and the other formats only through the random search. It costs about 20% more run time (the standard set at the defaults; 45% when every third candidate was tried).
 
-### Partial strategy (both engines)
+### Partial strategy (every engine)
 
 `--strategic p` makes a random share p of the voters always strategic; the others are adaptive (by default, see Adaptive voters below) or, with `--adaptive 0`, always sincere. Each voter is strategic with probability p, drawn from its own random stream per election, so the same voters are strategic for every method. Ranking groups form only among the strategic voters. p = 1 gives full strategy; p = 0 with no adaptive voters (`--adaptive 0`) gives the sincere results. A share like 0.5 with `--adaptive 0` (the default until 2026-10-17) is an intermediate level, in the spirit of other simulations that report 0, 50 and 100% strategy, and comparable with them. Sincerity and the strategy types are averaged over all voters, including the sincere ones.
 

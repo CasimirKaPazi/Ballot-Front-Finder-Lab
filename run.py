@@ -3,9 +3,9 @@
 Usage:
     python run.py --elections 200                      # defaults: see docs/running.md, Parameters
 
-Each electorate is tallied twice per method: with sincere ballots, and after the groups
-(voters with the same sincere ranking) have answered polls strategically (see strategy.py, poll
-rounds). The "learned" rows hold those ballots.
+Each electorate is tallied twice per method: with sincere ballots, and after the voters have
+answered polls strategically (the strategy engine, --engine; see strategy/__init__.py, poll rounds).
+The "learned" rows hold those ballots.
 
 Axes of the Pareto front (0 = random ballot, 100 = best candidate; see metrics.py):
     VSE, WME     voter satisfaction and worst-margin efficiency, sincere ballots
@@ -49,7 +49,8 @@ from nomination import nominate, clone_setup, utilities, to_original, cand_prefs
 from methods import (METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined,
                      ensure, set_candidates, candidates, candidate_utilities)
 from ballots import score_ballots
-from strategy import respond, strategy_types, default_poll_size, fidelity, implied_values
+from strategy import (respond, strategy_types, default_poll_size, fidelity, implied_values, ENGINES, DEFAULT_ENGINE,
+                      ENGINE_PARAMS, engine_params)
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, maximal_lottery, reference_points, juries, jury_text, FRONT_TOLERANCE
 import participation as part
 import manipulation as manip
@@ -62,13 +63,26 @@ def lazy_cuts(rng, n, lazy):
 
 def personal_thresholds(draw, share, adapt):
     """Adaptive voters: those whose draw lies in [share, share + adapt) (after the always-strategic share).
-    Their position in that band, rescaled to 0..1, is their personal threshold: they vote strategically
-    in a round when their stake in the leading race exceeds it (strategy.py). nan = not adaptive;
+    Their position in that band, rescaled to 0..1, is their personal threshold: the ranking groups vote
+    strategically in a round when their stake in the leading race exceeds it, individual voters when a
+    move gains more than it times --honesty (strategy/__init__.py). nan = not adaptive;
     None without adaptive voters."""
     if adapt <= 0:
         return None
     inside = (draw >= share) & (draw < share + adapt)
     return np.where(inside, (draw - share) / adapt, np.nan)
+
+
+def engine_settings(p):
+    """The strategy settings one_election and previous_election read from a run's parameters p (through
+    strategy.engine_params): the engine, the aggressive share (the ranking groups'
+    fixed split; 0.5 where it has no effect, drawn all the same), whether campaigns and risk are on, the
+    coordination share (also what campaigns plan with) and the honesty cost."""
+    p = engine_params(p)                           # (also for callers that pass the parameters as they are)
+    num = lambda k, d: float(d if p.get(k) in (None, "") else p[k])
+    engine = p["engine"]
+    return (engine, num("aggressive", 0.5), num("campaign", 0.0) > 0, num("risk", 0) > 0,
+            num("coordination", 0.25), num("honesty", 0.3))
 
 
 def one_election(job):
@@ -90,10 +104,8 @@ def one_election(job):
     seed, samples, share = p["seed"], p["samples"], p["strategic"]
     adapt = p.get("adaptive", 0.0)
     exits, clones, poll_size, poll_error = p["exits"], p["clones"], p["poll_size"], p["poll_error"]
-    search, aggr, start = p["search"], p["aggressive"], p["start"]
-    camp_on, risky = float(p.get("campaign", 0.0)) > 0, bool(p.get("risk", 0))
-    phi = float(p.get("coordination", 0.25))       # the share of an audience assumed to make a move
-    individual = bool(int(p.get("individual", 0)))  # --individual 1: each voter alone (individual.py)
+    search, start = p["search"], p["start"]
+    engine, aggr, camp_on, risky, phi, honesty = engine_settings(p)
     set_max_score(p["max_score"])                   # per process: workers do not share module state
     set_lazy(p.get("lazy", 0.0))                    # laziness (methods.set_lazy)
     rng = np.random.default_rng([seed, e])
@@ -136,10 +148,7 @@ def one_election(job):
     aggressive = np.random.default_rng([seed, e, zlib.crc32(b"aggressive")]).random(len(u)) < aggr
     # --risk: each voter's personal risk threshold (own stream, the same for every method; docs/campaigns.md)
     risk = ({"threshold": np.random.default_rng([seed, e, zlib.crc32(b"risk")]).random(len(u)),
-             "kappa": p.get("risk_tolerance", 0.1)} if risky else None)
-    # --individual: each voter expects themselves and --coordination of their camp (the voters with the same
-    # favourite, on the field they face) to vote as they do (individual.bloc)
-    followers = phi if individual else None
+             "kappa": p["risk_tolerance"]} if risky else None)
     # --campaign: candidates' utilities for every candidate (their own preferences), as in nomination
     cu_all = (clone_setup(voters, cands, sc.width, np.random.default_rng([seed, e, zlib.crc32(b"clones")]),
                           ele.voter_weights, ele.cand_weights, getattr(sc, "utility", "exp"))[1] if camp_on else None)
@@ -197,8 +206,7 @@ def one_election(job):
             res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
                           poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0,
                           adaptive=adaptive, activated=act, campaign=camp, risk=risk, cstats=cst,
-                          leaders=lead, individual=followers if individual else None, honesty=float(p.get("honesty", 0.3)),
-                          response=p.get("response", "arithmetic"))
+                          leaders=lead, engine=engine, coordination=phi, honesty=honesty)
             sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
             sincere_row.update(ties(m, m.sincere(uf), P_h))
             sincere_row.update(manip.manipulation(m, m.sincere(uf), uf, u, back) if manipulating else manip.NAN)
@@ -226,7 +234,7 @@ def one_election(job):
 
 
 OUTPUT_DIR = "output"
-VERSION = "2.2.0"      # written into every row (column "version") and shown in the analysis report
+VERSION = "3.0.0"      # written into every row (column "version") and shown in the analysis report
 
 
 def out_path(name):
@@ -309,8 +317,14 @@ def resolve_search(p):
     """--search left out (None): 1 random ballot change per round for the ranking groups, 0 random
     variations for individual voters (discovery is off unless asked for). Returns p with a number."""
     if p.get("search") is None:
-        p = {**p, "search": 0 if int(p.get("individual", 0)) else 1}
+        p = {**p, "search": 1 if p.get("engine") == "groups" else 0}
     return p
+
+
+def resolve(p):
+    """A run's parameters as written to the results: the engine settings (strategy.engine_params), then
+    --search, --adaptive and the salience column resolved."""
+    return resolve_salience(resolve_search(resolve_adaptive(engine_params(p))))
 
 
 def resolve_adaptive(p):
@@ -361,20 +375,34 @@ def check_params(a, error):
         error("--ks-cut must be between 0 and 1")
     if any(v < 0 for v in vals("poll_error")):
         error("--poll-error must be 0 or more")
-    if any(v not in (0, 1) for v in vals("campaign")):
+    # the engine (strategy.ENGINES) and the flags that belong to some engines only (strategy.ENGINE_PARAMS):
+    # left out (None) they take their default; given, at least one of the engines must use them
+    if any(getattr(a, k, None) is not None for k in ("individual", "response")):
+        error("--individual and --response were replaced by --engine in version 3.0.0: --engine groups (was "
+              "--individual 0), or arithmetic, exact or pooled (was --individual 1 --response arithmetic, exact or pooled)")
+    engines = vals("engine")
+    given = lambda k: [v for v in vals(k) if v is not None]
+    for k, (es, _) in ENGINE_PARAMS.items():
+        if given(k) and not any(e in es for e in engines):
+            error(f"--{k.replace('_', '-')} has no effect with --engine {' '.join(engines)} (it is for "
+                  f"--engine {', '.join(es)})")
+    with_default = lambda k: given(k) or [ENGINE_PARAMS[k][1]]
+    if given("coordination") and engines == ["groups"] and max(with_default("campaign")) == 0:
+        error("--coordination has no effect with --engine groups unless --campaign 1 (it is what campaigns plan with)")
+    if given("risk_tolerance") and engines == ["groups"] and max(with_default("risk")) == 0:
+        error("--risk-tolerance has no effect without --risk 1")
+    if given("aggressive") and engines == ["groups"] and min(with_default("risk")) == 1:
+        error("--aggressive has no effect with --risk 1 (each voter's risk decides whether they are bold)")
+    if any(v not in (0, 1) for v in with_default("campaign")):
         error("--campaign must be 0 (off) or 1 (on; it plans with --coordination, the share until 2026-10-29)")
-    if "pooled" in vals("response") and 1 in vals("individual") and any(float(v) > 0 for v in vals("campaign")):
-        error("campaigns need --response arithmetic (pooled discovery has no campaigns yet)")
-    if any(v < 0 for v in vals("honesty")):
+    if any(v < 0 for v in with_default("honesty")):
         error("--honesty must be at least 0")
-    if any(not 0 <= v <= 1 for v in vals("coordination")):
+    if any(not 0 <= v <= 1 for v in with_default("coordination")):
         error("--coordination must be between 0 (one voter) and 1")
-    if max(vals("campaign")) > 0 and min(vals("coordination")) == 0:
+    if max(with_default("campaign")) > 0 and min(with_default("coordination")) == 0:
         error("--campaign needs a --coordination above 0 (a share of the audience to plan with)")
-    if any(v < 0 for v in vals("risk_tolerance")):
+    if any(v < 0 for v in with_default("risk_tolerance")):
         error("--risk-tolerance must be 0 or more")
-    if max(vals("individual")) > 0 and max(vals("risk")) > 0:
-        error("--risk is for the ranking groups: add --individual 0")
 
 
 def cand_text(disp, shift, vote=0):
@@ -395,41 +423,41 @@ def width_text(p):
 
 def strategy_text(p, n):
     """One-line description of the strategy model of a run (p: namespace or dict of parameters)."""
-    g0 = (lambda k: p[k]) if isinstance(p, dict) else (lambda k: getattr(p, k))
-    g = lambda k: g0(k) if k not in LATER_PARAMS else (p.get(k, LATER_PARAMS[k]) if isinstance(p, dict)
-                                                        else getattr(p, k, LATER_PARAMS[k]))
+    p = engine_params(p if isinstance(p, dict) else vars(p))
+    g = lambda k: p.get(k, LATER_PARAMS.get(k))
+    e = p["engine"]
     ps = int(g("poll_size")) or default_poll_size(int(n))
-    if int(g("individual")) and g("response") == "pooled":
+    lazy = f", laziness {g('lazy')}" if float(g("lazy")) > 0 else ""
+    camp = (f", campaigns (planned with {g('coordination')} of the audience)"
+            if e in ("groups", "arithmetic", "exact") and float(g("campaign")) > 0 else "")
+    prev = "; first poll from a previous election" if g("start") == "previous" else ""
+    if e == "pooled":
         return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
                 f"individual voters with pooled discovery (the moves that pay for {g('coordination')} of each type "
                 f"of voter, by their order of the poll's top three, counted on the polls; a voter makes one if it "
                 f"gains more than a cost up to {g('honesty')} of their utility range"
-                + (f"; search {g('search')}" if int(g("search") or 0) else "") + ")"
-                + (f", laziness {g('lazy')}" if float(g("lazy")) > 0 else ""))
-    if int(g("individual")):
+                + (f"; search {g('search')}" if int(g("search") or 0) else "") + ")" + lazy + prev)
+    if e in ("arithmetic", "exact"):
         return (f"{g('rounds')} poll round(s), the average of {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
                 f"individual voters (compromise or burial if it gains more than a cost up to {g('honesty')} of their "
                 f"utility range, expecting {g('coordination')} of their camp to do the same"
-                + (", moves valued by counting the poll again" if g("response") == "exact" else ", moves valued by arithmetic") + ")"
-                + ((f", campaigns (planned with {g('coordination')} of the audience)") if float(g("campaign")) > 0 else "")
-                + (f", laziness {g('lazy')}" if float(g("lazy")) > 0 else ""))
+                + (", moves valued by counting the poll again" if e == "exact" else ", moves valued by arithmetic") + ")"
+                + camp + lazy + prev)
     return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
-            f"search {g('search')}, "
-            + (f"risk by satisfaction (tolerance {g('risk_tolerance')})" if int(g("risk"))
+            f"ranking groups, search {g('search')}, "
+            + (f"risk by satisfaction (tolerance {g('risk_tolerance')})" if int(float(g("risk")))
                else f"aggressive share {g('aggressive')}")
-            + ((f", campaigns (planned with {g('coordination')} of the audience)") if float(g("campaign")) > 0 else "")
-            + (f", laziness {g('lazy')}" if float(g("lazy")) > 0 else "")
-            + ("; first poll from a previous election" if g("start") == "previous" else ""))
+            + camp + lazy + prev)
 
 
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "utility", "cand_dispersion", "cand_shift", "rounds", "samples",
           "strategic", "adaptive", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search",
-          "start", "seed", "campaign", "risk", "risk_tolerance", "coordination", "individual", "cands_vote", "honesty", "response"]
+          "start", "seed", "campaign", "risk", "risk_tolerance", "coordination", "engine", "cands_vote", "honesty"]
 # Run parameters added later, with the value that gives the earlier behaviour: filled in where a caller
-# leaves them out (simulate), so callers written before them keep working
-LATER_PARAMS = {"campaign": 0.0, "risk": 0, "risk_tolerance": 0.1, "coordination": 0.25, "individual": 0,
-                "cands_vote": 0, "honesty": 0.3, "response": "arithmetic"}
+# leaves them out (simulate), so callers written before them keep working. The engine and its parameters
+# are filled by strategy.engine_params (no engine, and no --individual: the ranking groups).
+LATER_PARAMS = {"cands_vote": 0}
 
 
 def previous_election(args):
@@ -444,23 +472,20 @@ def previous_election(args):
     rng = np.random.default_rng([p["seed"], zlib.crc32(b"previous")])
     ele = draw_electorate(sc, rng)                  # the same draws as scenario.electorate_positions
     u = ele.u
-    phi = float(p.get("coordination", 0.25))
-    individual = bool(int(p.get("individual", 0)))
-    followers = phi if individual else None
+    engine, aggr, camp_on, risky, phi, honesty = engine_settings(p)
     exits, clones = int(p.get("exits", 0)), int(p.get("clones", 0))
-    camp_on = float(p.get("campaign", 0.0)) > 0
     if camp_on or exits or clones:                 # clones' positions and candidates' preferences
         u_clone, cu = clone_setup(ele.voters, ele.cands, sc.width,
                                   np.random.default_rng([p["seed"], zlib.crc32(b"previous-clones")]),
                                   ele.voter_weights, ele.cand_weights, getattr(sc, "utility", "exp"))
     risk = ({"threshold": np.random.default_rng([p["seed"], zlib.crc32(b"previous-risk")]).random(len(u)),
-             "kappa": p.get("risk_tolerance", 0.1)} if bool(p.get("risk", 0)) else None)
+             "kappa": p["risk_tolerance"]} if risky else None)
     set_voter_lazy(lazy_cuts(np.random.default_rng([p["seed"], zlib.crc32(b"previous-lazy")]), len(u), p.get("lazy", 0.0)))
     set_voter_approval(np.random.default_rng([p["seed"], zlib.crc32(b"previous-approval")]).random(len(u)))
     draw = rng.random(len(u))
     strategic = draw < p["strategic"]
     adaptive = personal_thresholds(draw, p["strategic"], p.get("adaptive", 0.0))
-    aggressive = rng.random(len(u)) < p["aggressive"]
+    aggressive = rng.random(len(u)) < aggr
     m = METHODS[name]
     C = u.shape[1]
     ents = [(d, 0) for d in range(C)]
@@ -477,8 +502,7 @@ def previous_election(args):
         B, _, _ = respond(m, uf, np.random.default_rng([p["seed"], zlib.crc32(b"previous-learning")]), rounds=rounds,
                           samples=p["samples"], poll_size=p["poll_size"], search=p["search"], strategic=strategic,
                           poll_error=p["poll_error"], aggressive=aggressive, adaptive=adaptive,
-                          campaign=camp, risk=risk, individual=followers, honesty=float(p.get("honesty", 0.3)),
-                          response=p.get("response", "arithmetic"))
+                          campaign=camp, risk=risk, engine=engine, coordination=phi, honesty=honesty)
     set_voter_lazy(None)
     set_voter_approval(None)
     set_candidates(None)
@@ -562,7 +586,7 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
     workers: processes (None: one per core); 0: no worker processes, everything in this one.
     Shows progress (see Progress) unless progress is False. Returns the new rows with p as columns."""
     names = names or list(METHODS)
-    p = {**LATER_PARAMS, **p}
+    p = resolve_search(engine_params({**LATER_PARAMS, **p}))
     rounds = list(p["rounds"]) if isinstance(p["rounds"], (list, tuple)) else [p["rounds"]]
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"],
                   p["cand_dispersion"], p["cand_shift"], p.get("model", "clusters"), p.get("ks_alpha", 1.5),
@@ -580,7 +604,7 @@ def simulate(p, elections, workers=None, names=None, participation=False, sink=N
         return rows
     prog = Progress(len(todo), label, before=elections - len(todo)) if progress else None
     # workers=0: everything in this process, without a pool of worker processes (for callers that are
-    # not a script with a __main__ guard, such as test_methods.py: with the "spawn" and "forkserver"
+    # not a script with a __main__ guard, such as tests/test_methods.py: with the "spawn" and "forkserver"
     # start methods, the default on macOS, Windows and from Python 3.14 on Linux, each worker imports
     # the main script again). The settings one_election puts into methods.py are restored afterwards.
     import methods as _m
@@ -656,7 +680,7 @@ FINGERPRINT_PARAMS = {"voters": 31, "cands": 6, "model": "clusters", "dims": 3, 
                       "ks_cut": 0.2, "ks_shared": 0, "width": 1.0, "utility": "exp", "cand_dispersion": 1.0,
                       "cand_shift": 0.0, "rounds": 2, "samples": 3, "strategic": 0.3,
                       "adaptive": 0.5, "aggressive": 0.5, "lazy": 0.0, "max_score": 5, "exits": 0, "clones": 0,
-                      "poll_size": 0, "poll_error": 2.0, "search": 4, "start": "honest", "seed": 7}
+                      "poll_size": 0, "poll_error": 2.0, "search": 4, "start": "honest", "seed": 7, "engine": "groups"}
 FINGERPRINT_TIES = {**FINGERPRINT_PARAMS, "voters": 20, "cands": 5, "lazy": 0.5, "seed": 9}
 FINGERPRINT_COLS = ["U_method", "WM", "sincerity", "fidelity", "compromise", "burial", "pushover",
                     "U_best", "U_rb", "WM_best", "WM_rb"]
@@ -822,46 +846,48 @@ def parser():
                          "--cands voters; --cand-dispersion and --cand-shift then select who stands. 0: candidates "
                          "are drawn apart from the voters, and those two move them")
     ap.add_argument("--rounds", type=int, default=3,
-                    help="poll rounds before the vote (0 = everyone votes sincerely); see strategy.py")
+                    help="poll rounds before the vote (0 = everyone votes sincerely); see strategy/__init__.py")
     ap.add_argument("--samples", type=int, default=5,
                     help="polls per round (they stand for the uncertainty; 10 until 2026-10-26)")
     ap.add_argument("--poll-size", type=int, default=0,
                     help="voters per poll (0 = half the electorate, rounded to an odd number)")
     ap.add_argument("--search", type=int, default=None,
-                    help="random ballot changes a group tries per round, after the naive exaggerations, each from "
-                         "the best ballot so far (default 1; 10, stopping after 3 in a row without gain, until "
-                         "2026-10-29); with --individual 1: random variations per voter and round (discovery, "
-                         "default 0)")
-    ap.add_argument("--aggressive", type=float, default=0.5,
-                    help="ranking groups (--individual 0) only: share of strategic voters who exaggerate whenever it "
-                         "cannot hurt; the others (kind) only when the polls show a gain")
-    ap.add_argument("--campaign", type=float, default=0.0,
-                    help="experimental: 1 = every candidate recommends a move each round, planned with --coordination "
-                         "of their audience following (docs/campaigns.md); 0 = off")
-    ap.add_argument("--individual", type=int, default=1, choices=[0, 1],
-                    help="1 (default since 2026-10-31) = individual voters; 0 = the ranking groups. 1: the average of the round's polls, read for how close each candidate is; "
-                         "each voter decides alone by their stake in the race, and picks compromise, burial or "
-                         "sincere by what the poll totals promise if 1 to --coordination of the voters (their "
-                         "boldness) vote as they do (individual.py); --aggressive does not apply, --search: random "
-                         "variations per voter and round (default 0)")
-    ap.add_argument("--coordination", type=float, default=0.25,
-                    help="with --individual: the share of their camp (the voters with the same favourite) a voter "
-                         "expects to vote as they do; with --campaign: the share of their audience a candidate plans with")
-    ap.add_argument("--honesty", type=float, default=0.3,
-                    help="with --individual: an adaptive voter's cost of voting insincerely is a personal share, uniform "
-                         "from 0 to this, of their utility range; they make a move only if it gains more (0.3 gives "
-                         "about the strategic voting measured under Plurality)")
-    ap.add_argument("--response", default="pooled", choices=["arithmetic", "exact", "pooled"],
-                    help="with --individual: how a voter values a move: pooled (the default since 2026-11-06: the moves "
-                         "of the ranking groups found and valued per type of voter, by their order of the poll's top "
-                         "three, counting the round's polls again), by arithmetic (its worth in voters switching "
-                         "from the poll winner, the default before) or exactly (the averaged poll counted again with the move; "
-                         "a variant for analysis, much slower). Ignored for the ranking groups. docs/model.md, Individual voters")
-    ap.add_argument("--risk", type=int, default=0, choices=[0, 1],
-                    help="ranking groups (--individual 0) only: 1 = each voter is careful or bold by their "
-                         "satisfaction with the polls, instead of the fixed --aggressive split (docs/campaigns.md)")
-    ap.add_argument("--risk-tolerance", type=float, default=0.1,
-                    help="with --risk 1: how much loss bold voters accept, per unit of their shortfall (κ)")
+                    help="--engine groups: random ballot changes a group tries per round, after the naive "
+                         "exaggerations, each from the best ballot so far (default 1; 10, stopping after 3 in a row "
+                         "without gain, until 2026-10-29); individual voters: random variations per voter and "
+                         "round (discovery, default 0)")
+    ap.add_argument("--engine", default=DEFAULT_ENGINE, choices=list(ENGINES),
+                    help="the strategy engine (docs/model.md, Strategy engines): pooled (the default since 2026-11-06: "
+                         "individual voters, the moves of the ranking groups found and valued per type of voter, by "
+                         "their order of the poll's top three, counting the round's polls again); arithmetic "
+                         "(individual voters reading the average of the polls, a move valued by its worth in voters "
+                         "switching from the poll winner); exact (as arithmetic, the averaged poll counted again "
+                         "with the move: a variant for analysis, much slower); groups (the ranking groups, the "
+                         "engine of version 1.0.0). Until version 3.0.0: --individual and --response")
+    ap.add_argument("--individual", default=None, help=argparse.SUPPRESS)     # replaced by --engine (an error)
+    ap.add_argument("--response", default=None, help=argparse.SUPPRESS)
+    ap.add_argument("--aggressive", type=float, default=None,
+                    help="--engine groups: share of strategic voters who exaggerate whenever it cannot hurt; the "
+                         "others (kind) only when the polls show a gain (default 0.5)")
+    ap.add_argument("--risk", type=int, default=None, choices=[0, 1],
+                    help="--engine groups: 1 = each voter is careful or bold by their satisfaction with the polls, "
+                         "instead of the fixed --aggressive split (docs/campaigns.md; default 0)")
+    ap.add_argument("--risk-tolerance", type=float, default=None,
+                    help="--engine groups with --risk 1: how much loss bold voters accept, per unit of their "
+                         "shortfall (κ; default 0.1)")
+    ap.add_argument("--campaign", type=float, default=None,
+                    help="experimental, --engine groups, arithmetic or exact: 1 = every candidate recommends a move each "
+                         "round, planned with --coordination of their audience following (docs/campaigns.md); "
+                         "0 = off (default)")
+    ap.add_argument("--coordination", type=float, default=None,
+                    help="individual voters (pooled, arithmetic, exact): the share of their camp (the voters with "
+                         "the same favourite; pooled: of their type) a voter expects to vote as they do; with "
+                         "--campaign 1: the share of their audience a candidate plans with (default 0.25)")
+    ap.add_argument("--honesty", type=float, default=None,
+                    help="individual voters (pooled, arithmetic, exact): an adaptive voter's cost of voting "
+                         "insincerely is a personal share, uniform from 0 to this, of their utility range; they "
+                         "make a move only if it gains more (default 0.3, about the strategic voting measured under "
+                         "Plurality)")
     ap.add_argument("--lazy", type=float, default=0.0,
                     help="laziness of honest ballots, 0..1: each voter has a cut drawn between 0 and this, and ranks, "
                          "approves or scores only candidates whose utility, stretched to 0..1 between least and most "
@@ -907,7 +933,7 @@ def default_params():
     """The run parameters of a plain `python run.py` (the defaults), as written to the results."""
     a = parser().parse_args([])
     a.salience = resolve_salience(vars(a))["salience"]
-    return resolve_salience(resolve_search(resolve_adaptive({k: getattr(a, k) for k in PARAMS})))
+    return resolve({k: getattr(a, k) for k in PARAMS})
 
 
 def main():
@@ -918,7 +944,7 @@ def main():
     out = run_dir(a.out, "run", a.overwrite, a.resume)
     write_command(out, a.resume)
     a.salience = resolve_salience(vars(a))["salience"]   # from the exponent (resolve_salience)
-    p = resolve_salience(resolve_search(resolve_adaptive({k: getattr(a, k) for k in PARAMS})))
+    p = resolve({k: getattr(a, k) for k in PARAMS})
     names = run_selection(a.methods, a.exclude)
     path = os.path.join(out, "elections.csv")
     key = run_key(p, PARAMS)
@@ -965,7 +991,7 @@ def main():
 
     lines = []
     lines.append(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {model_text(a)}, "
-          f"{width_text(a)}{cand_text(a.cand_dispersion, a.cand_shift, a.cands_vote)}; {strategy_text(a, a.voters)}, "
+          f"{width_text(a)}{cand_text(a.cand_dispersion, a.cand_shift, a.cands_vote)}; {strategy_text({**vars(a), **p}, a.voters)}, "
           f"strategic share {a.strategic}, adaptive share {p['adaptive']}, scores 0..{a.max_score}"
           f"{f', nomination: exits {a.exits}, clones {a.clones}' if a.exits or a.clones else ''}; seed {a.seed}")
     lines.append(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")

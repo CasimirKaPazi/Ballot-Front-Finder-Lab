@@ -1,6 +1,6 @@
 # Campaigns and risk: a design
 
-Status: implemented as an experiment (2026-10-27); for individual voters, the default engine since 2026-10-31, see Campaigns for individual voters, below; the design that follows describes the ranking groups (`--individual 0`): `--campaign` and `--risk` in run.py and sweep.py, both off by default. Since 2026-10-29 `--campaign` is 0 or 1 and φ is `--coordination` (default 0.25), the share also used for the boldness of individual voters (`--individual 1`; until 2026-10-31 also by the experimental shared moves, `--moves 1`); until then `--campaign φ` set both at once, and the analysis reads such runs as `--campaign 1 --coordination φ`; first results under First trials, below. Changes from the design as first written, after the first trials: only bold voters follow recommendations, a campaign's move is one simple move (no exaggerations), and a voter listens to one campaign only, that of the candidate they like most among those campaigning (see The moves and The voter's choice). It extends the poll-rounds strategy model ([model.md](model.md), Strategy engine) by two optional parts, both off by default: campaigns, which give voters coordinated moves to choose from, and a risk attitude per voter, which replaces the fixed split into aggressive and kind voters. With both off the lab gives exactly the results it gives now.
+Status: implemented as an experiment (2026-10-27); for individual voters, the default engine since 2026-10-31, see Campaigns for individual voters, below; the design that follows describes the ranking groups (`--engine groups`; until version 3.0.0 `--individual 0`): `--campaign` and `--risk` in run.py and sweep.py, both off by default. Since 2026-10-29 `--campaign` is 0 or 1 and φ is `--coordination` (default 0.25), the share also used for the boldness of individual voters (then `--individual 1`; until 2026-10-31 also by the experimental shared moves, `--moves 1`); until then `--campaign φ` set both at once, and the analysis reads such runs as `--campaign 1 --coordination φ`; first results under First trials, below. Changes from the design as first written, after the first trials: only bold voters follow recommendations, a campaign's move is one simple move (no exaggerations), and a voter listens to one campaign only, that of the candidate they like most among those campaigning (see The moves and The voter's choice). It extends the poll-rounds strategy model ([model.md](model.md), Strategy engine) by two optional parts, both off by default: campaigns, which give voters coordinated moves to choose from, and a risk attitude per voter, which replaces the fixed split into aggressive and kind voters. With both off the lab gives exactly the results it gives now.
 
 ## The problem
 
@@ -157,7 +157,7 @@ The first run of the basic version took the follower's ballot for the Inverse-\*
 
 ## Campaigns for individual voters (2026-10-31)
 
-With `--individual 1 --campaign 1` the campaigns follow the same three rules, worked out with the arithmetic the individual voters use ([model.md](model.md), What a poll shows; individual.py, `plan`). Nobody recounts the poll.
+With individual voters (`--engine arithmetic` or `exact`) and `--campaign 1` the campaigns follow the same three rules, worked out with the arithmetic the individual voters use ([model.md](model.md), What a poll shows; individual.py, `plan`). Nobody recounts the poll.
 
 - **The moves.** A candidate considers more moves than a voter:
   - the moves the voters consider in that round: compromise for one of the poll's three places (winner A, runner-up B, next place T), burial of one, or both;
@@ -170,7 +170,7 @@ With `--individual 1 --campaign 1` the campaigns follow the same three rules, wo
 - **Outputs.** `camp_follow` and `camp_top` as before: the share of voters following a recommendation, and the candidate with most followers.
 - **What it costs.** Per round, one rendering of each move for all voters (about 2C + 15 moves) and the arithmetic for each move and candidate, all in one batch. The poll is not recounted.
 
-**Trials** (standard set, 200 elections, round 6, `--individual 1 --campaign 0 1`; paired differences, VSE\* / WME\*, percentage points; "clear" when the 95% bootstrap interval excludes 0). The present version has the wider search (the "X above Y" pairs and the candidates' own search):
+**Trials** (standard set, 200 elections, round 6, individual voters (`--individual 1` then, now `--engine arithmetic`), `--campaign 0 1`; paired differences, VSE\* / WME\*, percentage points; "clear" when the 95% bootstrap interval excludes 0). The present version has the wider search (the "X above Y" pairs and the candidates' own search):
 
 - **All voters strategic** (`--strategic 1`): most methods within noise; the Condorcet methods unchanged. Clear differences: MJ +3.3 VSE\*, TTR −1.2 VSE\*, Supplementary vote −4.3 WME\*, BTR-score −1.3 WME\*. IRV and IRV-3 −3 to −4, not clear. 1–8% of voters follow a campaign (Borda 14%). Run time 5:15 → 7:11.
 - **Adaptive voters** (the default): every method within ±1.8; IRV +1.0 VSE\* clear. 0.2–2.7% follow. Run time 5:01 → 6:44.

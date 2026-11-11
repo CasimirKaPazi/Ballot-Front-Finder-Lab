@@ -44,6 +44,6 @@ GROUP = "addons"                                           # an existing group (
 
 
 def test():
-    """Optional checks, run by test_methods.py: a small profile with a known winner."""
+    """Optional checks, run by tests/test_methods.py: a small profile with a known winner."""
     B = np.array([[5, 3, 0], [0, 5, 3], [3, 5, 0]], dtype=float)
     assert np.allclose(METHODS["My method"].tally(B), [0, 1, 0])

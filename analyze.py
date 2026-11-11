@@ -56,6 +56,7 @@ from collections import OrderedDict
 import numpy as np
 
 import plots
+from strategy import engine_params, ENGINES, ENGINE_PARAMS
 from metrics import pareto, FRONT_TOLERANCE, REF_POINTS, parse_jury
 from run import out_path, write_command, strategy_text, cand_text, width_text, check_folder, ANALYSIS_FILES, OUTPUT_DIR, VERSION, PARAMS as RUN_PARAMS
 from models import model_text, MODELS
@@ -175,9 +176,9 @@ ADDED_COLUMNS = {
     **{f"{a}_{k}": (None, "2026-10-27, further reference points") for k in REF_POINTS for a in ("U", "WM")},
     "p_span": (None, "2026-11-04, the chance of electing from the trade-off span"),
     "jury": (None, "2026-11-05, random juries (equivalent jury size)"),
-    "response": ("arithmetic", "2026-11-06, how individual voters value a move (arithmetic or exact)"),
     "campaign": ("0.0", "2026-10-27, campaigns: older runs had none"),
-    "individual": ("0", "2026-10-30, individual voters reading one poll: older runs used ranking groups"),
+    "engine": (None, "3.0.0, one strategy engine flag: older runs are read by their individual and response "
+                     "columns (individual 0 or missing: groups; individual 1: the response, arithmetic if missing)"),
     "coordination": ("0.25", "2026-10-29, coordination share: older runs had campaigns planned with the "
                              "--campaign value"),
     "risk": ("0", "2026-10-27, risk by satisfaction: older runs used the fixed aggressive share"),
@@ -223,6 +224,7 @@ def load(paths):
                         OLD_FIDELITY.append(source_name(p))
                 if "coordination" in fill and r["campaign"] not in ("", "0", "0.0"):
                     r["coordination"], r["campaign"] = r["campaign"], "1.0"   # until 2026-10-29 --campaign was the share
+                r = engine_params(r)             # the engine (older files: individual, response); the others blank
                 new = current_name(r["method"])  # methods renamed since (methods.RENAMED)
                 if new != r["method"]:
                     RENAMED_SEEN[r["method"]] = new
@@ -252,7 +254,8 @@ def lacking_lines():
         parts = []
         for note, ks in groups.items():
             v = ADDED_COLUMNS[ks[0]][0]
-            parts.append(f"{', '.join(ks)} {'read as ' + v if v is not None else 'blank'} ({note})")
+            how = "derived" if ks == ["engine"] else "read as " + v if v is not None else "blank"
+            parts.append(f"{', '.join(ks)} {how} ({note})")
         out.append(f"{name} lacks columns added later: {'; '.join(parts)}")
     return out
 
@@ -950,11 +953,20 @@ def participation_summary(A, W):
     return out
 
 
+def _same_number(a, b):
+    try:
+        return abs(float(a) - float(b)) < 1e-12
+    except (TypeError, ValueError):
+        return str(a) == str(b)
+
+
 def label(key, varying, first):
     """Name a condition by the parameters in which it differs from the first condition (the base)."""
     p, b = dict(zip(PARAMS, key)), dict(zip(PARAMS, first))
     names = PARAM_NAMES
-    diff = [k for k in varying if p[k] != b[k]]
+    # blank: not a parameter of its engine; blank in the base (another engine's): named if not its default
+    diff = [k for k in varying if p[k] != b[k] and p[k] != ""
+            and not (b[k] == "" and k in ENGINE_PARAMS and _same_number(p[k], ENGINE_PARAMS[k][1]))]
     if not varying:
         return "single condition"
     return ", ".join(f"{names.get(k, k)} {p[k]}" for k in diff) or "base"
@@ -962,7 +974,7 @@ def label(key, varying, first):
 
 POINT_KEYS = {"rb": "random ballot", "rc": "random candidate", "ml": "maximal lottery", **DERIVED_POINTS, **REF_POINTS,
               "mirror": MIRROR}   # --points
-PARAM_NAMES = {"response": "response to a move", "honesty": "honesty cost", "campaign": "campaigns", "coordination": "coordination share", "individual": "individual voters", "risk": "risk by satisfaction",
+PARAM_NAMES = {"engine": "engine", "honesty": "honesty cost", "campaign": "campaigns", "coordination": "coordination share", "risk": "risk by satisfaction",
                "risk_tolerance": "risk tolerance", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error",
                "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion", "cands_vote": "candidates vote",
@@ -973,14 +985,14 @@ PARAM_NAMES = {"response": "response to a move", "honesty": "honesty cost", "cam
                "field_kappa": "field saturation", "field_salience": "salience field",
                "noise_strength": "noise strength", "adaptive": "adaptive share", "utility": "utility"}
 LEARNING_ONLY = {"rounds", "samples", "strategic", "adaptive", "poll_size", "poll_error", "search",
-                 "aggressive", "start", "campaign", "risk", "risk_tolerance", "coordination", "individual"}   # same electorates
+                 "aggressive", "start", "campaign", "risk", "risk_tolerance", "coordination", "engine", "honesty"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)
 
 
 def param_order(k, v):
     """Sort key for a parameter value: numbers by value; words in their listed order (start: honest, previous; model: as in models.MODELS),
     other words alphabetically, after the numbers."""
-    words = {"start": ["honest", "previous"], "model": list(MODELS), "salience": ["none", "cluster"]}
+    words = {"start": ["honest", "previous"], "model": list(MODELS), "salience": ["none", "cluster"], "engine": list(ENGINES)}
     try:
         x = float(v)
     except ValueError:
@@ -1003,8 +1015,8 @@ def sweep_chains(keys, varying):
     base = dict(zip(PARAMS, keys[0]))
     skip = {d for d, src in DERIVED.items() if src in varying}
 
-    def diff(key):
-        return tuple(q for q, v in zip(PARAMS, key) if q not in skip and v != base[q])
+    def diff(key):     # a parameter blank on one side belongs to another engine: the engine is the difference
+        return tuple(q for q, v in zip(PARAMS, key) if q not in skip and v != base[q] and "" not in (v, base[q]))
 
     groups = {}
     for key in keys[1:]:
@@ -1451,7 +1463,7 @@ def main():
         if float(p.get("adaptive") or 0) > 0:
             ad = r["adapted"]
             why = ("strategic in a round when their best move gains more than their cost of voting insincerely"
-                   if int(p.get("individual") or 0) else
+                   if p.get("engine") != "groups" else
                    "strategic in a round when the race between the two leaders matters enough to them")
             L += [f"**Adaptive voters** (a share {p['adaptive']} of the electorate, {why}): the share of them voting "
                   "strategically in the reported round, per method, averaged over elections. A method whose leading "
