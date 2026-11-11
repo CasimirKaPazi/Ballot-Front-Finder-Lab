@@ -88,6 +88,7 @@ Every run or sweep writes into its own folder in `output/`, and `analyze.py` wri
 | [docs/addons.md](docs/addons.md) | Tutorial: writing your own method as an add-on |
 | [docs/journal.md](docs/journal.md) | Development journal: how the lab developed, the experiments, what they showed and the decisions they led to, with the settings and commands |
 | [docs/roadmap.md](docs/roadmap.md) | What is planned or under consideration for later versions, by area |
+| [docs/strategy-design.md](docs/strategy-design.md) | Design note for the next strategy engine: what is wrong with the current one, the proposed principle, open questions (a proposal, not implemented) |
 | [docs/pipelines.md](docs/pipelines.md) | Composing methods from parts: the plan and its reasons, phase 1 built (compositions on the command line and in add-ons; the parts in [methods.md](docs/methods.md), Compositions) |
 
 ## Versions
