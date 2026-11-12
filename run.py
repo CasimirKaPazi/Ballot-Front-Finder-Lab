@@ -77,12 +77,22 @@ def engine_settings(p):
     """The strategy settings one_election and previous_election read from a run's parameters p (through
     strategy.engine_params): the engine, the aggressive share (the ranking groups'
     fixed split; 0.5 where it has no effect, drawn all the same), whether campaigns and risk are on, the
-    coordination share (also what campaigns plan with), the honesty cost and the largest inertia."""
+    coordination share (also what campaigns plan with) and the honesty cost; inertia_options: the inertia
+    engine's."""
     p = engine_params(p)                           # (also for callers that pass the parameters as they are)
     num = lambda k, d: float(d if p.get(k) in (None, "") else p[k])
     engine = p["engine"]
     return (engine, num("aggressive", 0.5), num("campaign", 0.0) > 0, num("risk", 0) > 0,
-            num("coordination", 0.25), num("honesty", 0.3), num("inertia", 1.0))
+            num("coordination", 0.25), num("honesty", 0.3))
+
+
+def inertia_options(p):
+    """The options of the inertia engine from a run's parameters (strategy.ENGINE_PARAMS), as respond
+    takes them; their defaults where blank (other engines)."""
+    p = engine_params(p)
+    num = lambda k: float(ENGINE_PARAMS[k][1] if p.get(k) in (None, "") else p[k])
+    return {"inertia": num("inertia"), "inertia_shape": num("inertia_shape"), "shares": int(num("shares")),
+            "evidence": num("evidence"), "memory": num("memory")}
 
 
 def one_election(job):
@@ -105,7 +115,7 @@ def one_election(job):
     adapt = p.get("adaptive", 0.0)
     exits, clones, poll_size, poll_error = p["exits"], p["clones"], p["poll_size"], p["poll_error"]
     search, start = p["search"], p["start"]
-    engine, aggr, camp_on, risky, phi, honesty, inertia = engine_settings(p)
+    engine, aggr, camp_on, risky, phi, honesty = engine_settings(p)
     set_max_score(p["max_score"])                   # per process: workers do not share module state
     set_lazy(p.get("lazy", 0.0))                    # laziness (methods.set_lazy)
     rng = np.random.default_rng([seed, e])
@@ -206,7 +216,7 @@ def one_election(job):
             res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
                           poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0,
                           adaptive=adaptive, activated=act, campaign=camp, risk=risk, cstats=cst,
-                          leaders=lead, engine=engine, coordination=phi, honesty=honesty, inertia=inertia)
+                          leaders=lead, engine=engine, coordination=phi, honesty=honesty, **inertia_options(p))
             sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
             sincere_row.update(ties(m, m.sincere(uf), P_h))
             sincere_row.update(manip.manipulation(m, m.sincere(uf), uf, u, back) if manipulating else manip.NAN)
@@ -398,6 +408,14 @@ def check_params(a, error):
         error("--campaign must be 0 (off) or 1 (on; it plans with --coordination, the share until 2026-10-29)")
     if any(v < 0 for v in with_default("inertia")):
         error("--inertia must be at least 0")
+    if any(v <= 0 for v in with_default("inertia_shape")):
+        error("--inertia-shape must be above 0")
+    if any(v < 1 or v != int(v) for v in with_default("shares")):
+        error("--shares must be a whole number, 1 or more")
+    if any(v < 0 for v in with_default("evidence")):
+        error("--evidence must be at least 0")
+    if any(not 0 <= v <= 1 for v in with_default("memory")):
+        error("--memory must be between 0 (only the current round) and 1 (every round alike)")
     if engines == ["inertia"] and any(v not in (None, 0) for v in vals("search")):
         error("--search has no effect with --engine inertia (no search yet)")
     if any(v < 0 for v in with_default("honesty")):
@@ -440,7 +458,10 @@ def strategy_text(p, n):
         return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
                 f"inertia (voters reason from their honest ballot: a move of a race among the poll's top three, "
                 f"valued for an unknown share of their side and remembered over the rounds, is cast if it beats "
-                f"the honest ballot by more than their inertia, up to {g('inertia')} of their utility range)"
+                f"the honest ballot by more than their inertia, up to {g('inertia')} of their utility range, "
+                f"and kept while it does, moves one on top of another, the latest taken back first"
+                + (f", shape {g('inertia_shape')}" if float(g("inertia_shape")) != 1 else "")
+                + f"; {int(float(g('shares')))} shares, evidence {g('evidence')}, memory {g('memory')})"
                 + lazy + prev)
     if e == "pooled":
         return (f"{g('rounds')} poll round(s), {g('samples')} polls of {ps} voters, poll error {g('poll_error')}x, "
@@ -464,7 +485,8 @@ def strategy_text(p, n):
 # Run parameters written into every row of the elections CSV
 PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "utility", "cand_dispersion", "cand_shift", "rounds", "samples",
           "strategic", "adaptive", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search",
-          "start", "seed", "campaign", "risk", "risk_tolerance", "coordination", "engine", "cands_vote", "honesty", "inertia"]
+          "start", "seed", "campaign", "risk", "risk_tolerance", "coordination", "engine", "cands_vote", "honesty", "inertia",
+          "inertia_shape", "shares", "evidence", "memory"]
 # Run parameters added later, with the value that gives the earlier behaviour: filled in where a caller
 # leaves them out (simulate), so callers written before them keep working. The engine and its parameters
 # are filled by strategy.engine_params (no engine, and no --individual: the ranking groups).
@@ -483,7 +505,7 @@ def previous_election(args):
     rng = np.random.default_rng([p["seed"], zlib.crc32(b"previous")])
     ele = draw_electorate(sc, rng)                  # the same draws as scenario.electorate_positions
     u = ele.u
-    engine, aggr, camp_on, risky, phi, honesty, inertia = engine_settings(p)
+    engine, aggr, camp_on, risky, phi, honesty = engine_settings(p)
     exits, clones = int(p.get("exits", 0)), int(p.get("clones", 0))
     if camp_on or exits or clones:                 # clones' positions and candidates' preferences
         u_clone, cu = clone_setup(ele.voters, ele.cands, sc.width,
@@ -514,7 +536,7 @@ def previous_election(args):
                           samples=p["samples"], poll_size=p["poll_size"], search=p["search"], strategic=strategic,
                           poll_error=p["poll_error"], aggressive=aggressive, adaptive=adaptive,
                           campaign=camp, risk=risk, engine=engine, coordination=phi, honesty=honesty,
-                          inertia=inertia)
+                          **inertia_options(p))
     set_voter_lazy(None)
     set_voter_approval(None)
     set_candidates(None)
@@ -885,6 +907,19 @@ def parser():
                          "this, of their utility range; they leave their honest ballot only for a move that beats "
                          "it by more (always strategic voters: 0; default 1, from the desertion of a hopeless "
                          "favourite under Plurality, docs/strategy-design.md)")
+    ap.add_argument("--inertia-shape", type=float, default=None,
+                    help="--engine inertia: an adaptive voter's inertia is --inertia x q ** this, q their "
+                         "personal draw (uniform 0..1): 1 uniform (default), below 1 more voters near the largest "
+                         "inertia, above 1 more near 0")
+    ap.add_argument("--shares", type=int, default=None,
+                    help="--engine inertia: how many shares of their side a voter imagines making a move, not "
+                         "knowing how many will (the midpoints of that many equal parts of 0..1; default 4)")
+    ap.add_argument("--evidence", type=float, default=None,
+                    help="--engine inertia: the weight of one round's observed share of the side casting a move, "
+                         "against the uniform guess of round 1 (Beta(1, 1); default 4)")
+    ap.add_argument("--memory", type=float, default=None,
+                    help="--engine inertia: the weight of each earlier round against the round after it, for "
+                         "the remembered values of moves and the evidence (0: only the current round; default 0.8)")
     ap.add_argument("--aggressive", type=float, default=None,
                     help="--engine groups: share of strategic voters who exaggerate whenever it cannot hurt; the "
                          "others (kind) only when the polls show a gain (default 0.5)")

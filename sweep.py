@@ -93,6 +93,14 @@ def main():
                     help="individual voters; also what campaigns plan with (default 0.25)")
     ap.add_argument("--inertia", type=float, nargs="+", default=[None],
                     help="--engine inertia: the largest inertia, a share of the utility range (default 1)")
+    ap.add_argument("--inertia-shape", type=float, nargs="+", default=[None],
+                    help="--engine inertia: the distribution of inertia (1: uniform, default)")
+    ap.add_argument("--shares", type=int, nargs="+", default=[None],
+                    help="--engine inertia: shares of the side a voter imagines making a move (default 4)")
+    ap.add_argument("--evidence", type=float, nargs="+", default=[None],
+                    help="--engine inertia: one round's observed share against the uniform guess (default 4)")
+    ap.add_argument("--memory", type=float, nargs="+", default=[None],
+                    help="--engine inertia: each earlier round against the round after it (default 0.8)")
     ap.add_argument("--honesty", type=float, nargs="+", default=[None],
                     help="individual voters: the largest cost of voting insincerely, a share of the utility range "
                          "(default 0.3)")

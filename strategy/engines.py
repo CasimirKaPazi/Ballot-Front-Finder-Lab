@@ -17,8 +17,8 @@ ENGINES = {
               "of version 1.0.0)",
     "inertia": "experimental (docs/strategy-design.md): voters reason from their honest ballot; a move of their "
                "side in a race among the poll's top three, valued for an unknown share of the side and remembered "
-               "over the rounds, is cast if it beats the honest ballot by more than their inertia "
-               "(inertia.InertiaEngine)",
+               "over the rounds, is cast if it beats the honest ballot by more than their inertia; moves are "
+               "added one on top of another and the latest taken back when it stops paying (inertia.InertiaEngine)",
 }
 
 
@@ -35,6 +35,10 @@ ENGINE_PARAMS = {
     "coordination": (("pooled", "arithmetic", "exact", "groups"), 0.25),   # groups: only with campaigns
     "honesty": (("pooled", "arithmetic", "exact"), 0.3),
     "inertia": (("inertia",), 1.0),                           # the largest inertia of an adaptive voter
+    "inertia_shape": (("inertia",), 1.0),                     # the distribution of inertia (1: uniform)
+    "shares": (("inertia",), 4),                              # shares of the side a voter imagines moving
+    "evidence": (("inertia",), 4.0),                          # one round's observed share against the guess
+    "memory": (("inertia",), 0.8),                            # each earlier round against the next
 }
 
 

@@ -37,7 +37,8 @@ def _engine(name):
 
 def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strategic=None, poll_error=2.0,
             report=None, aggressive=None, start=None, adaptive=None, activated=None, campaign=None, risk=None,
-            cstats=None, leaders=None, engine="groups", coordination=0.25, honesty=0.3, inertia=1.0):
+            cstats=None, leaders=None, engine="groups", coordination=0.25, honesty=0.3, inertia=1.0,
+            inertia_shape=1.0, shares=4, evidence=4.0, memory=0.8):
     """Poll rounds (see the package docstring). Returns ballots of the last round, whether it
     settled (same as the round before), and mean sincerity (all voters).
     report: a list of round numbers; then `rounds` is ignored, the rounds run up to the highest,
@@ -62,14 +63,16 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strateg
                   tolerance factor}: careful or bold by their satisfaction with the polls)
       arithmetic, exact   coordination, honesty, campaign
       pooled      coordination, honesty
-      inertia     inertia (the largest inertia of an adaptive voter, a share of their utility range)
+      inertia     inertia (the largest inertia of an adaptive voter, a share of their utility range),
+                  inertia_shape, shares, evidence, memory (inertia.InertiaEngine)
     campaign: None (off) or {"share": phi, "cand_u": candidates' utilities, C x C}: every candidate
     recommends a move each round (docs/campaigns.md). coordination: the share of their camp (pooled: of
     their type) an individual voter expects to vote as they do (0: only themselves), or per voter a
     number of voters. honesty: an adaptive individual voter's cost of voting insincerely is their
     personal draw times this, a share of their utility range."""
     options = {"aggressive": aggressive, "campaign": campaign, "risk": risk, "coordination": coordination,
-               "honesty": honesty, "inertia": inertia}
+               "honesty": honesty, "inertia": inertia, "inertia_shape": inertia_shape, "shares": shares,
+               "evidence": evidence, "memory": memory}
     if report is not None:
         want = sorted(set(int(r) for r in report))
         if want[0] < 0:

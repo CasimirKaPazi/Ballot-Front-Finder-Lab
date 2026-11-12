@@ -41,7 +41,7 @@ A side is defined by one preference only, as real camps are: "everyone who wants
 
 ### Inertia: unwillingness to leave home
 
-Each voter has an inertia θ, a share of their own utility range, drawn per election from their own random stream (the same for every method). Their honest ballot is their home. Every round they compare the best move available to them (below) with their honest ballot, and cast the move only if it beats the honest ballot by more than θ; otherwise they vote honestly. Going back home costs nothing.
+Each voter has an inertia θ, a share of their own utility range, drawn per election from their own random stream (the same for every method). Their honest ballot is their home. A move must beat the honest ballot by more than θ to be cast, and to be kept (The voter's decision, below). Going back toward home costs nothing.
 
 - **Low inertia:** makes a move for small advantages.
 - **High inertia:** stays honest unless the polls show things going badly enough that a move gains a lot. A poll much worse than expected shows up as a large gain from a move, so no separate notion of what each voter expected is needed.
@@ -69,7 +69,14 @@ A move's value to a voter is a weighted average over the rounds in which it was 
 
 ### The voter's decision
 
-A voter is on three sides and has several moves in mind. They cast the move of greatest remembered value if that value exceeds their inertia (both as shares of their utility range); otherwise their honest ballot. Their inertia enters once, as the threshold for leaving home.
+A voter is on three sides and has several moves in mind. Their ballot is their honest one with the moves they cast, one on top of the other (their stack), and every round they take one step:
+
+- **Back one move,** if the value of their latest move no longer exceeds their inertia (both as shares of their utility range). Their ballot goes back to the one before that move, at no cost. A move further down the stack is checked once it is the latest.
+- **Otherwise one move further,** the new move of greatest remembered value that exceeds their inertia and fits on top of the ones they cast, if there is one.
+
+Each move is valued on its own against the side at home, as above, and its value must exceed the voter's inertia both to be added and to be kept. A new move fits if the ballot with it differs from the ballot before and from the honest one, and if in the race of every move in the stack the side's candidate stays above the other in what the ballot says. Two moves that each raise a different candidate to the top do not fit; burying two rivals does. The share of a side seen casting a move counts every member who holds it, alone or with other moves.
+
+With one move at a time (before 2026-11-12), a voter whose move stopped paying went straight home and had to take up any strategy again from there, and a voter could hold only the move of greatest value: a move in a side race could crowd out one in the race between the leaders.
 
 ### What this replaces
 
@@ -84,6 +91,8 @@ The first version (2026-11-11) had sides choose a rule, a move together with a c
 
 - **The cutoff is an optimisation no voter can do.** It requires knowing the inertia of everyone on one's side. Voters decide independently and must guess.
 - **Inertia from the last ballot spirals.** With the guess in place of the cutoffs, burial in Condorcet methods grew from round to round (Schulze: 10, 16, 19% in rounds 1, 3, 6), since harmless burial never gains enough to be taken back. Measured from home it stays level.
+
+- **One move at a time** (2026-11-12, see The voter's decision): voters held only their best move and, when it stopped paying, went straight home. They now add moves one on top of the other and take back only the latest.
 
 ## Not Covered
 
@@ -103,7 +112,7 @@ Each move is counted at four shares, plus once for the side at home, for six sid
 3. **Approval.** Strategic approval voting should move the result towards the Condorcet winner, as theory expects; with the current engine it barely moves.
 4. **Known answers.** Plurality with three candidates should show Duverger's desertion. A Condorcet method with a clear Condorcet winner should show burial among voters with low inertia in the early rounds, and some of it taken back once the buried side's answer shows in the polls.
 5. **Damping.** The share of voters changing their ballot should fall over the rounds, and the share of elections whose ballots settle should not fall compared with the current engine.
-6. **Robustness.** The results should not depend much on the constants of the guess and the memory (the four shares, the evidence of 4 per round, the weight 0.8 of earlier rounds), and their dependence on the distribution of inertia should be measured and reported.
+6. **Robustness.** The results should not depend much on the constants of the guess and the memory (the four shares, the evidence of 4 per round, the weight 0.8 of earlier rounds; `--shares`, `--evidence`, `--memory`), and their dependence on the distribution of inertia (`--inertia`, `--inertia-shape`) should be measured and reported.
 7. **The method order** should be explainable where it differs from version 2.x.
 
 ## Measurements of the First Version (2026-11-11)
@@ -144,10 +153,53 @@ For the first version, checks 1 (calibration), 2 (full strategy) and 5 (damping)
 - **Full strategy** (inertia 0 for everyone, `--strategic 1 --adaptive 0`, four methods, rounds 3 and 6): the share changing falls from 19.5 to 12.7% (first version: about half, not falling). Every voter with any gain makes a move, so burial reaches 59% of the voters in Schulze and IRV and compromise 47% in Plurality. VSE\* / WME\* in round 6: Schulze 89.2 / 98.2, Soft Minimax 86.7 / 96.3, IRV 86.8 / 91.4, Plurality 80.6 / 78.3 (pooled discovery at `--coordination 1`: 82.5 / 91.3, 86.2 / 97.6, 86.7 / 94.5, 78.2 / 79.5). The Condorcet methods hold up under full strategy here, unlike with the first version.
 - **Results** (VSE\* / WME\*; honest; first version round 3; this version rounds 3 and 6): Plurality 75.1 / 72.1; 80.9 / 75.8; 75.8 / 72.8 and 71.3 / 69.1. IRV 90.8 / 94.3; 91.4 / 93.3; 90.5 / 92.8 and 90.8 / 94.3. Score 86.6 / 94.6; 87.7 / 95.8; 87.1 / 93.7 and 88.2 / 92.6. STAR 90.9 / 97.7; 90.1 / 93.7; 91.6 / 98.3 and 92.6 / 96.4. Borda 84.8 / 94.3; 89.5 / 92.4; 90.8 / 94.7 and 90.8 / 95.3. Schulze 88.4 / 100.0; 88.6 / 98.2; 86.5 / 99.5 and 87.6 / 99.5. Soft Minimax-D 89.5 / 99.3; 89.5 / 99.3; 89.1 / 99.1 and 89.1 / 99.1. With 100 elections differences of about 2 points are within the noise; the drop of Plurality below its honest value needs the larger run to confirm.
 
+## Robustness (2026-11-12)
+
+The constants varied one at a time around a base, 500 elections each (seed 1; 99 voters, 6 candidates, model noise, strategic nomination with 1 exit and 2 clones, 29 methods, 3 rounds; one move at a time, before the stack of moves):
+
+```
+python sweep.py --engine inertia --one-at-a-time --rounds 3 --inertia 1 0.5 2 --inertia-shape 1 0.5 2 --shares 4 2 8 --evidence 4 1 16 --memory 0.8 0.5 0.95 --strategic 0 1 --elections 500
+```
+
+`--evidence 16` stopped after 20 elections and `--memory` was not reached, so neither is covered.
+
+| condition | adaptive voters strategic, Schulze | Plurality: compromise | rank correlation with the base, VSE\* / WME\* |
+|---|---|---|---|
+| base (inertia 1, shape 1, 4 shares, evidence 4) | 12.8% | 6.3% | noise reference 0.48 / 0.94 |
+| `--inertia 0.5` / `2` | 25.9 / 6.3% | 13.0 / 3.4% | 0.64 / 0.96, 0.87 / 0.99 |
+| `--inertia-shape 0.5` / `2` | 3.1 / 31.4% | 1.7 / 15.0% | 0.77 / 0.99, 0.54 / 0.95 |
+| `--shares 2` / `8` | 13.1 / 12.8% | 6.7 / 6.4% | 0.91 / 0.99, 0.93 / 0.98 |
+| `--evidence 1` | 13.7% | 7.0% | 0.95 / 0.99 |
+
+- **The guess hardly matters.** How many shares are imagined and how fast the observed share is learned change strategy by less than a point and keep the order of the methods as well as two halves of the base agree with each other.
+- **The inertia distribution sets the amount of strategy, as expected from its form.** With θ = inertia × q^shape and q uniform, a move of gain g is cast by the share (g / inertia)^(1/shape) of adaptive voters: halving the scale doubles strategy, shape 2 takes it to its square root. The engine supplies the gains; the inertia distribution turns them into a share of voters. Only the base puts the desertion under Plurality in the survey range (4–8%); scale and shape could trade off against each other there, and one survey figure cannot separate them.
+- **More strategy** (scale 0.5, shape 2) leaves the Condorcet methods at WME\* 99.0–99.3 with burial at 19–23% of the voters. Borda and Score lose the most (Borda WME\* 94.7 at the base, 90.3 and 90.6; Score 93.7, 92.0 and 92.7); the cardinal hybrids keep sincerity at 100 and lose up to a point (Soft Minimax-D 97.6, 97.0 and 96.8), their voters exaggerating instead (13–28%).
+- **Full strategy** (`--strategic 1 --adaptive 0`) reorders the methods (rank correlation of VSE\* −0.52, of WME\* 0.83). Burial reaches 58–62% of the voters under the Condorcet methods, which keep WME\* 97.5–98.3 (Schulze 87.4 / 97.8, sincerity 88.9); exaggeration reaches about 90% under the cardinal hybrids, which fall to WME\* 92.0–93.4 (Soft Minimax-D 83.6 / 93.4, STAR 82.8 / 92.6) with MJ highest among them (86.1 / 95.1). Pareto front: Schulze, Ranked pairs, MMPO, MJ. With everyone at inertia 0, every move of positive believed value is cast, so this case also carries the overestimate of a move's effect (Open Questions) at full weight.
+
+## Measurements of the Stack of Moves (2026-11-12)
+
+100 elections at the defaults (seed 1; Plurality, IRV, Schulze, Minimax, Ranked pairs, Borda, Score, Approval, STAR; rounds 1 to 6), one move at a time against the stack, the same elections. Rounds 1, 3, 6:
+
+| | voters changing per round, one move / stack | burial, one move / stack | exaggeration, one move / stack |
+|---|---|---|---|
+| Schulze | 13.6, 12.7, 8.1 / 13.6, 12.8, 8.8% | 10.0, 9.8, 8.2 / 10.0, 8.4, 6.9% | 1.1, 0.9, 0.6 / 1.1, 1.3, 1.1% |
+| IRV | 15.6, 12.6, 8.1 / 15.6, 13.5, 9.6% | 10.7, 9.8, 7.5 / 10.7, 8.4, 6.6% | 1.6, 1.3, 0.9 / 1.6, 2.0, 1.6% |
+| Borda | 16.1, 9.9, 8.5 / 16.1, 13.6, 10.9% | 2.6, 2.6, 2.0 / 2.6, 3.3, 2.7% | 9.3, 9.9, 8.6 / 9.3, 6.3, 5.4% |
+| Score | 12.9, 9.3, 5.8 / 12.9, 10.9, 6.9% | 0.0, 0.4, 0.6 / 0.0, 1.7, 1.5% | 12.8, 12.0, 9.4 / 12.8, 9.6, 6.9% |
+| Plurality | 6.7, 4.2, 3.4 / 6.7, 4.8, 4.0% | — | — (compromise 6.5, 6.2, 5.3 / 6.5, 5.4, 4.8%) |
+
+Sincerity stays at 98.7–99.9% in every method. The run time is unchanged.
+
+- **Stacks form** where a ballot can hold several moves: by round 6, 5% of the voters in IRV, Schulze and Borda hold two moves or more (of 11% holding any; 60 elections), 3% in Score, 2% in STAR and Approval; in Plurality almost none (a single mark).
+- **The churn stays.** Per round in rounds 4 to 6, about 3% of the voters leave home and 3–4% go back home, against 1–2% stepping back one move. Most stacks hold one move, so stepping back is going home; the churn is slightly higher than with one move at a time (Schulze 8.8 against 8.1% in round 6), since switching to another move now takes two steps (back, then the new move), where one move at a time switched directly.
+- **The race between the leaders** holds a move of only about 30% of the voters holding any (Schulze, IRV; Borda 36%, Score 42%), with stacks as with one move. The rest are moves in races with the third place.
+
 ## Open Questions
 
+- **How a move's effect is guessed.** The share of a side casting a move is applied to the side's average change of ballot, but the members who cast a move are those it helps, and for a mixed side they are often those whose ballot it changes least. Take the move "A and C top, B bottom" for A's side against B: for its members who like C best it is close to their honest ballot, while those who like A best would have to raise C, which elects C, so they never cast it. The voters then credit themselves with a change that those who actually cast the move do not make. At the defaults (200 elections, round 3, one move at a time) the voters casting a move in Schulze change their ballots 0.73 times as much as their side's average (IRV 0.53; Plurality 1.00, where every move is one mark), they expect a gain of 0.26 of their utility range but realise 0.001, and their move changes the winner for 1.2% of them, against 12.5% if as many members of their side, drawn at random, cast it. A trial in which each voter imagines the share of their side casting the move as they would (their own change of ballot) cut strategy in the Condorcet methods and IRV from about 13% to 2–3% of the voters, Plurality unchanged (6–7%), and took about nine times as long.
+
 - Sides per race, or types (above).
-- The constants of the guess and the memory (Robustness), and whether voters should see the share their side cast only through the noisy polls.
+- The memory constant (not yet covered by Robustness), and whether voters should see the share their side cast only through the noisy polls.
 - The distribution of inertia: its shape (uniform, or with many voters at high inertia), and whether it should depend on how far a move is from the honest ballot (a compromise for a near favourite costing less than burying someone).
 - Whether the layer of strategy without any reason is needed at all.
 - **Full strategy** (everyone at inertia 0) damps but stays restless: a fifth of the voters change in round 3, an eighth in round 6 (Measurements). Whether it should settle further, for instance by valuing a move against the other side's best answer in the same race (one step of looking ahead), depends on how much that case matters.

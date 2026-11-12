@@ -147,6 +147,10 @@ def source_name(p):
 ADDED_COLUMNS = {
     "model": ("clusters", "2026-10-14, electorate models: older runs used the clusters model"),
     "inertia": (None, "3.0.0, the inertia engine: blank for every other engine"),
+    "inertia_shape": (None, "3.0.0, the inertia engine's options: their defaults for its runs"),
+    "shares": (None, "3.0.0, the inertia engine's options: their defaults for its runs"),
+    "evidence": (None, "3.0.0, the inertia engine's options: their defaults for its runs"),
+    "memory": (None, "3.0.0, the inertia engine's options: their defaults for its runs"),
     "honesty": ("none", "2026-11-04, cost of voting insincerely (individual voters): older runs used a stake threshold and a worth test instead"),
     "cands_vote": ("0", "2026-11-03, candidates who vote: older runs had candidates apart from the voters"),
     "ks_alpha": ("1.5", "2026-10-14, parameters of the ks model (not used by older runs)"),
@@ -976,7 +980,8 @@ def label(key, varying, first):
 
 POINT_KEYS = {"rb": "random ballot", "rc": "random candidate", "ml": "maximal lottery", **DERIVED_POINTS, **REF_POINTS,
               "mirror": MIRROR}   # --points
-PARAM_NAMES = {"engine": "engine", "inertia": "inertia", "honesty": "honesty cost", "campaign": "campaigns", "coordination": "coordination share", "risk": "risk by satisfaction",
+PARAM_NAMES = {"engine": "engine", "inertia": "inertia", "inertia_shape": "inertia shape", "shares": "shares guessed",
+               "evidence": "evidence per round", "memory": "memory", "honesty": "honesty cost", "campaign": "campaigns", "coordination": "coordination share", "risk": "risk by satisfaction",
                "risk_tolerance": "risk tolerance", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error",
                "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion", "cands_vote": "candidates vote",
@@ -987,7 +992,7 @@ PARAM_NAMES = {"engine": "engine", "inertia": "inertia", "honesty": "honesty cos
                "field_kappa": "field saturation", "field_salience": "salience field",
                "noise_strength": "noise strength", "adaptive": "adaptive share", "utility": "utility"}
 LEARNING_ONLY = {"rounds", "samples", "strategic", "adaptive", "poll_size", "poll_error", "search",
-                 "aggressive", "start", "campaign", "risk", "risk_tolerance", "coordination", "engine", "honesty", "inertia"}   # same electorates
+                 "aggressive", "start", "campaign", "risk", "risk_tolerance", "coordination", "engine", "honesty", "inertia", "inertia_shape", "shares", "evidence", "memory"}   # same electorates
 SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)
 
 
