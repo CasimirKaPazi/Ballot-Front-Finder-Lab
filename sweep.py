@@ -91,6 +91,8 @@ def main():
                     help="--engine groups, arithmetic or exact (default 0)")
     ap.add_argument("--coordination", type=float, nargs="+", default=[None],
                     help="individual voters; also what campaigns plan with (default 0.25)")
+    ap.add_argument("--inertia", type=float, nargs="+", default=[None],
+                    help="--engine inertia: the largest inertia, a share of the utility range (default 1)")
     ap.add_argument("--honesty", type=float, nargs="+", default=[None],
                     help="individual voters: the largest cost of voting insincerely, a share of the utility range "
                          "(default 0.3)")

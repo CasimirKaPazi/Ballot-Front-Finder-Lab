@@ -75,6 +75,8 @@ CONDITIONS = [
     ("risk", {"risk": 1, "risk_tolerance": 0.2, "adaptive": 0.4, "strategic": 0.3, "rounds": 3}),
     ("groups-campaign", {"campaign": 1.0, "coordination": 0.3, "rounds": 3}),
     ("exact-campaign", {"engine": "exact", "campaign": 1.0, "coordination": 0.3, "search": 1, "rounds": 2}),
+    ("inertia", {"engine": "inertia", "search": 0, "adaptive": 0.7, "strategic": 0.2, "rounds": 3}),
+    ("inertia-previous", {"engine": "inertia", "search": 0, "start": "previous", "rounds": 2, "inertia": 0.5}),
     ("cands-vote", {"voters": 9, "cands": 5, "cands_vote": 1, "exits": 1, "clones": 1, "rounds": 1}),   # candidates are voters
     ("cands-vote-biased", {"cands_vote": 1, "cand_shift": 0.5, "cand_dispersion": 0.7}),   # who stands, biased
 ]

@@ -30,13 +30,14 @@ def _engine(name):
     from .groups import GroupsEngine
     from .individual import ArithmeticEngine, ExactEngine
     from .pooled import PooledEngine
+    from .inertia import InertiaEngine
     return {"groups": GroupsEngine, "arithmetic": ArithmeticEngine, "exact": ExactEngine,
-            "pooled": PooledEngine}[name]
+            "pooled": PooledEngine, "inertia": InertiaEngine}[name]
 
 
 def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strategic=None, poll_error=2.0,
             report=None, aggressive=None, start=None, adaptive=None, activated=None, campaign=None, risk=None,
-            cstats=None, leaders=None, engine="groups", coordination=0.25, honesty=0.3):
+            cstats=None, leaders=None, engine="groups", coordination=0.25, honesty=0.3, inertia=1.0):
     """Poll rounds (see the package docstring). Returns ballots of the last round, whether it
     settled (same as the round before), and mean sincerity (all voters).
     report: a list of round numbers; then `rounds` is ignored, the rounds run up to the highest,
@@ -51,7 +52,8 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strateg
     {round: share of the adaptive voters strategic in that round} (0 for round 0).
     cstats: a dict, filled with {round: {"follow": share of all voters following a campaign
     recommendation, "top": candidate whose recommendation has the most followers (-1: none), "bold":
-    share of the strategic voters who are bold (--risk; else nan)}}. leaders: a dict, filled with
+    share of the strategic voters who are bold (--risk; else nan), "changed": share of all voters whose
+    ballot differs from the round before}}. leaders: a dict, filled with
     {round: the round's two poll leaders (a, b)}, as the polls the voters answered showed them.
     engine: which engine answers the polls (engines.ENGINES), with its options (each engine reads its
     own and ignores the others'):
@@ -60,13 +62,14 @@ def respond(method, u, rng, rounds=1, samples=10, poll_size=0, search=1, strateg
                   tolerance factor}: careful or bold by their satisfaction with the polls)
       arithmetic, exact   coordination, honesty, campaign
       pooled      coordination, honesty
+      inertia     inertia (the largest inertia of an adaptive voter, a share of their utility range)
     campaign: None (off) or {"share": phi, "cand_u": candidates' utilities, C x C}: every candidate
     recommends a move each round (docs/campaigns.md). coordination: the share of their camp (pooled: of
     their type) an individual voter expects to vote as they do (0: only themselves), or per voter a
     number of voters. honesty: an adaptive individual voter's cost of voting insincerely is their
     personal draw times this, a share of their utility range."""
     options = {"aggressive": aggressive, "campaign": campaign, "risk": risk, "coordination": coordination,
-               "honesty": honesty}
+               "honesty": honesty, "inertia": inertia}
     if report is not None:
         want = sorted(set(int(r) for r in report))
         if want[0] < 0:
@@ -102,11 +105,11 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
     cls = _engine(engine)
     eng = cls(ctx, **{k: v for k, v in options.items() if k in cls.OPTIONS})
 
-    def record(r, follow=0.0, top=-1):
+    def record(r, follow=0.0, top=-1, changed=0.0):
         if activated is not None:
             activated[r] = float((ctx.active & adapt).sum()) / ctx.n_adaptive if ctx.n_adaptive else 0.0
         if cstats is not None:
-            cstats[r] = {"follow": follow, "top": top, "bold": eng.bold()}
+            cstats[r] = {"follow": follow, "top": top, "bold": eng.bold(), "changed": changed}
     record(0)
     if snapshot:
         snapshot(0, (ctx.B, True, 1.0))
@@ -125,8 +128,9 @@ def _respond(method, u, rng, rounds, samples, poll_size, search, strategic, poll
         polls = np.stack([rng.choice(n, m if ctx.inc else m_full, replace=False) for _ in range(samples)])
         B_prev = ctx.B
         ctx.B, follow, top = eng.round(r, polls)
-        record(r, follow, top)
-        settled = np.array_equal(ctx.B, B_prev)   # the ballots repeat the round before
+        diff = np.any(ctx.B != B_prev, axis=1)
+        record(r, follow, top, float(diff.mean()))
+        settled = not diff.any()                   # the ballots repeat the round before
         if snapshot:
             snapshot(r, (ctx.B, settled, float(sincerity(method, ctx.B, u).mean())))
     return ctx.B, settled, float(sincerity(method, ctx.B, u).mean())

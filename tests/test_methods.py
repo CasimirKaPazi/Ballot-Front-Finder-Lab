@@ -1998,3 +1998,24 @@ for _tx, _msg in [('normalize >> best(-worst(soft(1 + abs(diff(score / n)))))', 
     except _cps.CompositionError as _e:
         assert _msg in str(_e), (_tx, str(_e))
 print("soft counts ok")
+
+
+# The inertia engine (strategy/inertia.py): nobody able to change (all sincere): the sincere ballots; always
+# strategic voters (inertia 0) change whenever a rule gains anything; the same run twice gives the same ballots
+from strategy import respond as _resp
+_ri = np.random.default_rng(51)
+_ui = _ri.random((40, 4)) ** 2
+_Mi = METHODS["Plurality"]
+_bi, _, _ = _resp(_Mi, _ui, np.random.default_rng(1), rounds=3, engine="inertia", strategic=np.zeros(40, bool))
+assert np.array_equal(_bi, _Mi.sincere(_ui))
+_qi = _ri.random(40)
+_b1 = _resp(_Mi, _ui, np.random.default_rng(2), rounds=3, engine="inertia", adaptive=_qi, strategic=np.zeros(40, bool))
+_b2 = _resp(_Mi, _ui, np.random.default_rng(2), rounds=3, engine="inertia", adaptive=_qi, strategic=np.zeros(40, bool))
+assert np.array_equal(_b1[0], _b2[0])
+_b3 = _resp(_Mi, _ui, np.random.default_rng(2), rounds=3, engine="inertia", adaptive=_qi, strategic=np.zeros(40, bool),
+            inertia=1e9)                                   # inertia too high for any change: sincere
+assert np.array_equal(_b3[0], _Mi.sincere(_ui))
+_cs = {}
+_bf = _resp(_Mi, _ui, np.random.default_rng(3), rounds=2, engine="inertia", cstats=_cs)   # everyone at inertia 0
+assert set(_cs) == {0, 1, 2} and 0 <= _cs[1]["changed"] <= 1 and _cs[0]["changed"] == 0
+print("inertia engine ok")

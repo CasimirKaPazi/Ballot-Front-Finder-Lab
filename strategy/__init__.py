@@ -34,6 +34,7 @@ The modules:
   groups.py       the ranking groups (--engine groups)
   individual.py   individual voters reading the average of the polls (--engine arithmetic, exact)
   pooled.py       pooled discovery (--engine pooled)
+  inertia.py      reasoning from home, sides and inertia (--engine inertia, experimental)
   common.py       what the engines of individual voters share (cost, trust, discovery stream)
   moves.py        moves as steps, and the ballots that follow from them (individual voters)
 """

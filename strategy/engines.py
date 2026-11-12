@@ -15,6 +15,10 @@ ENGINES = {
     "exact": "individual voters as arithmetic, moves valued by counting the poll again (individual._value_exact)",
     "groups": "ranking groups: strategic voters with the same sincere ranking answer as a bloc (the engine "
               "of version 1.0.0)",
+    "inertia": "experimental (docs/strategy-design.md): voters reason from their honest ballot; a move of their "
+               "side in a race among the poll's top three, valued for an unknown share of the side and remembered "
+               "over the rounds, is cast if it beats the honest ballot by more than their inertia "
+               "(inertia.InertiaEngine)",
 }
 
 
@@ -30,6 +34,7 @@ ENGINE_PARAMS = {
     "campaign": (("groups", "arithmetic", "exact"), 0.0),     # candidates recommend moves
     "coordination": (("pooled", "arithmetic", "exact", "groups"), 0.25),   # groups: only with campaigns
     "honesty": (("pooled", "arithmetic", "exact"), 0.3),
+    "inertia": (("inertia",), 1.0),                           # the largest inertia of an adaptive voter
 }
 
 
