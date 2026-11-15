@@ -15,6 +15,24 @@ POOL_LIBRARY = 8     # pooled discovery: moves a type keeps from its search (the
 POOL_STEPS = 6       # pooled discovery: the longest move the search builds
 
 
+def type_trust(trust, members, move_aims):
+    """A type's trust in a move: its members' judgements pooled (common.judge), for each aim of the move,
+    with one prior kept promise for the type as a whole; the least over the aims (1 if no member tried
+    any of them). A member's record (rho, k) holds k - 1 judgements averaging (rho * k - 1) / (k - 1),
+    so the pooled trust is (1 + sum of all members' judgements) / (1 + their number). A type learns
+    from what its members saw: a move that backfired for some is trusted less by all, also by those
+    who never made it."""
+    out = 1.0
+    for a in move_aims:
+        total, count = 1.0, 1
+        for v in members:
+            rho, k = trust.get((int(v), a), (1.0, 1))
+            total += rho * k - 1.0
+            count += k - 1
+        out = min(out, total / count)
+    return out
+
+
 def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, share, memory, search=0, rng=None):
     """One round with pooled discovery (run.py --engine pooled). Discovery is shared, the
     decision individual:
@@ -36,8 +54,9 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
       rest.
     - Decision: each strategic voter values every published move of their type by their own utilities
       against their type's sincere ballots (as a share of their utility range), its promise over the
-      polls as they are weighted by their trust (judge, trust), and makes the most valuable move if
-      that exceeds their cost (threshold), else votes sincerely.
+      polls as they are weighted by their type's trust in it (type_trust: the judgements of all its
+      members who made it, common.judge), and makes the most valuable move if that exceeds their cost
+      (threshold), else votes sincerely.
     Every voter of a type counts in its change, strategic or not: discovery does not know who follows.
     Returns the new ballots and the voters who vote strategically this round."""
     n, C = u.shape
@@ -125,8 +144,7 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
             gain = EU[j] - before
             if not tr or not (gain > 0).any():          # nobody's trust shaken yet, or no gain to discount
                 continue
-            ks = aims(moves[j - 1])                 # once per move, not per voter
-            rho = np.array([min((tr.get((int(v), k), (1.0, 1))[0] for k in ks), default=1.0) for v in V])
+            rho = type_trust(tr, mem, aims(moves[j - 1]))       # once per move: the type's lessons
             EU[j] = before + np.where(gain > 0, rho * gain, gain)
         best = np.argmax(EU, axis=0)
         promised = {j: Ps[j - 1] for j in range(1, len(EU))}

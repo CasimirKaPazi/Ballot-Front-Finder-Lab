@@ -1807,6 +1807,15 @@ _Bp, _act = _pl2.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], thresho
                               memory=_memp)
 assert _act[79:].all() and not _act[:79].any()
 assert (np.argmax(_Bp[79:], axis=1) == 1).all()
+# a type shares its lessons: one member of the type C > B > A saw raising B backfire (three times as badly
+# as promised), so the whole type trusts the move less than nothing and nobody of it moves, also those
+# who never made it
+_memt = {"last": {}, "trust": {(80, ("up", 1)): (-1.0, 2)}}
+assert _pl2.type_trust(_memt["trust"], range(79, 99), (("up", 1),)) == -1.0
+assert _pl2.type_trust(_memt["trust"], range(79, 99), (("down", 0),)) == 1.0
+_Bt, _actt = _pl2.answer_pooled(_Mp, _pmp, _up, _sp, _sp, _Tp, [0, 1, 2], threshold=np.zeros(99), share=0.25,
+                                memory=_memt)
+assert not _actt.any()
 print("pooled discovery ok")
 # pooled search: a type's kept proposals go into its library and are offered again; a sincere-only round
 # (no strategic voters) leaves it empty
