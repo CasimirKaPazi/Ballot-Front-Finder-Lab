@@ -46,12 +46,16 @@ Outputs (default: RUNS_FOLDER/comparison/):
                      --beat-share of the conditions both were run in (and more often than B dominates
                      A); arrows implied by a chain are left out (matplotlib needed)
     beatpath.csv     every such pair, with its shares and whether the plot shows its arrow
+    trace-*.png      with --trace: each named method (or group, one plot for its methods; with
+                     --trace-together all of them in one plot) across the conditions, every condition a point in the VSE* / WME* plane and the convex hull of
+                     a method's points shaded: the area it spans, with the conditions at its corners
     method-map.png   the map of the methods: how often two methods elect different winners, honest and
                      learned, laid out in two dimensions (method-map.csv: the coordinates)
     command.txt      the command
 """
 import argparse
 import csv
+import textwrap
 import os
 import sys
 import time
@@ -62,7 +66,7 @@ import numpy as np
 
 import analyze as an
 from analyze import PARAMS, PARAM_NAMES, FRONT, ADDED_COLUMNS, dominance, input_paths
-from metrics import pareto, FRONT_TOLERANCE
+from metrics import pareto, FRONT_TOLERANCE, convex_hull, hull_area
 from methods import select, GROUPS, group_of, current_name, sincerity_defined
 from run import write_command, default_params, VERSION
 from strategy import engine_params, ENGINE_PARAMS
@@ -141,7 +145,7 @@ def check_out(out):
         return
     if not os.path.isdir(out):
         raise SystemExit(f"--out {out} exists and is not a folder")
-    other = set(os.listdir(out)) - OUTPUT_FILES
+    other = {f for f in os.listdir(out) if not f.startswith("trace-")} - OUTPUT_FILES
     if other:
         raise SystemExit(f"{out} exists and holds other files ({', '.join(sorted(other)[:5])}"
                          f"{' …' if len(other) > 5 else ''}): give another --out")
@@ -462,6 +466,13 @@ def main():
     ap.add_argument("--depth", type=int, default=2,
                     help="how many folder levels to search for runs (default 2: FOLDER/test/ and FOLDER/group/test/)")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--trace", nargs="+", default=[],
+                    help="methods or groups to trace across the conditions: one plot per method, or per group "
+                         "with its methods together; every condition a point (VSE*, WME*), the convex hull "
+                         "shaded, the defaults ringed (trace-*.png and a table in the report)")
+    ap.add_argument("--trace-together", action="store_true",
+                    help="draw all methods of --trace (groups expanded) in one plot, trace-together.png, "
+                         "instead of one plot per method or group")
     a = ap.parse_args()
 
     requested = parse_pairs(a.pairs)          # checked before the (possibly long) reading
@@ -717,6 +728,61 @@ def main():
             print("note: matplotlib is not installed: beatpath.png not drawn (beatpath.csv has the arrows)",
                   file=sys.stderr)
 
+    # --trace: methods (or groups) across the conditions, every condition a point; the convex hull of a
+    # method's points is the area it spans
+    traces, trace_rows, planned = [], [], []
+    lower_names = {m.lower(): m for m in keep}
+    for item in a.trace:
+        group = item.lower() not in lower_names
+        ms = [m for m in select([item]) if m in keep] if group else [lower_names[item.lower()]]
+        if not ms:
+            say(f"  --trace {item}: no such method among the compared ones; left out")
+            continue
+        series = []
+        for m in ms:
+            pts = [(u["vals"]["VSE*"][u["methods"].index(m)] * 100, u["vals"]["WME*"][u["methods"].index(m)] * 100,
+                    u["label"], not u["diff"]) for u in us if m in u["methods"]]
+            pts = [q for q in pts if not (np.isnan(q[0]) or np.isnan(q[1]))]
+            series.append((m, pts))
+            if pts and m not in [r[0] for r in trace_rows]:
+                Q = np.array([(x, y) for x, y, _, _ in pts])
+                lo_v, hi_v = int(np.argmin(Q[:, 0])), int(np.argmax(Q[:, 0]))
+                lo_w, hi_w = int(np.argmin(Q[:, 1])), int(np.argmax(Q[:, 1]))
+                dflt = [q for q in pts if q[3]]
+                trace_rows.append((m, len(pts), dflt[0][:2] if dflt else None, (Q[lo_v, 0], pts[lo_v][2]),
+                                   (Q[hi_v, 0], pts[hi_v][2]), (Q[lo_w, 1], pts[lo_w][2]), (Q[hi_w, 1], pts[hi_w][2]),
+                                   hull_area(Q, convex_hull(Q))))
+        planned.append((item, group, ms, series))
+
+    def draw_trace(fn, series, title):
+        try:
+            import plots
+            plots.FORMATS, plots.DPI = list(dict.fromkeys(a.format)), a.dpi
+            plots.trace(series, os.path.join(out, fn + ".png"), "\n".join(textwrap.wrap(
+                title + ": learned ballots, one point per condition, the convex hull shaded, the defaults ringed", 95)))
+            return fn + "." + plots.ext()
+        except ImportError:
+            return None
+    if a.trace_together and planned:             # all traced methods in one plot
+        seen, series = set(), []
+        for _, _, _, ser in planned:
+            for m, pts in ser:
+                if m not in seen:
+                    seen.add(m)
+                    series.append((m, pts))
+        names = [m for m, _ in series]
+        f = draw_trace("trace-together", series, f"{', '.join(names) if len(names) <= 6 else f'{len(names)} methods'} "
+                       "across the conditions")
+        if f:
+            traces.append(("the traced methods", names, f))
+    else:
+        for item, group, ms, series in planned:
+            f = draw_trace("trace-" + an.file_name(item if group else ms[0]), series,
+                           f"{ms[0]} across {sum(len(p) for _, p in series)} conditions" if not group else
+                           f"{item} ({', '.join(ms) if len(ms) <= 4 else f'{len(ms)} methods'}) across the conditions")
+            if f:
+                traces.append((item, ms, f))
+
     L = ["# Ballot Front Finder Lab — comparison across runs", ""]
     if notes:
         L += ["Older inputs:", ""] + [f"- {len(fs)} file(s) {msg}: {', '.join(fs[:4])}{' …' if len(fs) > 4 else ''}"
@@ -816,6 +882,24 @@ def main():
               f"behaviour. The two dimensions show {expl:.0%} of the spread; methods close together elect the same "
               "winner in most elections, whatever their family. Coordinates in method-map.csv.", "",
               f"![map of the methods](method-map.{a.format[0]})", ""]
+
+    if trace_rows:
+        L += ["## Traces", "",
+              "The traced methods across the conditions (--trace): every condition a point of VSE\\* and WME\\* "
+              "(learned ballots), the convex hull of a method's points shaded: the area the method spans when the "
+              "assumptions change, with the conditions at its corners, which are the extremes. The defaults are "
+              "ringed. Points are raw efficiencies, so conditions that move every method (other electorates, "
+              "utilities, numbers of candidates) move the whole area; compare methods traced together. Area in "
+              "square points.", ""]
+        for item, ms, fn in traces:
+            L += [f"![trace of {item}]({fn})", ""]
+        L += ["| Method | Conditions | Defaults (VSE\\* / WME\\*) | Lowest VSE\\* | Highest VSE\\* | Lowest WME\\* | "
+              "Highest WME\\* | Area |", "|---|---|---|---|---|---|---|---|"]
+        for m, n, d, lv, hv, lw, hw, ar in trace_rows:
+            cell = lambda t: f"{t[0]:.1f} ({t[1]})"
+            L.append(f"| {m} | {n} | " + (f"{d[0]:.1f} / {d[1]:.1f}" if d else "—") + " | "
+                     + " | ".join(cell(t) for t in (lv, hv, lw, hw)) + f" | {ar:.1f} |")
+        L.append("")
 
     # exceptions: where the usual outcome flips
     def sentences(A, B):

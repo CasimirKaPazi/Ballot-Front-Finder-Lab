@@ -322,3 +322,35 @@ def pareto(points, tol=0.0):
         if not dominated:
             keep.append(i)
     return keep
+
+
+def convex_hull(points):
+    """Convex hull of 2-D points (monotone chain): the corner indices, counter-clockwise; all points
+    if fewer than three, or if they lie on a line (then its two ends)."""
+    P = np.asarray(points, float)
+    if len(P) < 3:
+        return list(range(len(P)))
+    order = sorted(range(len(P)), key=lambda i: (P[i, 0], P[i, 1]))
+
+    def cross(o, a, b):
+        return (P[a, 0] - P[o, 0]) * (P[b, 1] - P[o, 1]) - (P[a, 1] - P[o, 1]) * (P[b, 0] - P[o, 0])
+    lower, upper = [], []
+    for i in order:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], i) <= 0:
+            lower.pop()
+        lower.append(i)
+    for i in reversed(order):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], i) <= 0:
+            upper.pop()
+        upper.append(i)
+    return lower[:-1] + upper[:-1]
+
+
+def hull_area(points, corners):
+    """Area of the polygon through the corners (shoelace), in the points' units."""
+    if len(corners) < 3:
+        return 0.0
+    P = np.asarray(points, float)[corners]
+    x, y = P[:, 0], P[:, 1]
+    return float(abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) / 2)
+

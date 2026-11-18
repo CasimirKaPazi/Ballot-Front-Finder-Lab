@@ -9,6 +9,7 @@ import textwrap
 import zlib
 import os
 import numpy as np
+from metrics import convex_hull
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -515,6 +516,11 @@ TINTS = ["#dbe7f7", "#f6e3cf", "#dcefe0", "#efdcef", "#f5f0cc", "#d6eef0", "#f3d
          "#e6efd2", "#f7dfe9", "#dfe3e8", "#f2e6d8"]   # region fills
 
 
+# trace plots with several methods: one colour per method, in order
+TRACE_COLOURS = ["#2a78d6", "#d1495b", "#3a9d5d", "#8e5bb5", "#e08a1e", "#1c9aa5", "#a0522d", "#5d6d1e",
+                 "#c2185b", "#4a4a9c"]
+
+
 def method_tint(name):
     """A method's own region colour: chosen from its name alone, so a method keeps its colour across
     runs whatever other methods are present."""
@@ -931,6 +937,56 @@ def method_map(names, H, L, groups, path, explained=float("nan")):
     ax.set_title("Map of the methods: close together = the same winner in most elections"
                  + (f"\n(distances shown {explained:.0%} faithfully in two dimensions)" if explained == explained else ""),
                  loc="left")
+    fig.tight_layout()
+    _repel(ax, texts, anchors)
+    save(fig, path)
+    plt.close(fig)
+
+
+def trace(series, path, title):
+    """A method (or several) across conditions: each condition's VSE* / WME* a point, the convex hull of a
+    method's points shaded, the default condition ringed. series: [(method, [(vse, wme, label, default)])],
+    values in percent. With one method, the conditions at the hull's corners are labelled; with several,
+    each hull carries its method's name (compare.py --trace)."""
+    fig, ax = plt.subplots(figsize=(8.6, 6.4))
+    texts, anchors = [], []
+    single = len(series) == 1
+    for k, (name, pts) in enumerate(series):
+        if not pts:
+            continue
+        P = np.array([(x, y) for x, y, _, _ in pts])
+        c = convex_hull(P)
+        # one method: its pale tint; several: a colour each, in order (distinct for up to 10), so a point
+        # shows its method
+        if single:
+            fill, edge, dot, alpha = TINTS[method_tint(name)], MUTED, INK2, 0.75
+        else:
+            fill = edge = dot = TRACE_COLOURS[k % len(TRACE_COLOURS)]
+            alpha = 0.12
+        if len(c) >= 3:
+            ax.add_patch(plt.Polygon(P[c], closed=True, facecolor=fill, edgecolor="none", alpha=alpha, zorder=1))
+            ax.add_patch(plt.Polygon(P[c], closed=True, facecolor="none", edgecolor=edge, lw=0.9, zorder=1))
+        elif len(c) == 2:
+            ax.plot(P[c, 0], P[c, 1], color=edge, lw=0.9, zorder=1)
+        ax.scatter(P[:, 0], P[:, 1], s=DOT * 30, color=dot, edgecolors=SURFACE, linewidths=0.8, zorder=3)
+        for x, y, _, dflt in pts:
+            if dflt:
+                ax.scatter([x], [y], s=DOT * 90, facecolors="none", edgecolors=INK, linewidths=1.2, zorder=4)
+        if single:
+            for i in c:
+                anchors.append((P[i, 0], P[i, 1]))
+                texts.append(ax.text(P[i, 0] + 0.1, P[i, 1], pts[i][2], fontsize=6.5, color=INK2, va="center",
+                                     zorder=5))
+        else:
+            cx, cy = P[c].mean(axis=0) if len(c) else P.mean(axis=0)
+            anchors.append((cx, cy))
+            texts.append(ax.text(cx, cy, name_label(name), fontsize=8, color=edge, ha="center", va="center",
+                                 fontweight="bold", zorder=5))
+    ax.set_xlabel(VSE_LABEL.replace("VSE", "VSE*", 1))
+    ax.set_ylabel(WME_LABEL.replace("WME", "WME*", 1))
+    _pad(ax)
+    _unreachable(ax, "xy")
+    ax.set_title(title, loc="left")
     fig.tight_layout()
     _repel(ax, texts, anchors)
     save(fig, path)

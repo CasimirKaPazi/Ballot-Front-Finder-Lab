@@ -284,7 +284,8 @@ def one_election(job):
                             "sincerity": sin if defined else "",
                             "fidelity": float(fidelity(m, B, uf, honest_B).mean()) if defined else "",
                             "settled": int(settled), "adapted": act[r] if adaptive is not None else "",
-                            **strategy_types(B, m.pref(uf), lead.get(r), m.sincere(uf)), **nstats, **check(B), **manip.NAN,
+                            **strategy_types(B, m.pref(uf), lead.get(r), m.sincere(uf)), **nstats,
+                            "U_orig": "", "WM_orig": "", **check(B), **manip.NAN,
                             # campaigns and risk (docs/campaigns.md): blank when off
                             "camp_follow": cs_r.get("follow", "") if camp else "",
                             "camp_top": (int(orig[cs_r["top"]]) if cs_r.get("top", -1) >= 0 else -1) if camp and cs_r else "",
@@ -1013,12 +1014,12 @@ def parser():
                          "the rest always vote sincerely. Default: everyone not in --strategic")
     ap.add_argument("--max-score", type=int, default=5,
                     help="score ballots range over 0..max (Score, STAR, MJ, ARA, ...; MCA and 321 keep 3 grades)")
-    ap.add_argument("--exits", type=int, default=1, choices=[0, 1],
-                    help="1 (default since 2026-11-03): candidates may withdraw and re-enter strategically; 0: the "
-                         "field as drawn (see nomination.py)")
-    ap.add_argument("--clones", type=int, default=2,
-                    help="most clones in the race at once, fielded strategically (default 2 since 2026-11-03; "
-                         "0 = none; see nomination.py)")
+    ap.add_argument("--exits", type=int, default=0, choices=[0, 1],
+                    help="1: candidates may withdraw and re-enter strategically; 0 (default; 1 from 2026-11-03 to "
+                         "2026-11-18): the field as drawn (see nomination.py)")
+    ap.add_argument("--clones", type=int, default=0,
+                    help="most clones in the race at once, fielded strategically (0 = none, the default; 2 from "
+                         "2026-11-03 to 2026-11-18; see nomination.py)")
     ap.add_argument("--race-cost", type=float, default=RACE_COST,
                     help=f"strategic nomination between the poll rounds (with --exits or --clones): a candidate "
                          f"changes the field only for a gain above this share of their utility range (default "

@@ -88,8 +88,8 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--strategic` | 0 | share of voters who always vote strategically (see [model.md](model.md), Partial strategy) |
 | `--adaptive` | the rest | share of voters who decide each poll round whether to vote strategically (the ranking groups: by how much the race between the two leaders matters to them; individual voters: by their cost, `--honesty`) (`--strategic` + `--adaptive` ≤ 1, sweep.py skips other combinations; see [model.md](model.md), Partial strategy); left out: everyone not in `--strategic` (1 − `--strategic`) |
 | `--max-score` | 5 | score ballots range over 0–max (see [model.md](model.md), Score range) |
-| `--exits` | 1 | 1: candidates may withdraw and re-enter strategically (the default since 2026-11-03); 0: the field as drawn (see [model.md](model.md), Strategic nomination) |
-| `--clones` | 2 | most clones in the race at once, fielded strategically (the default since 2026-11-03); 0 = none (see [model.md](model.md), Strategic nomination) |
+| `--exits` | 0 | 1: candidates may withdraw and re-enter strategically (the default from 2026-11-03 to 2026-11-18); 0: the field as drawn (see [model.md](model.md), Strategic nomination) |
+| `--clones` | 0 | most clones in the race at once, fielded strategically (2 from 2026-11-03 to 2026-11-18); 0 = none (see [model.md](model.md), Strategic nomination) |
 | `--race-cost` | 0.05 | nomination in the race, between the poll rounds (with `--exits` or `--clones`): a candidate changes the field only for a gain above this share of their utility range; `inf`: before the race only (see [model.md](model.md), Strategic nomination) |
 | `--start` | honest | what the first poll shows: `honest` ballots, or `previous`: the result of a previous election (see [model.md](model.md), Starting information) |
 | `--participation` | off | also check participation (no-show paradox) on sincere and learned ballots (see [model.md](model.md), Participation); slower |
@@ -122,6 +122,8 @@ output/lazy/                     sweep.py --lazy 0 0.5 1 --seeds 1 2 --out lazy
 | `--errorbars` | off | arrow plots: 95% intervals of each method relative to the average of the methods shown (per bootstrap replicate, the value minus the mean over the shown methods), which removes the variation all methods share; clearly separated bars suggest a real difference, an approximation of the paired comparison. Track plots: each point's own interval |
 | `--track` | none | methods or groups to follow across all conditions: `track-<method>.png` each (see below) |
 | `--seed` | 0 | bootstrap random seed |
+| `--trace` | none | methods or groups traced across the conditions (see Traces above) |
+| `--trace-together` | off | all traced methods in one plot instead of one per method or group |
 
 ## Combining runs and older files
 
@@ -208,6 +210,7 @@ python compare.py output/falloff --pairs "ESR:Score" "Score runoff:Minimax"
 - **Clear dominance (beatpath):** `beatpath.png` draws the methods of the main table in layers, with an arrow from A down to B when A dominates B in at least half of the conditions both were run in (`--beat-share`) and more often than B dominates A. Arrows implied by a chain of others are left out, so the top layer holds the methods nobody dominates at that level, and each method sits below the lowest one that dominates it. The report lists the arrows with their shares.
 - **Map of the methods:** `method-map.png` places every method so that methods electing the same winner in most elections sit close together: the distance is the share of elections in which two methods elect different winners, averaged over the conditions (each counting once), laid out in two dimensions by multidimensional scaling. Honest (open) and learned ballots (filled) share one layout, with an arrow from each method's honest to its strategic behaviour, so the map shows both the families as the results see them and how strategy moves the methods. The title gives how much of the distances two dimensions show.
 - **Tables:** `methods.csv`, `pairs.csv` (every ordered pair: shared conditions, clearly better per axis, dominates, and in which conditions), `conditions.csv`, `beatpath.csv` (every pair at the beatpath share, and whether its arrow is drawn), `method-map.csv` (the coordinates of the map of the methods).
+- **Traces** (`--trace`): for each method named, `trace-<method>.png` puts its VSE\* and WME\* in every condition as a point and shades their convex hull, the area the method spans when the assumptions change, with the conditions at its corners labelled and the defaults ringed; a group gives one plot with the hull of each of its methods, and `--trace-together` puts all traced methods (groups expanded) into one plot, `trace-together.png`, each in a colour of its own (distinct for up to 10), which makes them easier to compare. The report adds a table: per traced method the defaults, the lowest and highest VSE\* and WME\* with their conditions, and the area. The points are raw efficiencies, so conditions that move every method (another electorate model, the utility, the number of candidates) move the whole area: compare methods traced together.
 - The averages describe the collection of runs in the folder, not all possible electorates: which conditions are in it decides what "on average" means, so the report lists them all.
 
 | Flag | Default | |
