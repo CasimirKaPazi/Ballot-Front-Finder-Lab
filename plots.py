@@ -1,7 +1,8 @@
 """Static plots for analyze.py (matplotlib, PNG).
 
 Method identity is carried by direct labels, never by colour, since there are far more methods
-than distinguishable hues. In the arrow plot, the learned-ballot points are coloured by sincerity
+than distinguishable hues. With strategic nomination, the arrow and shift plots go in two steps: honest
+(open circle) -> after strategic nomination (open diamond) -> learned (filled). In the arrow plot, the learned-ballot points are coloured by sincerity
 from blue (sincere) through purple to dark red (much reversed preference). Heatmaps use blue.
 """
 import textwrap
@@ -349,8 +350,24 @@ def _errorbars(ax, r, idx, xa, ya, color, alpha):
                 fmt="none", ecolor=color, elinewidth=0.8, alpha=alpha, zorder=2, capsize=0)
 
 
+def _original(r):
+    """With strategic nomination: (VSE°, WME°) per method, honest on the field as drawn; else None."""
+    nm = r.get("nomination") or {}
+    vo, wo = nm.get("VSE_o"), nm.get("WME_o")
+    if vo is None or np.all(np.isnan(vo)):
+        return None
+    return np.asarray(vo), np.asarray(wo)
+
+
+def _arrow(ax, p0, p1, lw=1.1, scale=9):
+    ax.annotate("", xy=p1, xytext=p0,
+                arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=lw, shrinkA=4, shrinkB=5, mutation_scale=scale))
+
+
 def arrows(r, path, hide, errorbars=False):
     """Honest (open circle) -> learned ballots (filled) in the VSE / WME plane, all methods together.
+    With strategic nomination a step between: honest on the field as drawn (open circle, the result
+    without nomination) -> after nomination (open diamond, honest ballots on the new field) -> learned.
     The grey area beyond the curve is out of reach for any rule in these elections (see analyze.frontier).
     Filled points are coloured by the sincerity of the learned ballots (blue = sincere, red = less honest).
     errorbars: relative 95% intervals (see relative_intervals) on both points of every method."""
@@ -363,11 +380,18 @@ def arrows(r, path, hide, errorbars=False):
     cmap = SINC
     fig, ax = plt.subplots(figsize=(9.2, 6.6))
     texts, anchors = [], []
+    orig = _original(r)
     for j in idx:
-        x0, y0 = r["VSE"][j] * 100, r["WME"][j] * 100
+        xn, yn = r["VSE"][j] * 100, r["WME"][j] * 100
         x1, y1 = r["VSE*"][j] * 100, r["WME*"][j] * 100
-        ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
-                    arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.1, shrinkA=4, shrinkB=5, mutation_scale=9))
+        if orig is not None:                       # honest -> nomination -> learned
+            x0, y0 = orig[0][j] * 100, orig[1][j] * 100
+            _arrow(ax, (x0, y0), (xn, yn))
+            ax.scatter([xn], [yn], s=DOT * 26, marker="D", facecolors=SURFACE, edgecolors=MUTED, linewidths=1.1,
+                       zorder=3)
+        else:
+            x0, y0 = xn, yn
+        _arrow(ax, (xn, yn), (x1, y1))
         ax.scatter([x0], [y0], s=DOT * 34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
         sj = r["sincerity"][j]
         ax.scatter([x1], [y1], s=DOT * 64, color=MUTED if np.isnan(sj) else cmap(norm(sj * 100)), edgecolors=MUTED,
@@ -383,7 +407,8 @@ def arrows(r, path, hide, errorbars=False):
     _unreachable(ax, "xy", lines=r.get("frontier") is None)
     _frontier(ax, r.get("frontier"), r.get("region"), r.get("references"), r.get("nfrontier"), r.get("rfrontier"),
               r.get("juries"))
-    ax.set_title(f"What strategy does: honest (open) → learned ballots (filled, labelled)\n{r['label']}"
+    ax.set_title(("Honest (open) → strategic nomination (diamond) → learned ballots (filled, labelled)" if orig is not None else
+                  "What strategy does: honest (open) → learned ballots (filled, labelled)") + f"\n{r['label']}"
                  + ("; bars: 95% intervals relative to the average of the methods shown" if errorbars else ""),
                  loc="left")
     cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, fraction=0.035, pad=0.02,
@@ -397,24 +422,36 @@ def arrows(r, path, hide, errorbars=False):
 
 
 def shift(r, path, hide):
-    """The same shifts as a dumbbell chart: one row per method, VSE and WME panels. Rows sorted by VSE."""
-    idx = sorted(_visible(r, hide), key=lambda j: r["VSE"][j])
+    """The same shifts as a dumbbell chart: one row per method, VSE and WME panels. Rows sorted by VSE.
+    With strategic nomination a step between: honest (open circle) -> nomination (open diamond) -> learned."""
+    orig = _original(r)
+    first = orig[0] if orig is not None else r["VSE"]
+    idx = sorted(_visible(r, hide), key=lambda j: first[j])
     names = [name_label(r["methods"][j]) for j in idx]
     fig, axs = plt.subplots(1, 2, figsize=(10.5, 0.9 + 0.32 * len(idx)), sharey=True)
-    for ax, (a0, a1, title) in zip(axs, [("VSE", "VSE*", VSE_LABEL), ("WME", "WME*", WME_LABEL)]):
+    for k, (ax, (a0, a1, title)) in enumerate(zip(axs, [("VSE", "VSE*", VSE_LABEL), ("WME", "WME*", WME_LABEL)])):
         for y, j in enumerate(idx):
-            x0, x1 = r[a0][j] * 100, r[a1][j] * 100
-            if abs(x1 - x0) > 0.15:
-                ax.annotate("", xy=(x1, y), xytext=(x0, y),
-                            arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.2, shrinkA=4, shrinkB=5,
-                                            mutation_scale=8))
+            xn, x1 = r[a0][j] * 100, r[a1][j] * 100
+            x0 = orig[k][j] * 100 if orig is not None else xn
+            # honest -> nomination -> learned; where the second step turns back over the first, the two
+            # arrows run a little above and below the row
+            back = orig is not None and (xn - x0) * (x1 - xn) < 0
+            dy = 0.12 if back else 0.0
+            if orig is not None:
+                if abs(xn - x0) > 0.15:
+                    _arrow(ax, (x0, y - dy), (xn, y - dy), lw=1.2, scale=8)
+                ax.scatter([xn], [y], s=DOT * 26, marker="D", facecolors=SURFACE, edgecolors=MUTED, linewidths=1.1,
+                           zorder=3)
+            if abs(x1 - xn) > 0.15:
+                _arrow(ax, (xn, y + dy), (x1, y + dy), lw=1.2, scale=8)
             ax.scatter([x0], [y], s=DOT * 34, facecolors=SURFACE, edgecolors=MUTED, linewidths=1.2, zorder=3)
             ax.scatter([x1], [y], s=DOT * 58, color=POINT, edgecolors=SURFACE, linewidths=1.5, zorder=4)
         ax.set_xlabel(title)
         ax.grid(axis="y", visible=False)
         _unreachable(ax, "x")
     axs[0].set_yticks(range(len(idx)), names)
-    axs[0].set_title(f"What strategy does: honest (open) → learned ballots (filled)\n{r['label']}", loc="left")
+    axs[0].set_title(("Honest (open) → strategic nomination (diamond) → learned ballots (filled)" if orig is not None else
+                      "What strategy does: honest (open) → learned ballots (filled)") + f"\n{r['label']}", loc="left")
     fig.tight_layout()
     save(fig, path)
     plt.close(fig)
