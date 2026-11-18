@@ -50,6 +50,7 @@ CONDITIONS = [
     ("five-cands", {"cands": 5, "seed": 8}),                  # odd candidate count, other seed
     ("lazy-score10", {"lazy": 0.4, "max_score": 10}),         # truncation / laziness and the score range
     ("nomination", {"exits": 1, "clones": 1, "rounds": 1}),   # strategic nomination
+    ("race", {"exits": 1, "clones": 2, "rounds": 3, "race_cost": 0.0}),   # nomination in the race too
     ("previous", {"start": "previous"}),                      # first poll from a previous election
     ("ks", {"model": "ks", "exits": 1, "clones": 1}),         # Quinn's hierarchical model, with nomination (weights)
     ("ks-quinn", {"model": "ks-quinn"}),                      # the same, as in vse-sim's code

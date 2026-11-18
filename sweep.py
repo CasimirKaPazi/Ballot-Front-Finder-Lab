@@ -33,7 +33,7 @@ import time
 
 from models import MODELS
 from run import (simulate, fingerprints, check_resume_fingerprints, PARAMS, run_dir, write_command, check_params, run_key, valid_combination,
-                 resolve, resume_state, CsvSink, interrupted)
+                 resolve, resume_state, CsvSink, interrupted, RACE_COST)
 from strategy import ENGINES, DEFAULT_ENGINE
 from methods import run_selection
 
@@ -72,6 +72,7 @@ def main():
     ap.add_argument("--max-score", type=int, nargs="+", default=[5])
     ap.add_argument("--exits", type=int, nargs="+", default=[1], choices=[0, 1])
     ap.add_argument("--clones", type=int, nargs="+", default=[2])
+    ap.add_argument("--race-cost", type=float, nargs="+", default=[RACE_COST])
     ap.add_argument("--poll-size", type=int, nargs="+", default=[0])
     ap.add_argument("--search", type=int, nargs="+", default=[None],
                     help="default: 1 for the ranking groups (--engine groups), 0 for individual voters, per condition")

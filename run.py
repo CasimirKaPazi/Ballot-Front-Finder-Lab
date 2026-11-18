@@ -45,10 +45,11 @@ import numpy as np
 
 from scenario import Scenario
 from models import draw_electorate, model_text, MODELS
-from nomination import nominate, clone_setup, utilities, to_original, cand_prefs
+from nomination import nominate, clone_setup, utilities, to_original, cand_prefs, carry, Race
 from methods import (METHODS, run_selection, set_max_score, set_lazy, set_voter_lazy, set_voter_approval, sincerity_defined,
                      ensure, set_candidates, candidates, candidate_utilities)
 from ballots import score_ballots
+from outcomes import value as outcome_value
 from strategy import (respond, strategy_types, default_poll_size, fidelity, implied_values, ENGINES, DEFAULT_ENGINE,
                       ENGINE_PARAMS, engine_params)
 from metrics import election_row, summarize, pareto, worst_margins, electorate_stats, ballot_condorcet, ties, maximal_lottery, reference_points, juries, jury_text, FRONT_TOLERANCE
@@ -127,6 +128,9 @@ def one_election(job):
     # honest approval: each voter's draw for their threshold between mean and favourite (ballots.approves)
     set_voter_approval(np.random.default_rng([seed, e, zlib.crc32(b"approval")]).random(len(u)))
     nominating = bool(exits or clones)
+    race_cost = float(p.get("race_cost", "inf"))
+    # (not with campaigns: their recommendations are planned on a fixed field)
+    racing = nominating and np.isfinite(race_cost) and max(rounds) > 1 and not camp_on
     if nominating:   # clones' positions: own random stream, the same for every method
         u_clone, cu = clone_setup(voters, cands, sc.width,
                                   np.random.default_rng([seed, e, zlib.crc32(b"clones")]),
@@ -171,28 +175,73 @@ def one_election(job):
         with m.applied():                           # the method's own settings, if any (methods.SETTINGS)
             # Strategic nomination (nomination.py): the field the voters face. Without it, the original field.
             # Results are always judged on the original field (a clone's win counts as its original's).
-            uf, back = u, (lambda P: P)
-            orig = np.arange(C)                       # the original candidate of each field entry
-            nstats = {"nom_exits": 0, "nom_clones": 0, "nom_settled": 1, "nom_moves": 0, "nom_changed": 0}
+            field = None
             if nominating:
                 # the candidates' order of moves is a property of the election: the same stream for every
                 # method, so methods that agree on every field (e.g. IRV and ER-IRV on strict ballots) agree
                 nrng = np.random.default_rng([seed, e, zlib.crc32(b"nomination")])
                 field, st = nominate(m, u, u_clone, cu, nrng, exits, clones)
-                ents = field.entries()
-                uf, back = utilities(ents, u, u_clone), (lambda P, ents=ents: to_original(P, ents, C))
-                orig = np.array([d for d, _ in ents])
-            set_candidates(candidate_utilities(cu_c, ents if nominating else full_field))
-            P_h = back(m.honest(uf))
-            if nominating:
-                with candidates(candidate_utilities(cu_c, full_field)):
-                    nstats = {**st, "nom_changed": int(np.abs(P_h - m.honest(u)).sum() > 1e-9)}
-            check = (lambda B: part.no_show(m, B, uf, u, back)) if participation else (lambda B: part.NAN)
+            ents = field.entries() if nominating else full_field
+            orig = np.array([d for d, _ in ents])
             defined = sincerity_defined(name)          # blank for TRASH and the Inverse-* methods
-            sincere_row = {**election_row(u, P_h, m_cand), **estats, **(jury if name == names[0] else {"jury": ""}),
+            with candidates(candidate_utilities(cu_c, full_field)):
+                P_0 = m.honest(u)                      # honest on the original field
+            orig_cols = ({"U_orig": float(outcome_value(P_0, u.sum(axis=0))), "WM_orig": float(outcome_value(P_0, m_cand))}
+                         if nominating else {"U_orig": "", "WM_orig": ""})
+            on_cache = {}
+
+            def on_field(ents, moved=0):
+                """What the voters face on a field (entries): their utilities, the way back to the original
+                field, the participation check, and the honest row there (judged on the original field)."""
+                k = tuple(ents)
+                if k in on_cache:
+                    uf, back, check, nstats, row = on_cache[k]
+                    if racing:                          # the same field, reached after other moves
+                        nstats = {**nstats, "nom_race": moved}
+                        row = {**row, "nom_race": moved}
+                    return uf, back, check, nstats, row
+                if nominating:
+                    uf, back = utilities(ents, u, u_clone), (lambda P, ents=ents: to_original(P, ents, C))
+                else:
+                    uf, back = u, (lambda P: P)
+                with candidates(candidate_utilities(cu_c, ents)):
+                    P_h = back(m.honest(uf))
+                    nstats = {"nom_exits": 0, "nom_clones": 0, "nom_settled": 1, "nom_moves": 0, "nom_changed": 0,
+                              "nom_race": ""}
+                    if nominating:
+                        nstats = {**st, "nom_exits": C - len({d for d, c in ents if not c}),
+                                  "nom_clones": sum(c for _, c in ents),
+                                  "nom_changed": int(np.abs(P_h - P_0).sum() > 1e-9),
+                                  "nom_race": moved if racing else ""}
+                    check = (lambda B: part.no_show(m, B, uf, u, back)) if participation else (lambda B: part.NAN)
+                    S = m.sincere(uf)
+                    row = {**election_row(u, P_h, m_cand), **estats, **(jury if name == names[0] else {"jury": ""}),
                            "sincerity": 1.0 if defined else "",
-                       "fidelity": 1.0 if defined else "", "settled": 1,
-                           "adapted": "", "compromise": 0.0, "pushover": 0.0, "burial": 0.0, "exaggeration": 0.0, **nstats, **check(m.sincere(uf))}
+                           "fidelity": 1.0 if defined else "", "settled": 1,
+                           "adapted": "", "compromise": 0.0, "pushover": 0.0, "burial": 0.0, "exaggeration": 0.0,
+                           **nstats, **orig_cols, **check(S)}
+                    row.update(ballot_condorcet(m, S, u, back, P_h))
+                    row.update(ties(m, S, P_h))
+                    row.update(manip.manipulation(m, S, uf, u, back) if manipulating else manip.NAN)
+                on_cache[k] = (uf, back, check, nstats, row)
+                return on_cache[k]
+            uf, back, check, nstats, sincere_row = on_field(ents)
+            set_candidates(candidate_utilities(cu_c, ents))
+            # --race-cost: strategic nomination between the poll rounds (nomination.Race). field_at[r]: the
+            # field round r's ballots were cast on, and the race moves made before it
+            field_at, race = {}, None
+            if racing:
+                rc = Race(m, u, u_clone, cu, field, exits, clones, race_cost,
+                          np.random.default_rng([seed, e, zlib.crc32(b"race")]))
+
+                def race(r, B, polls, rc=rc):
+                    f_r = rc.f
+                    field_at[r] = (f_r, rc.moves)
+                    if not rc.step(B, polls):
+                        return None
+                    e_new = rc.f.entries()
+                    set_candidates(candidate_utilities(cu_c, e_new))
+                    return utilities(e_new, u, u_clone), carry(m, B, f_r.entries(), e_new, u, u_clone)
             # Each method learns with a fresh copy of the same stream (common random numbers: the same
             # polls for every method as long as they draw alike), so results stay the same when methods
             # are added or reordered, and paired comparisons are not blurred by different poll draws.
@@ -216,12 +265,15 @@ def one_election(job):
             res = respond(m, uf, mrng, samples=samples, poll_size=poll_size, search=search, strategic=strategic,
                           poll_error=poll_error, report=rounds, aggressive=aggressive, start=B0,
                           adaptive=adaptive, activated=act, campaign=camp, risk=risk, cstats=cst,
-                          leaders=lead, engine=engine, coordination=phi, honesty=honesty, **inertia_options(p))
-            sincere_row.update(ballot_condorcet(m, m.sincere(uf), u, back, P_h))
-            sincere_row.update(ties(m, m.sincere(uf), P_h))
-            sincere_row.update(manip.manipulation(m, m.sincere(uf), uf, u, back) if manipulating else manip.NAN)
-            honest_B = m.sincere(uf)
+                          leaders=lead, engine=engine, coordination=phi, honesty=honesty, race=race,
+                          **inertia_options(p))
             for r, (B, settled, sin) in zip(rounds, res):
+                if racing:                              # the field of this round
+                    f_r, moved = field_at.get(r, (rc.f, rc.moves)) if r > 0 else (field, 0)
+                    ents_r = f_r.entries()
+                    uf, back, check, nstats, sincere_row = on_field(ents_r, moved)
+                    set_candidates(candidate_utilities(cu_c, ents_r))
+                honest_B = m.sincere(uf)
                 P_l = back(m.tally(B))
                 out.append({"rounds": r, "election": e, "method": name, "ballots": "sincere", **sincere_row,
                             "camp_follow": "", "camp_top": "", "bold": "", "changed": ""})
@@ -244,6 +296,7 @@ def one_election(job):
     return out
 
 
+RACE_COST = 0.05      # --race-cost default (nomination.Race)
 OUTPUT_DIR = "output"
 VERSION = "3.0.0"      # written into every row (column "version") and shown in the analysis report
 
@@ -386,6 +439,8 @@ def check_params(a, error):
         error("--ks-cut must be between 0 and 1")
     if any(v < 0 for v in vals("poll_error")):
         error("--poll-error must be 0 or more")
+    if any(v < 0 for v in vals("race_cost")):
+        error("--race-cost must be 0 or more (inf: no moves in the race)")
     # the engine (strategy.ENGINES) and the flags that belong to some engines only (strategy.ENGINE_PARAMS):
     # left out (None) they take their default; given, at least one of the engines must use them
     if any(getattr(a, k, None) is not None for k in ("individual", "response")):
@@ -486,11 +541,11 @@ def strategy_text(p, n):
 PARAMS = ["voters", "cands", "model", "dims", "zipf", "clusters", "spread", "salience", "salience_exponent", "fixed_variance", "field_kappa", "field_salience", "noise_strength", "ks_alpha", "ks_cut", "ks_shared", "width", "utility", "cand_dispersion", "cand_shift", "rounds", "samples",
           "strategic", "adaptive", "aggressive", "lazy", "max_score", "exits", "clones", "poll_size", "poll_error", "search",
           "start", "seed", "campaign", "risk", "risk_tolerance", "coordination", "engine", "cands_vote", "honesty", "inertia",
-          "inertia_shape", "shares", "evidence", "memory"]
+          "inertia_shape", "shares", "evidence", "memory", "race_cost"]
 # Run parameters added later, with the value that gives the earlier behaviour: filled in where a caller
 # leaves them out (simulate), so callers written before them keep working. The engine and its parameters
 # are filled by strategy.engine_params (no engine, and no --individual: the ranking groups).
-LATER_PARAMS = {"cands_vote": 0}
+LATER_PARAMS = {"cands_vote": 0, "race_cost": "inf"}
 
 
 def previous_election(args):
@@ -964,6 +1019,10 @@ def parser():
     ap.add_argument("--clones", type=int, default=2,
                     help="most clones in the race at once, fielded strategically (default 2 since 2026-11-03; "
                          "0 = none; see nomination.py)")
+    ap.add_argument("--race-cost", type=float, default=RACE_COST,
+                    help=f"strategic nomination between the poll rounds (with --exits or --clones): a candidate "
+                         f"changes the field only for a gain above this share of their utility range (default "
+                         f"{RACE_COST}; inf = only before the race; see nomination.py)")
     ap.add_argument("--start", default="honest", choices=["honest", "previous"],
                     help="what the first poll shows: honest ballots, or the result of a previous election (one "
                          "dummy election under the same settings, its candidates relabelled at random)")
@@ -1027,7 +1086,10 @@ def main():
         sinc = [r for r in results if r["method"] == m and r["ballots"] == "sincere"]
         lrn = [r for r in results if r["method"] == m and r["ballots"] == "learned"]
         s, l = summarize(sinc), summarize(lrn)
-        summ[m] = {"VSE": s["VSE"], "WME": s["WME"], "VSE_learned": l["VSE"], "WME_learned": l["WME"],
+        # with nomination: honest on the field as drawn (U_orig, WM_orig)
+        o = (summarize([{**r, "U_method": r["U_orig"], "WM": r["WM_orig"]} for r in sinc])
+             if sinc and sinc[0].get("U_orig") not in (None, "") else {"VSE": float("nan"), "WME": float("nan")})
+        summ[m] = {"VSE_orig": o["VSE"], "WME_orig": o["WME"], "VSE": s["VSE"], "WME": s["WME"], "VSE_learned": l["VSE"], "WME_learned": l["WME"],
                    "CE": s["CE"], "CE_learned": l["CE"],
                    "sincerity": float(np.mean([r["sincerity"] for r in lrn])) if sincerity_defined(m) else float("nan"),
                    "settled": float(np.mean([r["settled"] for r in lrn]))}
@@ -1036,7 +1098,8 @@ def main():
     front = set(pareto([[summ[m][x] if not np.isnan(summ[m][x]) else -np.inf for x in axes] for m in names],
                        tol=[FRONT_TOLERANCE["VSE*"], FRONT_TOLERANCE["WME*"], FRONT_TOLERANCE["sincerity"]]))
 
-    cols = ["VSE", "WME", "VSE_learned", "WME_learned", "CE", "CE_learned", "sincerity", "settled"]
+    cols = (["VSE_orig", "WME_orig"] if a.exits or a.clones else []) + ["VSE", "WME", "VSE_learned", "WME_learned",
+                                                                       "CE", "CE_learned", "sincerity", "settled"]
     with open(os.path.join(out, "summary.csv"), "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["method"] + cols + ["on_front"])
@@ -1047,16 +1110,18 @@ def main():
     lines.append(f"{a.elections} elections, {a.voters} voters, {a.cands} candidates, {model_text(a)}, "
           f"{width_text(a)}{cand_text(a.cand_dispersion, a.cand_shift, a.cands_vote)}; {strategy_text({**vars(a), **p}, a.voters)}, "
           f"strategic share {a.strategic}, adaptive share {p['adaptive']}, scores 0..{a.max_score}"
-          f"{f', nomination: exits {a.exits}, clones {a.clones}' if a.exits or a.clones else ''}; seed {a.seed}")
-    lines.append(f"{'method':<26}{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
+          f"{f', nomination: exits {a.exits}, clones {a.clones}, race cost {a.race_cost}' if a.exits or a.clones else ''}; seed {a.seed}")
+    nom = bool(a.exits or a.clones)
+    lines.append(f"{'method':<26}" + (f"{'VSE°':>7}{'WME°':>7}" if nom else "") + f"{'VSE':>7}{'WME':>7}{'VSE*':>7}{'WME*':>7}{'CE':>7}{'CE*':>7}{'sincerity':>11}{'settled':>9}  front")
     for m in sorted(names, key=lambda m: -summ[m]["VSE_learned"]):
         s = summ[m]
-        lines.append(f"{m:<26}{s['VSE']*100:7.1f}{s['WME']*100:7.1f}{s['VSE_learned']*100:7.1f}{s['WME_learned']*100:7.1f}"
+        lines.append(f"{m:<26}" + (f"{s['VSE_orig']*100:7.1f}{s['WME_orig']*100:7.1f}" if nom else "") + f"{s['VSE']*100:7.1f}{s['WME']*100:7.1f}{s['VSE_learned']*100:7.1f}{s['WME_learned']*100:7.1f}"
               f"{s['CE']*100:7.1f}{s['CE_learned']*100:7.1f}"
               + (f"{s['sincerity']*100:10.1f}%" if not np.isnan(s['sincerity']) else f"{'—':>11}")
               + f"{s['settled']*100:8.0f}%"
               f"  {'*' if names.index(m) in front else ''}")
-    lines.append("0 = random ballot, 100 = best candidate; *: with learned ballots; front on VSE*, WME*, sincerity")
+    lines.append("0 = random ballot, 100 = best candidate; *: with learned ballots; front on VSE*, WME*, sincerity"
+                 + ("; °: honest on the field as drawn, without nomination (VSE, WME: honest after nomination)" if nom else ""))
     with open(os.path.join(out, "table.txt"), "w") as f:
         f.write("\n".join(lines) + "\n")
     print("\n".join(lines))

@@ -153,6 +153,10 @@ ADDED_COLUMNS = {
     "memory": (None, "3.0.0, the inertia engine's options: their defaults for its runs"),
     "honesty": ("none", "2026-11-04, cost of voting insincerely (individual voters): older runs used a stake threshold and a worth test instead"),
     "cands_vote": ("0", "2026-11-03, candidates who vote: older runs had candidates apart from the voters"),
+    "race_cost": ("inf", "2026-11-18, nomination in the race: older runs nominated before the race only"),
+    "U_orig": (None, "2026-11-18, the honest result on the field as drawn (with nomination)"),
+    "WM_orig": (None, "2026-11-18, the honest result on the field as drawn (with nomination)"),
+    "nom_race": (None, "2026-11-18, moves made in the race"),
     "ks_alpha": ("1.5", "2026-10-14, parameters of the ks model (not used by older runs)"),
     "ks_cut": ("0.2", "2026-10-14, parameters of the ks model (not used by older runs)"),
     "ks_shared": ("0", "2026-10-14, parameters of the ks model (not used by older runs)"),
@@ -378,6 +382,8 @@ def arrays(rows):
     A.update({k: np.full((E, M), "", dtype=object) for k in ["bcw_s", "bcw_l"]})    # ballot Condorcet winner
     A.update({k: np.full((E, M), np.nan) for k in ["split_s", "split_l", "zero_s", "zero_l"]})   # ties (2026-10-26)
     A.update({k: np.full((E, M), np.nan) for k in ["span_s", "span_l"]})          # trade-off span (2026-11-04)
+    A.update({k: np.full((E, M), np.nan) for k in ["num_o", "wm_o", "nom_race"]})  # honest on the original field,
+                                                                                   # race moves (2026-11-18)
     A.update({k + sfx: np.full((E, M), np.nan) for k in PART for sfx in ("_s", "_l")})
     A.update({k: np.full((E, M), np.nan) for k in MANIP})
     den = np.zeros(E)          # per election: U_best - U_rb (VSE denominator)
@@ -400,6 +406,10 @@ def arrays(rows):
             A["us"][i, j] = float(r["U_method"])
             for k in NOM:
                 A[k][i, j] = float(r[k])
+            if r.get("U_orig"):                               # with nomination: honest on the original field
+                A["num_o"][i, j] = float(r["U_orig"]) - float(r["U_rb"])
+                A["wm_o"][i, j] = float(r["WM_orig"]) - float(r["WM_rb"])
+            A["nom_race"][i, j] = float(r.get("nom_race") or "nan")
             A["bcw_s"][i, j], A["pbcw_s"][i, j] = r.get("bcw", ""), float(r.get("p_bcw") or "nan")
             A["span_s"][i, j] = float(r.get("p_span") or "nan")
             A["split_s"][i, j], A["zero_s"][i, j] = float(r.get("split") or "nan"), float(r.get("zero_margins") or "nan")
@@ -857,7 +867,9 @@ def analyse_condition(rows, boot, seed=0):
            "rfrontier": normalized_frontier(cands, dens, ele, which=3),
            "references": references(cands, dens, ele),
            "electorate": electorate_summary(dens, has, ele),
-           "nomination": {k: A[k].mean(axis=0) for k in NOM},
+           "nomination": {**{k: A[k].mean(axis=0) for k in NOM},
+                          "VSE_o": A["num_o"].sum(axis=0) / dens[0].sum(), "WME_o": A["wm_o"].sum(axis=0) / dens[1].sum(),
+                          "race": nanmean0(A["nom_race"])},
            "adapted": nanmean0(A["adapted"]),
            "participation": participation_summary(A, W),
            "manipulation": manipulation_summary(A, W, dens[0]),
@@ -984,7 +996,7 @@ PARAM_NAMES = {"engine": "engine", "inertia": "inertia", "inertia_shape": "inert
                "evidence": "evidence per round", "memory": "memory", "honesty": "honesty cost", "campaign": "campaigns", "coordination": "coordination share", "risk": "risk by satisfaction",
                "risk_tolerance": "risk tolerance", "cands": "candidates", "strategic": "strategic share", "max_score": "max score",
                "rounds": "poll rounds", "poll_size": "poll size", "poll_error": "poll error",
-               "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion", "cands_vote": "candidates vote",
+               "aggressive": "aggressive share", "start": "first poll", "cand_dispersion": "candidate dispersion", "cands_vote": "candidates vote", "race_cost": "race cost",
                "cand_shift": "candidate shift", "lazy": "laziness", "model": "electorate model",
                "ks_alpha": "ks faction alpha", "ks_cut": "ks cut",
                "ks_shared": "ks shared factions", "clusters": "cluster count", "spread": "cluster spread", "zipf": "cluster Zipf",
@@ -993,7 +1005,7 @@ PARAM_NAMES = {"engine": "engine", "inertia": "inertia", "inertia_shape": "inert
                "noise_strength": "noise strength", "adaptive": "adaptive share", "utility": "utility"}
 LEARNING_ONLY = {"rounds", "samples", "strategic", "adaptive", "poll_size", "poll_error", "search",
                  "aggressive", "start", "campaign", "risk", "risk_tolerance", "coordination", "engine", "honesty", "inertia", "inertia_shape", "shares", "evidence", "memory"}   # same electorates
-SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy"}  # same electorates (honest results may differ)
+SAME_ELECTORATES = LEARNING_ONLY | {"max_score", "exits", "clones", "lazy", "race_cost"}  # same electorates (honest results may differ)
 
 
 def param_order(k, v):
@@ -1439,7 +1451,9 @@ def main():
               f"strategic share {p['strategic']}"
               + (f", adaptive share {p['adaptive']}" if float(p.get('adaptive') or 0) > 0 else "")
               + f", scores 0..{p['max_score']}"
-              + (f"; nomination: exits {p['exits']}, clones {p['clones']}" if p['exits'] != '0' or p['clones'] != '0' else "")
+              + (f"; nomination: exits {p['exits']}, clones {p['clones']}"
+                 + (f", race cost {p['race_cost']}" if p.get('race_cost', 'inf') not in ('inf', '') else "")
+                 if p['exits'] != '0' or p['clones'] != '0' else "")
               + "." + (" " + electorate_text(r["electorate"]) if r["electorate"] else "")
               + frontier_text(r["frontier"], r["region"], r["references"], r.get("nfrontier"), r.get("rfrontier"),
                               dict(zip(PARAMS, key)).get("max_score")),
@@ -1481,14 +1495,26 @@ def main():
             L += [""]
         if p["exits"] != "0" or p["clones"] != "0":
             nm = r["nomination"]
-            L += ["**Nomination** (with sincere ballots; per method, averaged over elections): how often the "
-                  "honest result changed, how many candidates were out of the race and how many clones in it "
-                  "at the end, and how often the candidates reached a field where nobody wanted to move "
-                  "(settled). VSE and WME above are judged on the original field.", "",
-                  "| Method | Result changed | Exits | Clones | Settled |", "|---|---|---|---|---|"]
+            race = not np.all(np.isnan(nm["race"]))
+            L += ["**Nomination**: the result in three steps, per method, on the original field (a clone's win "
+                  "counts as its original's). VSE° and WME°: honest ballots on the field as drawn. VSE and WME: "
+                  "honest ballots on the field after nomination"
+                  + (" (before the race and between the poll rounds, on the field the reported round was cast on)"
+                     if race else " (before the race)")
+                  + ". VSE* and WME*: the learned ballots, on that field. Then how often nomination changed the "
+                  "honest result, how many candidates were out of the race and how many clones in it in the "
+                  "reported round, "
+                  + ("the moves made in the race (between the poll rounds), " if race else "")
+                  + "and how often the candidates reached a field before the race where nobody wanted to move "
+                  "(settled).", "",
+                  "| Method | VSE° | VSE | VSE* | WME° | WME | WME* | Result changed | Exits | Clones |"
+                  + (" Race moves |" if race else "") + " Settled |",
+                  "|---|---|---|---|---|---|---|---|---|---|" + ("---|" if race else "") + "---|"]
             for j in np.argsort(-nm["nom_changed"], kind="stable"):
-                L.append(f"| {r['methods'][j]} | {nm['nom_changed'][j]:.1%} | {nm['nom_exits'][j]:.2f} "
-                         f"| {nm['nom_clones'][j]:.2f} | {nm['nom_settled'][j]:.0%} |")
+                L.append(f"| {r['methods'][j]} | {nm['VSE_o'][j]:.1%} | {r['VSE'][j]:.1%} | {r['VSE*'][j]:.1%} "
+                         f"| {nm['WME_o'][j]:.1%} | {r['WME'][j]:.1%} | {r['WME*'][j]:.1%} "
+                         f"| {nm['nom_changed'][j]:.1%} | {nm['nom_exits'][j]:.2f} | {nm['nom_clones'][j]:.2f} |"
+                         + (f" {nm['race'][j]:.2f} |" if race else "") + f" {nm['nom_settled'][j]:.0%} |")
             L += [""]
         pt = r["participation"]
         if pt is not None:

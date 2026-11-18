@@ -267,6 +267,7 @@ for name in ["Plurality", "Borda", "IRV", "Minimax", "Score"]:
         assert f.inn.sum() >= 2 and len(f.clones) <= 2
 print("nomination: settled fields are equilibria ok")
 
+
 # Poll rounds work on fields of 2 candidates (strategic exits can leave only two)
 from strategy import respond as _respond2
 for name, m in METHODS.items():
@@ -474,6 +475,48 @@ for row in rows:
         hon.setdefault(row["method"], []).append(row["U_method"])
 assert np.allclose(hon["Borda"], hon["Borda-ER"]) and np.allclose(hon["IRV"], hon["ER-IRV"]), hon
 print("ER pairs: same honest result with nomination ok")
+
+# Nomination in the race (nomination.Race, carry; --race-cost)
+from nomination import carry, Race
+# carry: a new clone takes its original's place on every ballot, and each voter puts the one of the two
+# they prefer just above the other; a candidate who left is dropped
+u, uc, cu = spatial(np.linspace(-1, 2, 21), [0.0, 0.5, 1.0])
+mP = METHODS["Plurality"]
+B = mP.sincere(u)
+g = Field(3); g.clones[0] = 1
+Bg = carry(mP, B, Field(3).entries(), g.entries(), u, uc)
+assert np.allclose(Bg[:, 1:3], B[:, 1:3]) and np.allclose(Bg[:, 0] + Bg[:, 3], B[:, 0])
+assert np.array_equal(Bg[:, 3] > 0, (uc[:, 0] > u[:, 0]) & (B[:, 0] > 0))
+h = Field(3); h.inn[1] = False
+Bh = carry(METHODS["Borda"], METHODS["Borda"].sincere(u), Field(3).entries(), h.entries(), u, uc)
+assert np.array_equal(Bh, METHODS["Borda"].sincere(u[:, [0, 2]]))
+# Race: vote splitting on the polls makes B withdraw (as before the race); with a cost above every
+# gain, nobody moves
+u, uc, cu = spatial([-0.1, -0.05, 0.0, 0.08, 0.12, 0.2, 0.9, 1.0, 1.0, 1.1], [0.0, 0.1, 1.0])
+polls = np.array([np.arange(10)] * 3)
+rc = Race(mP, u, uc, cu, Field(3), 1, 0, 0.05, np.random.default_rng(1))
+assert rc.step(mP.sincere(u), polls) and rc.f.inn.sum() == 2 and rc.f.inn[2] and rc.moves == 1
+rc = Race(mP, u, uc, cu, Field(3), 1, 0, 1.0, np.random.default_rng(1))
+assert not rc.step(mP.sincere(u), polls) and rc.f.inn.all()
+# in the race nobody re-enters
+f = Field(3); f.inn[1] = False
+assert not any(g.inn[1] for g in moves(f, 1, 1, 1, reentry=False))
+# one_election: without strategic voters the ballots stay sincere on every field; an infinite cost
+# gives the results before the race; with the race the rows carry its moves and the original field
+for st_share in (0.0, 0.5):
+    kw = dict(sc=Scenario(n_voters=31, n_cands=5), e=2, rounds=[1, 3], names=["Plurality", "Borda"])
+    off = one_election({**kw, "p": _p(exits=1, clones=2, strategic=st_share, adaptive=0.0, race_cost=float("inf"))})
+    base = one_election({**kw, "p": _p(exits=1, clones=2, strategic=st_share, adaptive=0.0)})
+    on = one_election({**kw, "p": _p(exits=1, clones=2, strategic=st_share, adaptive=0.0, race_cost=0.0)})
+    assert [r["U_method"] for r in off] == [r["U_method"] for r in base]
+    for row in on:
+        assert row["U_orig"] != "" if row["ballots"] == "sincere" else True
+        if row["rounds"] == 1:                     # round 1: before any move in the race
+            assert row["nom_race"] == 0
+    if st_share == 0.0:
+        for r0, r1 in zip(on[0::2], on[1::2]):     # sincere and learned rows: the same (honest) result
+            assert np.isclose(r0["U_method"], r1["U_method"]), (r0["method"], r0["rounds"])
+print("nomination in the race ok")
 
 # Two-round elections: the runoff is a separate vote, read from the fixed sincere ranking, so
 # strategy changes only the round-1 marks. Honestly TTR = top two by first choices, then the majority

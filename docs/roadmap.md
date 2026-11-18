@@ -17,6 +17,7 @@ The items below belong to one larger redesign of the strategy engine, set out in
 ## Candidates and Nomination
 
 - **Costly clones.** A clone costs its party nothing in the model, while a real one needs a second credible candidate and splits a campaign; the no-nomination test may overstate what clones do (findings 2.1.0, section 10.1). A cost for fielding a clone, like the honesty cost for voters, would make nomination more realistic. Changes results.
+- **Nomination in the race: open points** (built 2026-11-18, `--race-cost`; [model.md](model.md), Strategic nomination). Nomination before the race still foresees sincere ballots exactly and runs to an equilibrium; it could become the race's first step, judged by the first polls with the same cost. The cost is one number for exits and clones alike, while leaving a race and fielding a second candidate cost differently in reality. A withdrawn candidate cannot come back. Campaigns and the dummy election of `--start previous` keep a fixed field.
 - **Candidate fields closer to real ones.** In real data a few serious candidates are graded low by about half of the voters and the others by most of them: a cliff, while the model's candidates spread evenly (journal, approval data). Most voters probably have several candidates at the bottom of their scale, which is where rated methods are hit by nomination (journal, 2026-11-06). Better fields need data; candidate dispersion and shift are the current stand-ins.
 
 ## Methods and Compositions
