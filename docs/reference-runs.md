@@ -4,7 +4,7 @@ A fresh set of runs with version 3.0.0 (individual voters as the default strateg
 
 The set is chosen to show how robust the findings are, not to tune the model: the tests that only served to set the model's defaults (noise strength, dimensions and the like; see [journal.md](journal.md)) are not repeated. The parameters of the strategy engine are tested, since individual voters depend on them directly: the poll error sets how flat the chances are, the coordination how many of their camp a voter expects to act alike, and the honesty cost how much a move must gain, and the number of polls how noisy the voters' picture of the chances is.
 
-Strategic nomination is not part of the base. Its model is crude (nothing fixes the cost of a move, how often candidates reconsider, how far they foresee the result), and it changes the results a lot: most methods move towards the Condorcet corner, the methods that attract clones away from it. So it is run as a family of conditions from none to cheap moves in every round, and a method is read by the area its results span across them (`compare.py --trace`), with the conditions at the corners as the extremes.
+Strategic nomination is not part of the base. Its model is crude (nothing fixes the cost of a move, how often candidates reconsider, how far they foresee the result), and it changes the results a lot: most methods move towards the Condorcet corner, the methods that attract clones away from it. So it is run as a family of conditions from none to cheap moves in every round, and a method is read by the area its results span across them (`compare.py --trace`), with the conditions at the corners as the extremes. For that, the conditions should stay within what a real election could look like: a setting far outside it marks a corner of every method's area and says more about the setting than about the methods. The one deliberate extreme is the strategic share of 1 (every voter strategic), as the upper bound of strategy.
 
 ## Before Starting
 
@@ -58,13 +58,13 @@ python run.py --exits 0 --clones 2 --elections 2000 --methods extended --out $R/
 python sweep.py --model clusters field ks --elections 2000 --methods extended --out $R/models                # 6
 python run.py --width 1.4 --elections 2000 --methods extended --out $R/width                                 # 2
 python sweep.py --utility linear quadratic --elections 2000 --methods extended --out $R/utility              # 4
-python sweep.py --cand-dispersion 0.5 2 --elections 2000 --methods extended --out $R/cand-dispersion         # 4
+python sweep.py --cand-dispersion 0.8 1.2 --elections 2000 --methods extended --out $R/cand-dispersion         # 4
 python sweep.py --cand-shift 0.5 1 --elections 2000 --methods extended --out $R/cand-shift                   # 4
 python sweep.py --cands 4 8 10 --elections 2000 --methods extended --out $R/candidates                       # 15.5 (10 candidates: 10.5)
 python run.py --voters 199 --elections 2000 --methods extended --out $R/voters                               # 2.2
 
 # 5. Combined
-python run.py --lazy 0.25 --cand-dispersion 0.5 --poll-error 4 --elections 2000 --methods extended \
+python run.py --lazy 0.25 --cand-dispersion 0.8 --poll-error 4 --elections 2000 --methods extended \
     --out $R/hard                                                        # 2.2
 ```
 
@@ -96,11 +96,11 @@ What each part answers:
 | nomination-parts | (optional) exits only and clones only, in the race: which of the two moves a method's results |
 | models | three other electorate models: clusters (close to the base's), field and ks (Quinn's model as in vse-sim's code is in the vsesim setting) |
 | width, utility | how quickly utility falls with distance: the default (mode-like), wider (towards linear), linear (median) and quadratic (mean) |
-| cand-dispersion | candidates clustered in the centre or spread out, unlike the voters (since 2026-11-03 by who stands among the voters: mostly the most central or most extreme voters, see [model.md](model.md), Candidates who vote) |
+| cand-dispersion | candidates somewhat more central or more spread out than the voters (0.8 and 1.2; since 2026-11-03 by who stands among the voters: rather the more central or the more extreme voters, see [model.md](model.md), Candidates who vote). The 2.1.0 runs used 0.5 and 2: across all conditions these gave the most extreme results by far and pushed the methods together, too far from any real field to weigh in a comparison |
 | cand-shift | candidates half or one standard deviation of the voters further along the main dimension: candidates from one side (by who stands) |
 | candidates | 4, 8 and 10 candidates (6 in the base), 2000 elections each; the base's 6 candidates are the first 6 of 8 and 10, with the same voters (nested electorates), so the comparison is paired |
 | voters | 199 voters instead of 99 (polls of half the electorate): does the electorate's size matter, now that voters expect a share of their camp to act alike? The base's 99 voters are the first 99 of these 199 (nested electorates), so the comparison is paired |
-| hard | several hard assumptions at once: candidates clustered in the centre, laziness 0.25 and poor poll information (poll error 4) |
+| hard | several hard assumptions at once: candidates more central than the voters (dispersion 0.8; 0.5 in the 2.1.0 runs), laziness 0.25 and poor poll information (poll error 4) |
 
 ## Analysis
 
@@ -118,7 +118,7 @@ python show_electorates.py --sav --out $R/electorates          # -> $R/electorat
 python compare.py $R --pairs "Approval:Plurality" "Supplementary vote:Plurality" "TTR:Supplementary vote" \
     "IRV:TTR" "IRV-3:TTR" "Approval cond. runoff:TTR" "Approval cond. runoff:Approval" \
     "Approval runoff:Approval cond. runoff" "BTR-score:IRV" "IMDS:INS" "BTR-score:Smith//Score"
-    --trace Plurality TTR IRV "Score runoff" Score STAR Schulze "Soft Minimax-D" BTR-score Approval --trace-together
+    --trace Plurality TTR IRV Approval Score BTR-score Minimax "Soft Minimax-D" --trace-together
                                                       # -> $R/comparison/: every method over all conditions, with the pairs
                                                       #    and the traced methods' areas across the conditions
 ```
