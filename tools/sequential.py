@@ -19,7 +19,10 @@ orders of the same electorate):
                  their place in the order (fifths: first fifth of the voters to the last)
     orders       with --orders 2+: how far the results of two orders of the same electorate lie apart
                  (half the summed absolute difference of the winning chances, averaged over pairs of
-                 orders; 0 = the order never matters, 1 = different winners every time)
+                 orders; 0 = the order never matters, 1 = different winners every time); then split
+                 by the sincere preferences: elections without a Condorcet winner (a majority cycle),
+                 and those with one, by how narrow its closest head-to-head win is (below and above
+                 the median of these elections, as a share of the voters)
 
 Usage (from the lab's folder):
     python tools/sequential.py --elections 200 --methods Plurality Approval Score IRV Schulze
@@ -116,6 +119,7 @@ def main():
     rows = {n: {"h": [], "s": []} for n in names}
     strat = {n: [] for n in names}
     apart = {n: [] for n in names}
+    profile = []                          # per election: (has a Condorcet winner, its smallest margin)
     moves = {}
     t0 = time.time()
     for e in range(a.elections):
@@ -128,6 +132,10 @@ def main():
         cu = cand_prefs(ele.cands, sc.width, ele.cand_weights, getattr(sc, "utility", "exp"))
         set_candidates(candidate_utilities(cu, [(d, 0) for d in range(C)]))
         m_cand = worst_margins(u)
+        gt = (u[:, :, None] > u[:, None, :]).sum(axis=0)
+        mg = (gt - gt.T) / n
+        cw = np.flatnonzero((mg > 0).sum(axis=1) == C - 1)
+        profile.append((len(cw) == 1, float(np.delete(mg[cw[0]], cw[0]).min()) if len(cw) == 1 else np.nan))
         orders = [np.random.default_rng([p["seed"], e, zlib.crc32(b"sequential"), k]).permutation(n)
                   for k in range(a.orders)]
         for name in names:
@@ -143,9 +151,8 @@ def main():
                 Ps.append(P)
                 rows[name]["s"].append(election_row(u, P, m_cand))
                 strat[name].append(st[order])          # by place in the order
-            for i in range(len(Ps)):
-                for j in range(i + 1, len(Ps)):
-                    apart[name].append(0.5 * float(np.abs(Ps[i] - Ps[j]).sum()))
+            d = [0.5 * float(np.abs(Ps[i] - Ps[j]).sum()) for i in range(len(Ps)) for j in range(i + 1, len(Ps))]
+            apart[name].append(float(np.mean(d)) if d else np.nan)
         set_candidates(None)
         print(f"\r{e + 1}/{a.elections} elections, {time.time() - t0:.0f} s", end="", file=sys.stderr, flush=True)
     print(file=sys.stderr)
@@ -165,6 +172,22 @@ def main():
         if a.orders > 1:
             line += f"   {np.mean(apart[name]):6.3f}"
         print(line)
+    if a.orders > 1:
+        has = np.array([h for h, _ in profile])
+        mar = np.array([m for _, m in profile])
+        med = np.nanmedian(mar) if has.any() else np.nan
+        narrow, wide = has & (mar <= med), has & (mar > med)
+        print(f"\nHow far two orders lie apart, by the sincere profile: without a Condorcet winner "
+              f"({(~has).sum()} elections); with one, its closest win at most {med:.1%} of the voters "
+              f"({narrow.sum()}) or more ({wide.sum()}); share of the total that comes from the elections "
+              f"without one.")
+        print(f"{'method':<16}{'all':>8}{'cycle':>8}{'narrow':>8}{'wide':>8}{'from cycles':>13}")
+        for name in names:
+            x = np.array(apart[name])
+            part = lambda k: x[k].mean() if k.any() else float("nan")
+            tot = x.sum()
+            print(f"{name:<16}{x.mean():8.3f}{part(~has):8.3f}{part(narrow):8.3f}{part(wide):8.3f}"
+                  f"{(x[~has].sum() / tot if tot > 0 else float('nan')) * 100:12.0f}%")
 
 
 if __name__ == "__main__":
