@@ -370,59 +370,91 @@ def _subset_id(top):
     return (top * (1 << np.arange(top.shape[1]))).sum(axis=1).astype(int)
 
 
-def _firsts(B):
-    """For every subset A of candidates: one-hot of the voter's highest-ranked candidate in A. Used for
-    elimination methods: first choices among the remaining. Truncated rankings: a ballot whose
-    candidates left in A are all unranked (0, two or more tied) is exhausted and counts for nobody."""
-    n, C = B.shape
-    m = masks(C)
-    Bm = np.where(m[None], B[:, None, :], -np.inf)             # (n, 2^C, C)
-    out = np.zeros((n, 2 ** C, C))
-    top = Bm[:, 1:].max(axis=2, keepdims=True)
-    idx = Bm[:, 1:].argmax(axis=2)
-    ntop = (Bm[:, 1:] == top).sum(axis=2)
-    live = (top[:, :, 0] > 0) | (ntop == 1)
-    v, s_ = np.nonzero(live)
-    out[v, s_ + 1, idx[v, s_]] = 1
-    return out.reshape(n, -1)
+# ---------- a voter's first (or last) candidates among every subset ----------
+# One function for the IRV family's readings and their variants (compose.py: firsts(ties=...), lasts):
+#   end      "top" (first preferences) or "bottom" (last places)
+#   ties     how candidates tied at that end share the ballot: "split" (a vote shared equally), "whole"
+#            (a whole vote each, as ER-IRV and top-rank approval), "none" (a ballot tied at that end
+#            counts for nobody), "first" (the lowest-numbered of them; for strict rankings, where ties
+#            occur only among unranked candidates)
+#   exhaust  when a ballot counts for nobody (top end only): "never"; "lone" (truncated rankings: what
+#            is left of the ballot in A lies at 0 shared by two or more, i.e. unranked; a lone 0 is
+#            the last place of a full ranking); "pos" (truncated rankings ranking from 1: nothing above 0)
+ENDS_TIES = ("split", "whole", "none", "first")
+ENDS_EXHAUST = ("never", "lone", "pos")
 
 
-def _firsts_ex(B):
-    """As _firsts, for truncated rankings: a ballot counts for its highest-ranked candidate in A only
-    if it ranks one there (value > 0); otherwise it is exhausted and counts for nobody."""
-    n, C = B.shape
-    m = masks(C)
-    Bm = np.where(m[None], B[:, None, :], -np.inf)
-    out = np.zeros((n, 2 ** C, C))
-    idx = Bm[:, 1:].argmax(axis=2)
-    live = np.take_along_axis(Bm[:, 1:], idx[:, :, None], axis=2)[:, :, 0] > 0
-    v, s_ = np.nonzero(live)
-    out[v, s_ + 1, idx[v, s_]] = 1
-    return out.reshape(n, -1)
-
-
-def _lasts(B):
-    """For every subset A: the voter's lowest-ranked candidate in A (Coombs). Candidates tied at the
-    bottom (unranked on a truncated ranking) share the last place equally."""
+def _ends(B, end="top", ties="split", exhaust="never"):
+    """For every subset A of candidates (bitmask rows, as masks): how much of each voter's ballot goes
+    to each candidate in A as their first (end "top") or last ("bottom") among A; see above."""
     n, C = B.shape
     m = masks(C)[None]
-    Bm = np.where(m, B[:, None, :], np.inf)
-    low = (Bm == Bm.min(axis=2, keepdims=True)) & m
-    low[:, 0] = False
-    return (low / np.maximum(low.sum(axis=2, keepdims=True), 1)).reshape(n, -1)
+    X = B if end == "top" else -B
+    Xm = np.where(m, X[:, None, :], -np.inf)                   # (n, 2^C, C)
+    best = Xm.max(axis=2, keepdims=True)
+    at = (Xm == best) & m
+    k = at.sum(axis=2, keepdims=True)
+    if ties == "whole":
+        w = at.astype(float)
+    elif ties == "split":
+        w = at / np.maximum(k, 1)
+    elif ties == "none":
+        w = (at & (k == 1)).astype(float)
+    else:                                                       # "first": the lowest-numbered of them
+        w = np.zeros(at.shape)
+        idx = np.where(at.any(axis=2), at.argmax(axis=2), -1)
+        v, s_ = np.nonzero(idx >= 0)
+        w[v, s_, idx[v, s_]] = 1.0
+    if exhaust == "lone":
+        w = w * ((best > 0) | (k == 1))
+    elif exhaust == "pos":
+        w = w * (best > 0)
+    w[:, 0] = 0.0
+    return w.reshape(n, -1)
 
 
-def _firsts_eq(B):
-    """As _firsts, but every candidate tied at the top among A gets a whole vote (rankings with ties).
-    Candidates at level 0 tied with others are unranked (truncation): a ballot with only those left
-    in A is exhausted, as on a truncated ranking, rather than giving each a whole vote."""
+def _ends_total(B, end="top", ties="first", exhaust="never"):
+    """Totals over voters of _ends (ties "first", "whole" or "none"; "split" has no fast form): c
+    counts for a voter in S iff c is in S and no candidate that blocks it is (one strictly better at
+    that end; with ties "first" also one tied and lower-numbered, with "none" any one tied; with
+    exhaust "lone" any one tied with c at 0 or below), and with exhaust "pos" only where c is above 0."""
     n, C = B.shape
-    m = masks(C)[None]
-    Bm = np.where(m, B[:, None, :], -np.inf)
-    top = Bm.max(axis=2, keepdims=True)
-    at = (Bm == top) & m
-    live = (top > 0) | (at.sum(axis=2, keepdims=True) == 1)
-    return (at & live).reshape(n, -1)
+    X = B if end == "top" else -B
+    gt = X[:, None, :] > X[:, :, None]                                   # [v, c, d]: d better than c
+    eq = X[:, None, :] == X[:, :, None]
+    other = ~np.eye(C, dtype=bool)
+    block = gt.copy()
+    if ties == "first":
+        block |= eq & (np.arange(C)[None, :] < np.arange(C)[:, None])[None]
+    elif ties == "none":
+        block |= eq & other[None]
+    if exhaust == "lone":
+        block |= (X <= 0)[:, :, None] & eq & other[None]
+    count = X > 0 if exhaust == "pos" else np.ones((n, C), bool)
+    return _firsts_total_generic(B, block, count)
+
+
+# the IRV family's readings: the strict ranking (first), truncated (ex), with ties (eq), Coombs (lasts)
+ENDS = {"firsts": ("top", "first", "lone"), "firsts_ex": ("top", "first", "pos"),
+        "firsts_eq": ("top", "whole", "lone"), "lasts": ("bottom", "split", "never")}
+
+
+def ends_feature(end, ties, exhaust):
+    """The name of the feature _ends(B, end, ties, exhaust), made on first use (one of ENDS where it is
+    the same), with its fast totals where there is one (FEATURE_TOTALS)."""
+    if end not in ("top", "bottom") or ties not in ENDS_TIES or exhaust not in ENDS_EXHAUST:
+        raise ValueError(f"no such reading: end {end!r}, ties {ties!r}, exhaust {exhaust!r}")
+    key = (end, ties, exhaust)
+    for name, k in ENDS.items():
+        if k == key:
+            return name
+    name = f"{'firsts' if end == 'top' else 'lasts'}_{ties}_{exhaust}"
+    if name not in FEATURES:
+        FEATURES[name] = ((lambda key: lambda B: _ends(B, *key))(key), lambda C: (2 ** C, C))
+        ENDS[name] = key
+        if ties != "split":
+            FEATURE_TOTALS[name] = (lambda key: lambda B: _ends_total(B, *key))(key)
+    return name
 
 
 def _coalitions(B, strict):
@@ -573,13 +605,13 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "eqbot": (lambda B: (lambda t: (t[:, :, None] & t[:, None, :]).reshape(len(B), -1))(
         B == B.min(axis=1, keepdims=True)), lambda C: (C, C)),
     "grades": (lambda B: (B[:, :, None] == np.arange(MAXS + 1)).reshape(len(B), -1), lambda C: (C, MAXS + 1)),
-    "firsts": (_firsts, lambda C: (2 ** C, C)),
+    "firsts": (lambda B: _ends(B, *ENDS["firsts"]), lambda C: (2 ** C, C)),
     "fset": (lambda B: _onehot(_subset_id(_top(B)), 2 ** B.shape[1]), lambda C: (2 ** C,)),
     "fsetB": (lambda B: (_onehot(_subset_id(_top(B)), 2 ** B.shape[1])[:, :, None] * B[:, None, :]).reshape(
         len(B), -1), lambda C: (2 ** C, C)),
     "excess": (lambda B: np.clip(B[:, :, None] - B[:, None, :], 0, None).reshape(len(B), -1), lambda C: (C, C)),
     "keepnorm": (_keepnorm, lambda C: (2 ** C, C)),
-    "firsts_eq": (_firsts_eq, lambda C: (2 ** C, C)),
+    "firsts_eq": (lambda B: _ends(B, *ENDS["firsts_eq"]), lambda C: (2 ** C, C)),
     "dowdall": (_dowdall, lambda C: (C,)),
     "solid": (lambda B: _coalitions(B, True), lambda C: (2 ** C,)),
     "acquiesce": (lambda B: _coalitions(B, False), lambda C: (2 ** C,)),
@@ -589,8 +621,8 @@ FEATURES = {   # name: (per-voter feature (n, ...), shape of the sum given C)
     "dmscore_sub": (_dmscore_sub, lambda C: (2 ** C, C)),
     "diffhist": (_diff_hist, lambda C: (C, C, 2 * MAXS + 1)),
     **{f"soft{int(f * 100)}": ((lambda f: lambda B: _soft_margins(B, f))(f), lambda C: (C, C)) for f in (0.2, 0.4)},
-    "firsts_ex": (_firsts_ex, lambda C: (2 ** C, C)),
-    "lasts": (_lasts, lambda C: (2 ** C, C)),
+    "firsts_ex": (lambda B: _ends(B, *ENDS["firsts_ex"]), lambda C: (2 ** C, C)),
+    "lasts": (lambda B: _ends(B, *ENDS["lasts"]), lambda C: (2 ** C, C)),
     "firstsecond": (_firstsecond, lambda C: (C, C)),
     "ge1": (lambda B: B >= 1, lambda C: (C,)),
     "ge2": (lambda B: B >= 2, lambda C: (C,)),
@@ -629,34 +661,6 @@ def _firsts_total_generic(B, block, count):
     inS = masks(C)                                                     # (2^C, C)
     out = Z[:, full ^ S].T * inS                                          # (2^C, C)
     return out.ravel()
-
-
-def _firsts_total(B):
-    n, C = B.shape
-    gt = B[:, None, :] > B[:, :, None]                                   # [v, c, d]: d above c
-    eq = B[:, None, :] == B[:, :, None]
-    lower = np.arange(C)[None, :] < np.arange(C)[:, None]               # [c, d]: d < c
-    other = ~np.eye(C, dtype=bool)
-    unr = (B <= 0)[:, :, None]
-    block = gt | (eq & lower[None]) | (unr & eq & other[None])
-    return _firsts_total_generic(B, block, np.ones((n, C), bool))
-
-
-def _firsts_ex_total(B):
-    n, C = B.shape
-    gt = B[:, None, :] > B[:, :, None]
-    eq = B[:, None, :] == B[:, :, None]
-    lower = np.arange(C)[None, :] < np.arange(C)[:, None]
-    return _firsts_total_generic(B, gt | (eq & lower[None]), B > 0)
-
-
-def _firsts_eq_total(B):
-    n, C = B.shape
-    gt = B[:, None, :] > B[:, :, None]
-    eq = B[:, None, :] == B[:, :, None]
-    other = ~np.eye(C, dtype=bool)
-    unr = (B <= 0)[:, :, None]
-    return _firsts_total_generic(B, gt | (unr & eq & other[None]), np.ones((n, C), bool))
 
 
 def _nscore_sub_total(B):
@@ -704,7 +708,7 @@ def _dmscore_sub_total(B):
     return (out * masks(C)).ravel()
 
 
-FEATURE_TOTALS = {"firsts": _firsts_total, "firsts_ex": _firsts_ex_total, "firsts_eq": _firsts_eq_total,
+FEATURE_TOTALS = {**{f: (lambda k: lambda B: _ends_total(B, *k))(ENDS[f]) for f in ("firsts", "firsts_ex", "firsts_eq")},
                   "nscore_sub": _nscore_sub_total, "dmscore_sub": _dmscore_sub_total}
 
 
@@ -802,7 +806,7 @@ class _Among:
 
 
 def among_subsets(first, T, whole=False):
-    """Estimated first-choice votes among every subset of candidates (2^C x C, as _firsts), from the
+    """Estimated first-choice votes among every subset of candidates (2^C x C, as the feature firsts), from the
     first preferences and the transfer table: in a subset S, a candidate keeps its own first preferences
     and receives the votes of every candidate outside S by that candidate's transfers to S, spread over
     those in S in proportion (the votes of ballots whose next choice is also out follow the others);

@@ -18,21 +18,28 @@ methods.py ("# composed: ..."), e.g.
     top(2, score) >> runoff(score)                                Score runoff
 
 Parts:
-    readings   score (totals; on two-round ballots the round-1 marks), firsts (first preferences among
-               the field, rankings), held (after proxy: the votes each candidate holds), margins, wv (winning votes), po (pairwise opposition), soft(k)
+    readings   score (totals; on two-round ballots the round-1 marks), firsts, firsts(ties=...) (first
+               preferences among the field: rankings and rated ballots; ties "split", "whole", "none"),
+               lasts, lasts(ties=...) (last places among the field), held (after proxy: the votes each candidate holds), margins, wv (winning votes), po (pairwise opposition), soft(k)
                and soft(k, "margins"/"wv"/"po") (soft counts, k a share of the range or a clip per pair in
                points), n (voters), levels (voters per score level, top first),
                points (the same times the level's score), approvals(k) (voters scoring at least k),
                median (each candidate's lower median score, as MJ)
     arithmetic share(values) = values / (n x top score); worst(pairs) (each candidate's worst defeat);
-               total(pairs) (row sums); diff(values) (pairs: row minus column); + - * / and unary minus;
+               total(pairs) (row sums); wins(pairs) (Copeland: the others beaten, a tie half);
+               diff(values) (pairs: row minus column); + - * / and unary minus;
                abs(x), minimum(a, b), maximum(a, b) (element by element)
     sets       smith, schwartz, cdtt (majority defeats by more than half of all voters), banks (tops of
                the maximal chains), uncovered (covered by nobody), best(values), top(k, values), drop(values) (all but the lowest), buck(levels or
                points), challenger(set, pairs), bottom_two(order, pairs[, tiebreak]) (one round of
                bottom-two runoff), btr(order, pairs[, tiebreak]) (the bottom-two climb: the winner),
-               repeat(steps) (until one is left or nothing changes); a | b, a & b. Ties branch; the
-               same part twice in one set expression takes the same branch
+               repeat(steps) (until one is left or nothing changes); field (all of the current field);
+               a | b, a & b, a - b, ~a (complement). Ties branch; the same part twice in one set
+               expression takes the same branch
+    orders     values in which only the order counts (higher better, equal tied): order(key, ...) (by
+               each key in turn, a key values or a set), order(pairs, "rule", key, ...) (copeland,
+               minimax, schulze, ranked pairs), rank(x) (points: the candidates below, a tie half),
+               reverse(x), member(set) (1 in, 0 out)
     transforms normalize (score ballots stretched over the current field, not rounded); max_top (each
                ballot's highest-rated in the field count the top score), zero_bottom (its lowest-rated
                count 0), IMDS's steps; proxy,
@@ -112,7 +119,7 @@ def restrictable(f, ballot):
         return restrictable(base(f), ROUND1.get(ballot, ballot))
     if f == "sum":
         return rated(ballot)
-    return f in CAND0 | CAND1 | AMONG | SCALAR or is_pair(f)
+    return f in CAND0 | CAND1 | AMONG | SCALAR or f in M.ENDS or is_pair(f)
 
 
 def recastable(ballot):
@@ -172,7 +179,7 @@ def restrict(s, f, field, C):
         return x[:, F]
     if is_pair(f):
         return x[np.ix_(F, F)]
-    if b in AMONG:
+    if b in AMONG or b in M.ENDS:
         sub = x[_sub_index(F, C)]
         return sub[:, F] if sub.ndim == 2 else sub
     raise KeyError(f)
@@ -260,8 +267,16 @@ class Part:
     # arithmetic on values and pairs
     def __add__(self, o): return BinOp("+", self, _part(o))
     def __radd__(self, o): return BinOp("+", _part(o), self)
-    def __sub__(self, o): return BinOp("-", self, _part(o))
-    def __rsub__(self, o): return BinOp("-", _part(o), self)
+    def __sub__(self, o):
+        o = _part(o)
+        return SetOp("-", self, o) if self.kind == "set" and o.kind == "set" else BinOp("-", self, o)
+
+    def __rsub__(self, o):
+        o = _part(o)
+        return SetOp("-", o, self) if self.kind == "set" and o.kind == "set" else BinOp("-", o, self)
+
+    def __invert__(self):
+        return Complement(self)
     def __mul__(self, o): return BinOp("*", self, _part(o))
     def __rmul__(self, o): return BinOp("*", _part(o), self)
     def __truediv__(self, o): return BinOp("/", self, _part(o))
@@ -468,35 +483,83 @@ def _median(x, st):
 median = Reading("median", "values", lambda b: "grades", _median, scored=True)
 
 
-FIRSTS = {"rank": "firsts", "strict": "firsts", "trunc": "firsts_ex", "trunc3": "firsts_ex", "weak": "firsts_eq"}
+STRICT_TOP = {"rank": "lone", "strict": "lone", "trunc": "pos", "trunc3": "pos"}   # no ties above 0 at the top
+
+
+def _ends_feature(end, ties, b):
+    """The feature for firsts / lasts on ballots of type b (methods.ends_feature), or an error message.
+    Rankings without ties above 0 (rank, strict, trunc, trunc3) ignore ties at the top: there are none,
+    and unranked candidates exhaust the ballot as in IRV (trunc, trunc3: anything at 0; rank: two or
+    more at 0). Rankings with ties (weak) exhaust the same way and count tied firsts whole by default
+    (as ER-IRV). Rated ballots (score, approval, grades) never exhaust and split ties by default.
+    Last places split ties by default and never exhaust."""
+    if b == "fav":
+        return "sum" if end == "top" and ties in (None, "whole", "split", "first") else (
+            f"{'firsts' if end == 'top' else 'lasts'} on one-name ballots: only firsts, as cast")
+    if b in STRICT_TOP and end == "top":
+        return M.ends_feature("top", "first", STRICT_TOP[b])
+    if b in UNRANKED or b == "strict":
+        ex = "lone" if end == "top" else "never"
+        default = "whole" if (b == "weak" and end == "top") else "split"
+    elif rated(b):
+        ex, default = "never", "split"
+    else:
+        return f"{'firsts' if end == 'top' else 'lasts'} needs rankings or rated ballots, not {b}"
+    return M.ends_feature(end, ties or default, ex)
 
 
 class Firsts(Reading):
-    """First preferences among the current field (rankings): from the totals over every subset; in a
-    poll, estimated from the first preferences and the transfer table, as the IRV family's stand-in
-    (methods.among_subsets; on rankings with ties whole votes, as ER-IRV)."""
-    def __init__(self):
-        super().__init__("firsts", "values", lambda b: FIRSTS.get(b, "sum" if b == "fav" else None), None)
+    """First preferences (end "top") or last places ("bottom") among the current field, from the totals
+    over every subset; ties: how candidates tied there share a ballot ("split", "whole", "none"; None:
+    the ballot type's convention, see _ends_feature). In a poll, estimated from the first (last)
+    preferences and the transfer table, as the IRV family's stand-in (methods.among_subsets; whole
+    votes where ties count whole)."""
+    def __init__(self, end="top", ties=None):
+        if ties is not None and ties not in ("split", "whole", "none"):
+            raise CompositionError(f"ties are counted \"split\", \"whole\" or \"none\", not {ties!r}")
+        self.end, self.ties = end, ties
+        word = "firsts" if end == "top" else "lasts"
+        name = word if ties is None else f'{word}(ties="{ties}")'
+        super().__init__(name, "values", self._feat, None)
+
+    def __call__(self, ties=None):
+        return Firsts(self.end, ties)
+
+    def _feat(self, b):
+        f = _ends_feature(self.end, self.ties, b)
+        return f if f in M.FEATURES else None
+
+    def _whole(self, b):
+        """Are tied candidates counted whole (for the poll's stand-in)?"""
+        return self.end == "top" and (self.ties == "whole" or (self.ties is None and b == "weak"))
 
     def poll_feats(self, b):
-        return ("top", "transfer_whole") if b == "weak" else ("first_split", "transfer")
+        if self.end == "bottom":
+            return ("last", "lasttransfer")
+        return ("top", "transfer_whole") if self._whole(b) else ("first_split", "transfer")
 
     def check(self, ctx):
         b = ctx["ballot"]
-        if b not in FIRSTS and b != "fav":
-            raise CompositionError(f"firsts needs rankings (or one-name ballots), not {b}")
-        if ctx["poll"] and b in FIRSTS:
+        f = _ends_feature(self.end, self.ties, b)
+        if f not in M.FEATURES:
+            raise CompositionError(f)
+        if ctx["poll"] and b != "fav":
             return set(self.poll_feats(b))
-        return _need(self.feat(b), ctx)
+        return _need(f, ctx)
 
     def value(self, st):
         b = st.ballot
-        if st.poll and b in FIRSTS:
-            am = st.cache.get("_among")
+        if st.poll and b != "fav":
+            key = ("_among", self.end, self._whole(b))
+            am = st.cache.get(key)
             if am is None:
-                am = (M._Among(_f(st.s["top"]), st.s["transfer_whole"], whole=True) if b == "weak"
-                      else M._Among(st.s["first_split"], st.s["transfer"]))
-                st.cache["_among"] = am
+                if self.end == "bottom":
+                    am = M._Among(st.s["last"], st.s["lasttransfer"])
+                elif self._whole(b):
+                    am = M._Among(_f(st.s["top"]), st.s["transfer_whole"], whole=True)
+                else:
+                    am = M._Among(st.s["first_split"], st.s["transfer"])
+                st.cache[key] = am
             return np.asarray(am[int(sum(1 << c for c in st.field))], float)[st.field]
         f = self.feat(b)
         if b != "fav" and not st.exact and f in st.s:          # the row of the current field
@@ -506,6 +569,9 @@ class Firsts(Reading):
 
 
 firsts = Firsts()
+lasts = Firsts("bottom")
+# the rankings and their first preferences by convention (proxy, random_ballot)
+FIRSTS = {"rank": "firsts", "strict": "firsts", "trunc": "firsts_ex", "trunc3": "firsts_ex", "weak": "firsts_eq"}
 
 
 class Held(Part):
@@ -1095,8 +1161,9 @@ def buck(x):
 
 
 class SetOp(Set):
+    """a | b (either), a & b (both), a - b (in a, not in b)."""
     def __init__(self, op, a, b):
-        self.prec = 1 if op == "|" else 2
+        self.prec = {"|": 1, "&": 2, "-": 4}[op]
         for p in (a, b):
             if p.kind != "set":
                 raise CompositionError(f"{op} joins sets, {p.text()} is {_kind_name(p)}")
@@ -1112,9 +1179,238 @@ class SetOp(Set):
         out = []
         for wa, fa, ma in self.a.branches(st, memo):
             for wb, fb, mb in self.b.branches(st, ma):
-                f = sorted(set(fa) | set(fb)) if self.op == "|" else sorted(set(fa) & set(fb))
-                out.append((wa * wb, f, mb))
+                f = {"|": set(fa) | set(fb), "&": set(fa) & set(fb), "-": set(fa) - set(fb)}[self.op]
+                out.append((wa * wb, sorted(f), mb))
         return out
+
+
+class Field(Set):
+    """Every candidate of the current field."""
+    def text(self):
+        return "field"
+
+    def check(self, ctx):
+        return set()
+
+    def field(self, st):
+        return list(st.field)
+
+
+field = Field()
+
+
+class Complement(Set):
+    """~a: the candidates of the current field not in a."""
+    prec = 6
+
+    def __init__(self, a):
+        if a.kind != "set":
+            raise CompositionError(f"~ takes a set, {a.text()} is {_kind_name(a)}")
+        self.a = a
+
+    def text(self):
+        return f"~{_wrap(self.a, 6)}"
+
+    def check(self, ctx):
+        return self.a.check(ctx)
+
+    def branches(self, st, memo):
+        return [(w, [c for c in st.field if c not in set(f)], m) for w, f, m in self.a.branches(st, memo)]
+
+
+# ---------- orders: values whose order alone counts ----------
+# An order is written as values (higher is better, equal values tied), so every step that takes values
+# takes an order: top, drop, best, btr, bottom_two. order(...) builds one from several keys, each
+# breaking the ties of the ones before; rank, reverse, member and wins convert.
+def _dense_desc(v):
+    """Dense ranks of values, 0 for the highest; values within methods.EPS are tied."""
+    v = np.asarray(v, float)
+    idx = np.argsort(-v, kind="stable")
+    r = np.zeros(len(v), int)
+    for k in range(1, len(idx)):
+        r[idx[k]] = r[idx[k - 1]] + (v[idx[k - 1]] - v[idx[k]] > M.EPS)
+    return r
+
+
+def _lex(cols):
+    """The order by several keys in turn (each breaking the ties of the ones before), as values: minus
+    the dense rank, so the best is 0 and tied candidates are equal."""
+    R = np.stack([_dense_desc(c) for c in cols], axis=1)
+    keys = [tuple(r) for r in R]
+    levels = {k: i for i, k in enumerate(sorted(set(keys)))}
+    return -np.array([levels[k] for k in keys], float)
+
+
+def _reach(L):
+    """The transitive closure of a relation L (bool, C x C)."""
+    R = L.copy()
+    for k in range(len(R)):
+        R |= R[:, k:k + 1] & R[k:k + 1, :]
+    return R
+
+
+def _closure_count(L):
+    """Per candidate: how many others they reach in the relation L."""
+    R = _reach(L)
+    np.fill_diagonal(R, False)
+    return R.sum(axis=1).astype(float)
+
+
+def _schulze(p):
+    """Schulze: the strongest paths of the pairs' defeats (Floyd-Warshall); a candidate counts the others
+    whose path back is weaker (a transitive order, ties where the paths are equal)."""
+    d = np.where(p > M.EPS, p, 0.0)
+    np.fill_diagonal(d, 0.0)
+    P = d.copy()
+    for k in range(len(P)):
+        P = np.maximum(P, np.minimum(P[:, k:k + 1], P[k:k + 1, :]))
+    np.fill_diagonal(P, 0.0)
+    return ((P - P.T) > M.EPS).sum(axis=1).astype(float)
+
+
+def _ranked_pairs(p):
+    """Ranked pairs: the defeats locked from the strongest down, each unless it closes a cycle with those
+    locked; equally strong defeats are locked together where none of them closes a cycle, else one by
+    one in candidate order. A candidate counts the others they reach through locked defeats."""
+    C = len(p)
+    L = np.zeros((C, C), bool)
+    pairs = sorted(((float(p[a, b]), a, b) for a in range(C) for b in range(C) if a != b and p[a, b] > M.EPS),
+                   key=lambda t: (-t[0], t[1], t[2]))
+    i = 0
+    while i < len(pairs):
+        j = i
+        while j < len(pairs) and pairs[j][0] >= pairs[i][0] - M.EPS:
+            j += 1
+        group = pairs[i:j]
+        trial = L.copy()
+        for _, a, b in group:
+            trial[a, b] = True
+        if not (_reach(trial) & _reach(trial).T).any():
+            L = trial
+        else:
+            for _, a, b in group:
+                if not _reach(L)[b, a]:
+                    L[a, b] = True
+        i = j
+    return _closure_count(L)
+
+
+
+PAIR_ORDERS = {
+    "copeland": lambda p: ((p > M.EPS).sum(axis=1) + 0.5 * ((np.abs(p) <= M.EPS).sum(axis=1) - 1)).astype(float),
+    "minimax": lambda p: -np.clip(np.where(np.eye(len(p), dtype=bool), 0.0, p), 0, None).max(axis=0),
+    "schulze": _schulze,
+    "ranked pairs": _ranked_pairs,
+}
+
+
+class Order(Part):
+    """order(key, key, ...): the field ordered by the first key, its ties broken by the next, and so on;
+    a key is values (an order too), a set (its members first) or, as the first key, pairs with a rule
+    (order(margins, "schulze")). Written as values: higher is better, equal values tied."""
+    kind = "values"
+
+    def __init__(self, keys, rule=None):
+        if not keys:
+            raise CompositionError("order needs at least one key")
+        for i, k in enumerate(keys):
+            if k.kind == "pairs":
+                if i != 0 or rule is None:
+                    raise CompositionError(f"order takes pairs as its first key, with a rule ({', '.join(PAIR_ORDERS)}): "
+                                           f'order({k.text()}, "schulze")')
+            elif k.kind not in ("values", "set"):
+                raise CompositionError(f"order takes values, sets or pairs with a rule, {k.text()} is {_kind_name(k)}")
+        if rule is not None and keys[0].kind != "pairs":
+            raise CompositionError(f"order: a rule ({rule!r}) is for pairs, {keys[0].text()} is {_kind_name(keys[0])}")
+        self.keys, self.rule = keys, rule
+
+    def text(self):
+        parts = [self.keys[0].text()] + ([f'"{self.rule}"'] if self.rule else []) + [k.text() for k in self.keys[1:]]
+        return f"order({', '.join(parts)})"
+
+    def check(self, ctx):
+        return set().union(*[k.check(ctx) for k in self.keys])
+
+    def value(self, st):
+        cols = []
+        for i, k in enumerate(self.keys):
+            if k.kind == "pairs":
+                cols.append(PAIR_ORDERS[self.rule](np.asarray(k.value(st), float)))
+            elif k.kind == "set":
+                cols.append(_membership(k, st))
+            else:
+                cols.append(np.asarray(k.value(st), float))
+        return _lex(cols)
+
+
+def order(*args):
+    """order(key, ...) (see Order); order(pairs, "rule", key, ...) with a rule of PAIR_ORDERS."""
+    if not args:
+        raise CompositionError("order needs at least one key")
+    rule = None
+    args = list(args)
+    if len(args) > 1 and isinstance(args[1], str) and args[1] in PAIR_ORDERS:
+        rule = args.pop(1)
+    elif len(args) > 1 and isinstance(args[1], str) and _part(args[0]).kind == "pairs":
+        raise CompositionError(f"order of pairs by {', '.join(PAIR_ORDERS)}, not {args[1]!r}")
+    return Order([_part(a) for a in args], rule)
+
+
+def _membership(a, st):
+    """Per candidate of the field: the weight of the branches of set a that hold them (1 or 0 for a set
+    without ties)."""
+    pos = {c: i for i, c in enumerate(st.field)}
+    v = np.zeros(len(st.field))
+    for w, f, _ in a.branches(st, {}):
+        for c in f:
+            v[pos[c]] += w
+    return v
+
+
+class Member(Part):
+    """member(set): 1 for the candidates in the set, 0 for the rest (a share where its ties branch)."""
+    kind = "values"
+
+    def __init__(self, a):
+        if a.kind != "set":
+            raise CompositionError(f"member takes a set, {a.text()} is {_kind_name(a)}")
+        self.a = a
+
+    def text(self):
+        return f"member({self.a.text()})"
+
+    def check(self, ctx):
+        return self.a.check(ctx)
+
+    def value(self, st):
+        return _membership(self.a, st)
+
+
+def member(a):
+    return Member(_part(a))
+
+
+def rank(x):
+    """Points of an order (or values) among the field: the number of candidates below, a tied one
+    counting half (Borda points on any order)."""
+    def fn(v, st):
+        v = np.asarray(v, float)
+        d = np.subtract.outer(v, v)
+        return ((d > M.EPS).sum(axis=1) + 0.5 * ((np.abs(d) <= M.EPS).sum(axis=1) - 1)).astype(float)
+    return Func("rank", _part(x), "values", ("values",), fn)
+
+
+def reverse(x):
+    """The order turned round: last first (values times -1; pairs: transposed)."""
+    p = _part(x)
+    if p.kind == "pairs":
+        return Func("reverse", p, "pairs", ("pairs",), lambda q, st: np.asarray(q, float).T)
+    return Func("reverse", p, "values", ("values",), lambda v, st: -np.asarray(v, float))
+
+
+def wins(x):
+    """Per candidate: the others they beat by the pairs (positive), a tie counting half (Copeland)."""
+    return Func("wins", _part(x), "values", ("pairs",), lambda p, st: PAIR_ORDERS["copeland"](np.asarray(p, float)))
 
 
 class ScoreTransform(Part):
@@ -1284,7 +1580,7 @@ class Quoted(Part):
                 raise CompositionError(f"{self.name} uses {self.method.ballot} ballots, the composition {ctx['ballot']}")
             return set().union(*[_need(r1(f), ctx) for f in m.feats])
         if ctx["normalized"] and not ctx["poll"]:
-            bad = [f for f in m.feats if f not in AFTER_NORMALIZE]
+            bad = [f for f in m.feats if f not in AFTER_NORMALIZE and f not in M.ENDS]
             if bad:
                 raise CompositionError(f"{self.name} reads {', '.join(bad)}, which is not available after "
                                        f"{', '.join(o for o, _ in ctx['tops'])}")
@@ -1613,13 +1909,14 @@ def composed(expr, ballot=None):
 
 # ---------- reading the text ----------
 NAMES = {"score": score, "margins": margins, "wv": wv, "po": po, "n": n, "levels": levels, "points": points,
-         "firsts": firsts, "median": median, "smith": smith, "schwartz": schwartz, "cdtt": cdtt, "banks": banks, "uncovered": uncovered,
+         "firsts": firsts, "lasts": lasts, "median": median, "smith": smith, "schwartz": schwartz, "cdtt": cdtt, "banks": banks, "uncovered": uncovered,
          "normalize": normalize, "max_top": max_top, "zero_bottom": zero_bottom, "runoff": runoff, "random_ballot": random_ballot,
-         "proxy": proxy, "delegate": delegate, "held": held}
+         "proxy": proxy, "delegate": delegate, "held": held, "field": field}
 CALLS = {"share": share, "worst": worst, "total": total, "diff": diff, "best": best, "top": top, "buck": buck,
          "drop": drop, "btr": btr, "bottom_two": bottom_two, "repeat": repeat, "ballots": ballots, "challenger": challenger, "soft": soft,
          "approvals": approvals, "runoff": runoff, "proxy": proxy, "abs": lambda x: Abs(_part(x)), "minimum": minimum,
-         "maximum": maximum}
+         "maximum": maximum, "firsts": firsts, "lasts": lasts, "order": order, "member": member, "rank": rank,
+         "reverse": reverse, "wins": wins}
 
 
 def parse(text):
@@ -1639,10 +1936,18 @@ def parse(text):
             if node.id in NAMES:
                 return NAMES[node.id]
             raise CompositionError(f"unknown part {node.id!r}; parts: {', '.join(sorted(set(NAMES) | set(CALLS)))}")
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and not node.keywords:
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             if node.func.id not in CALLS:
                 raise CompositionError(f"unknown part {node.func.id!r}(...); parts with arguments: {', '.join(CALLS)}")
-            return CALLS[node.func.id](*[conv(a) for a in node.args])
+            kw = {}
+            for k in node.keywords:                             # name="text" or name=number only
+                if k.arg is None or not isinstance(k.value, ast.Constant):
+                    raise CompositionError(f"not part of the notation: {ast.unparse(node)!r}")
+                kw[k.arg] = k.value.value
+            try:
+                return CALLS[node.func.id](*[conv(a) for a in node.args], **kw)
+            except TypeError as e:
+                raise CompositionError(f"{ast.unparse(node)}: {e}") from None
         elif isinstance(node, ast.BinOp):
             ops = {ast.RShift: "__rshift__", ast.BitOr: "__or__", ast.BitAnd: "__and__", ast.Add: "__add__",
                    ast.Sub: "__sub__", ast.Mult: "__mul__", ast.Div: "__truediv__"}
@@ -1652,6 +1957,8 @@ def parse(text):
         elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
             x = conv(node.operand)
             return -x
+        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Invert):
+            return ~_part(conv(node.operand))
         raise CompositionError(f"not part of the notation: {ast.unparse(node)!r}")
 
     return _part(conv(tree.body))

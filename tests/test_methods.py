@@ -1000,7 +1000,7 @@ for _tx, _msg in [("top(2, smith)", "top needs values, smith is a set"),
                   ('ballots("score") >> top(2, score) >> runoff', "needs two-round ballots"), ("challenger(smith, score)", "challenger needs pairs"),
                   ("best(approvals(0))", "at least 1"), ("best(soft(1.5))", "at most 1"),
                   ("repeat(score)", "repeat takes sets"), ("drop(margins)", "drop needs values"),
-                  ('ballots("score") >> best(firsts)', "firsts needs rankings"),
+                  ('ballots("veto") >> best(firsts)', "firsts needs rankings or rated ballots"),
                   ('normalize >> best(levels)', "best needs values"),
                   ('normalize >> "MJ"', "not available after normalize"),
                   ('max_top >> best(median)', "not available after max_top"),
@@ -1047,6 +1047,46 @@ for _tx in ['smith >> "Score"', "top(2, score) >> runoff(score)", 'ballots("rank
         _sx = {k: (v if v.shape else float(v)) for k, v in _sx.items()}
         assert np.allclose(_cp.evaluate(_c.composition, _sx, _C, _c.ballot),
                            _cp.evaluate(_c.composition, _sx, _C, _c.ballot, B=_Bx, exact=True)), (_tx, _Bx.tolist())
+# firsts and lasts with a tie rule (methods.ends_feature): totals and the exact fallback agree, also on
+# score ballots and on rankings with ties; the rules differ where the ballots tie at the top
+for _tx in ['btr(firsts, margins)', 'btr(firsts(ties="whole"), margins)', 'repeat(drop(firsts(ties="none")))',
+            'ballots("weak") >> repeat(drop(firsts(ties="split")))', 'ballots("rank") >> repeat(drop(reverse(lasts)))',
+            'ballots("weak") >> repeat(drop(reverse(lasts(ties="whole"))))']:
+    _c = _cp.composed(_cp.parse(_tx))
+    for _t in range(30):
+        _C, _nv = int(_rgc.integers(3, 6)), int(_rgc.integers(3, 20))
+        _Bx = (_rgc.integers(0, _methods_mod.MAXS + 1, (_nv, _C)) if _c.ballot == "score" else
+               _rgc.integers(0, 3, (_nv, _C)) if _c.ballot == "weak" else
+               np.argsort(np.argsort(_rgc.random((_nv, _C)), 1), 1)).astype(float)
+        _sx = {f: _methods_mod.FEATURES[f][0](_Bx).reshape(_nv, -1).astype(float).sum(0).reshape(
+            _methods_mod.FEATURES[f][1](_C)) for f in _c.feats}
+        _sx = {k: (v if v.shape else float(v)) for k, v in _sx.items()}
+        assert np.allclose(_cp.evaluate(_c.composition, _sx, _C, _c.ballot),
+                           _cp.evaluate(_c.composition, _sx, _C, _c.ballot, B=_Bx, exact=True)), (_tx, _Bx.tolist())
+_Bt3 = np.array([[5, 5, 0], [5, 0, 0], [0, 5, 0], [0, 0, 5]], float)       # score ballots, the first tied at the top
+for _ties, _want in (("split", [1.5, 1.5, 1]), ("whole", [2, 2, 1]), ("none", [1, 1, 1])):
+    _f = _methods_mod.ends_feature("top", _ties, "never")
+    assert np.allclose(_methods_mod.FEATURES[_f][0](_Bt3).sum(0).reshape(8, 3)[7], _want), _ties
+assert _methods_mod.ends_feature("top", "whole", "lone") == "firsts_eq"   # the built-in readings are the same function
+# orders, sets and conversions: written as compositions, the built-in methods they amount to
+_Br = METHODS["IRV"].sincere(_rgc.random((31, 5)), 0.0)
+for _tx, _nm in (('ballots("rank") >> best(order(margins, "schulze"))', "Schulze"),
+                 ('ballots("rank") >> best(order(margins, "minimax"))', "Minimax"),
+                 ('ballots("rank") >> best(order(margins, "ranked pairs"))', "Ranked pairs"),
+                 ('ballots("rank") >> best(wins(margins))', "Copeland"),
+                 ('best(order(member(smith), score))', "Smith//Score"),
+                 ('best(rank(score))', "Score")):
+    _Bu = _Br if _tx.startswith("ballots") else _rgc.integers(0, 6, (31, 5)).astype(float)
+    assert np.allclose(_cp.composed(_cp.parse(_tx)).tally(_Bu), METHODS[_nm].tally(_Bu)), _tx
+_pc = np.array([[0, 3, -1], [-3, 0, 5], [1, -5, 0]], float)           # a cycle: A > B 3, B > C 5, C > A 1
+assert np.allclose(_cp.PAIR_ORDERS["schulze"](_pc), [2, 1, 0]) and np.allclose(_cp.PAIR_ORDERS["ranked pairs"](_pc), [2, 1, 0])
+assert np.allclose(_cp.PAIR_ORDERS["minimax"](_pc), [-1, -3, -5]) and np.allclose(_cp.PAIR_ORDERS["copeland"](_pc), [1, 1, 1])
+assert np.allclose(_cp._lex([np.array([1, 1, 0.]), np.array([2, 3, 9.])]), [-1, 0, -2])
+_Bs3 = np.array([[5, 4, 0], [0, 5, 4], [4, 0, 5], [5, 0, 0]], float)     # A wins on score, B and C tie
+for _tx, _want in (('field - top(1, score)', [0, .5, .5]), ('~top(1, score)', [0, .5, .5]),
+                   ('smith - top(1, score) | top(1, score)', [1 / 3] * 3), ('best(reverse(score))', [0, .5, .5])):
+    assert np.allclose(_cp.composed(_cp.parse(_tx)).tally(_Bs3), _want), (_tx, _cp.composed(_cp.parse(_tx)).tally(_Bs3))
+print("orders and sets ok")
 # a method used as a set: the set of its winner; on two-round ballots a method of the first round's type
 # counts the round-1 marks (here DMS and ESR on the round-1 scores, then a runoff)
 _cq = _cp.composed(_cp.parse('("DMS" | "ESR") >> runoff(score)'))

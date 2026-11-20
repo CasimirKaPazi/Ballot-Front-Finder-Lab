@@ -47,7 +47,8 @@ So `smith >> "Score"` is: the score ballots; `smith` narrows the field to the Sm
 | Part | Kind | Meaning |
 |---|---|---|
 | `score` | values | each candidate's score total. On rankings: rank points (Borda), which depend on the field. On two-round ballots: the round-1 scores, approvals or marks |
-| `firsts` | values | first preferences among the current field (rankings). On rankings with ties, a whole vote for each candidate tied at the top (as ER-IRV); on truncated rankings, a ballot with nobody ranked among the field counts for nobody |
+| `firsts`, `firsts(ties="...")` | values | first preferences among the current field: each ballot's highest candidates there. How candidates tied at the top share a ballot: `"split"` (one vote shared equally), `"whole"` (a whole vote each: top-rank approval, as ER-IRV) or `"none"` (a ballot tied at the top counts for nobody). Without `ties`, the ballot type's convention: whole votes on rankings with ties (`weak`), split votes on rated ballots (score, approval, grades). Strict rankings (`rank`, `strict`, `trunc`, `trunc3`) have no ties at the top, so `ties` changes nothing there. On rankings, a ballot whose candidates left in the field are all unranked counts for nobody (exhausted, as in IRV); rated ballots never exhaust. On one-name ballots (`fav`): the votes as cast |
+| `lasts`, `lasts(ties="...")` | values | last places among the current field: each ballot's lowest candidates there, with the same tie rules (by default split, as Coombs); no ballot exhausts. Rankings and rated ballots. `drop(reverse(lasts))` drops the candidate with the most last places |
 | `margins` | pairs | for A against B: voters preferring A minus voters preferring B (equal scores or ranks count for neither) |
 | `wv` | pairs | winning votes: for A against B, the voters preferring A if A wins the pair, else 0 |
 | `po` | pairs | pairwise opposition: for A against B, the voters preferring A, whoever wins the pair |
@@ -71,6 +72,7 @@ On two-round ballots the pairwise readings come from the round-1 marks; the runo
 | `diff(values)` | pairs | turns values into pairs: for A against B, value(A) − value(B). Used to mix a per-candidate measure into a pairwise match, as MARS does: `margins + n * diff(share(score))` adds to each margin the difference of the two score totals divided by the top score |
 | `+ - * /`, `-x` | | values with values, pairs with pairs, each with numbers |
 | `abs(x)` | as x | the size of values, pairs or a number: `abs(diff(score / n))` is, for each pair, how far apart the two average scores are |
+| `wins(pairs)` | values | the number of others each candidate beats (a positive value), a tie counting half: `wins(margins)` is the Copeland score |
 | `minimum(a, b)`, `maximum(a, b)` | as a and b | the smaller or larger of the two, element by element (values with values, pairs with pairs, each with numbers): `minimum(1, abs(diff(score / n)))` caps the gap at one point |
 
 **Mixing majority and scores per pair.** The arithmetic can weigh each pair's majority against its score difference, without clipping any ballot, so no part of a difference is lost. `n * diff(share(score))` is the score difference of a pair in votes (the difference of the two totals divided by the top score), on the same scale as `margins`. With a weight w per pair between 0 and 1,
@@ -102,13 +104,26 @@ A set narrows the field. A tie inside a set branches: each way the tie can go is
 | `btr(order, pairs)` | the bottom-two climb on a fixed order: the field ordered high to low, the lowest two meet, the winner meets the next one up, and so on; the last winner is the set. A tie in a match is split; with a tiebreak, `btr(order, pairs, tiebreak)`, it goes to the higher tiebreak value and, when those tie too, to the candidate higher in the order (as BTR-score). Tied orders: every order of the tied candidates, equally |
 | `repeat(steps)` | the steps (sets and transforms) again and again, until one candidate is left or a round changes nothing. Each round starts from the readings before the repeat, so a `normalize` inside stretches the ballots over the field left, every round. Only what `proxy` does carries over from round to round: it changes who holds the votes, not how they are read |
 | `"Name"` | an existing method, used as a set: the set of its winner on the current field (a tie in its result branches with the method's weights) |
-| `a \| b`, `a & b` | the union and the intersection of two sets of the same field. An empty set narrows nothing. The same part twice in one set expression takes the same branch of a tie |
+| `field` | every candidate of the current field |
+| `a \| b`, `a & b`, `a - b`, `~a` | the union, the intersection and the difference (in a, not in b) of two sets of the same field, and the complement (the field without a: `~a` is `field - a`). An empty set narrows nothing. The same part twice in one set expression takes the same branch of a tie. `~smith >> "Score"` elects the Score winner among the candidates outside the Smith set |
 
 **`bottom_two` or `btr`.** With a fixed order and no ties, `repeat(bottom_two(order, pairs))` and `btr(order, pairs)` elect the same candidate. They differ in two ways: with `repeat`, the order is read again on the field left each round (BTR-IRV recounts first preferences after each elimination); and with ties in the order, a climb and repeated eliminations give the ties different weights. BTR-score and MARS climb; BTR-IRV eliminates round by round.
 
 **A set's own zero point.** A set that narrows the field to good candidates lifts every method that follows it, and a random ballot among the set shows by how much: `smith >> random_ballot` or `buck(points) >> random_ballot` is the baseline of that set, as the random ballot is the zero of VSE and WME for the whole field. Methods after the set then spread again between this new zero and the same best candidate, so comparing `smith >> "X"` with `smith >> random_ballot` shows what X adds within the Smith set. (The pattern repeats only once for the Smith set: the Smith set of the Smith set is itself.)
 
 **Methods as sets.** `("DMS" | "ESR") >> runoff(score)` is a runoff between the DMS winner and the ESR winner (the same candidate: no runoff needed). `("Score" | challenger("Score", margins)) >> runoff(score)` is SCR: the Score winner and their strongest challenger meet in a runoff.
+
+### Orders
+
+An order is written as values: higher is better, and equal values are tied. So every part that takes values takes an order too: `best`, `top`, `drop`, `btr`, `bottom_two`. These parts make and convert orders:
+
+| Part | Kind | Meaning |
+|---|---|---|
+| `order(key, key, ...)` | values | the field ordered by the first key, its ties broken by the second, and so on; ties left by all keys stay ties. A key is values (another order too) or a set, whose members come first. `order(member(smith), score)` puts the Smith set first, each part by score: `best` of it is Smith//Score. `btr(order(firsts, score), margins)` climbs by first preferences, ties broken by score |
+| `order(pairs, "rule", key, ...)` | values | an order from pairs by a rule, ties broken by the keys after it: `"copeland"` (the others beaten, a tie half), `"minimax"` (the worst defeat, smaller is better), `"schulze"` (the strongest paths: Schulze's order, transitive), `"ranked pairs"` (the defeats locked from the strongest down, each unless it closes a cycle; equally strong defeats are locked together where none of them closes a cycle, else one by one in candidate order). `best(order(margins, "schulze"))` is Schulze |
+| `rank(x)` | values | points of an order among the field: the number of candidates below, a tied one counting half. Borda points of any order: `rank(order(margins, "schulze"))` |
+| `reverse(x)` | as x | the order turned round, last first (values times −1, pairs transposed). `drop(reverse(score))` drops the highest |
+| `member(set)` | values | 1 for the candidates in the set, 0 for the rest; where the set's ties branch, the share of the branches that hold a candidate |
 
 ### Transforms
 
@@ -202,6 +217,8 @@ The built-in methods stay hand-written, because a composition takes longer per c
 Soft Minimax-D is polled by Soft Minimax's soft margins (methods.py, `POLL`), while its composition is polled by its own counts. Its election count is the same, but the voters see other polls and can answer differently: to compare a variant of Soft Minimax-D with the original, run the composition above beside it as the baseline. Soft Minimax-L has no composition: its clip is the mean of the two average scores, and the arithmetic has no sum of a pair.
 
 ## Design notes
+
+**First and last places, one function.** The IRV family's readings (first preferences on strict, truncated and tied rankings, last places for Coombs) are one function in methods.py, `_ends`: per subset of candidates, how much of each ballot goes to its highest (or lowest) candidates there, with a tie rule (split, whole, none, or the lowest-numbered for strict rankings) and an exhaustion rule (never; unranked candidates at 0 shared by two or more; nothing above 0). `methods.ends_feature` names a combination, the built-in names where they are the same (`firsts`, `firsts_ex`, `firsts_eq`, `lasts`), and gives it fast totals over every subset where there is one (all tie rules but split).
 
 **Why.** Many methods are built from the same parts: a narrower field (Smith//Score: the Smith set, then the highest score), a measure per candidate (score totals, worst defeats), a way to combine measures (MMWV+Score adds a score share and a defeat), a last step (the highest value, a bottom-two climb, a runoff). Written by hand, the parts cannot be reused, and two methods sharing a part may differ in small ways nobody intended. Named parts make the differences visible and new combinations cheap.
 
