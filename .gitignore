@@ -9,6 +9,7 @@ output/
 
 # Other
 .~*
+*.patch
 
 # Addons, keep IDS as example
 addons/
