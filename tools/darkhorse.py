@@ -15,6 +15,7 @@ with honest ballots and learned ones (*); the difference is what strategy adds.
 Usage (from the lab's folder):
     python tools/darkhorse.py --elections 1000
     python tools/darkhorse.py --elections 500 --first 500      # elections 500..999 (to split a run)
+    python tools/darkhorse.py --elections 400 --strategic 1    # every voter strategic
 Writes nothing; prints the table.
 """
 import argparse
@@ -44,9 +45,12 @@ def main():
     ap.add_argument("--first", type=int, default=0, help="the number of the first election")
     ap.add_argument("--methods", nargs="+", default=DEFAULT)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--strategic", type=float, default=None, help="the strategic share (run.py --strategic)")
     a = ap.parse_args()
     p = run.default_params()
     p["seed"] = a.seed
+    if a.strategic is not None:
+        p["strategic"] = a.strategic
     sc = Scenario(p["voters"], p["cands"], p["dims"], p["clusters"], p["spread"], p["width"], p["zipf"],
                   p["cand_dispersion"], p["cand_shift"], p.get("model", "clusters"), p.get("ks_alpha", 1.5),
                   p.get("ks_cut", 0.2), p.get("ks_shared", 0), salience=p.get("salience", "none"),
@@ -76,7 +80,8 @@ def main():
         print(f"\r{k + 1}/{a.elections} elections, {time.time() - t0:.0f} s", end="", file=sys.stderr, flush=True)
     print(file=sys.stderr)
     print(f"Dark horses (ranked 4th or lower by the sincere Borda count; by total utility in the last two "
-          f"columns): elections {a.first}..{a.first + a.elections - 1}, seed {a.seed}, defaults otherwise. "
+          f"columns): elections {a.first}..{a.first + a.elections - 1}, seed {a.seed}"
+          + (f", strategic share {a.strategic}" if a.strategic is not None else "") + ", defaults otherwise. "
           f"*: learned ballots.")
     print(f"{'method':<16}{'dark':>8}{'dark*':>8}{'>=half':>8}{'>=half*':>9}{'by total':>10}{'by total*':>11}")
     for m in a.methods:
