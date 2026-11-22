@@ -278,6 +278,17 @@ A second, smaller asymmetry: learning is myopic. A burying group does not antici
 
 With the ranking groups, run time grows with the number of groups.
 
+### Checking strategy: false positives
+
+A false positive of strategy is a move that buys nothing, or costs, against what the others actually cast. The engines take a move for what it promises on the polls of the round before, so how often their moves are false positives is not something they report; `strategy.falsepos.false_positives` checks it from the ballots alone, so the check is the same for every engine, ballot format and move, including moves nobody anticipated (`tools/falsepos.py` runs it for every method of a condition; it is a diagnostic, not a results column).
+
+- **Who acts together.** The voters whose learned ballot differs from their sincere one are grouped into coalitions by their sincere order of the three leading places (as polls of the cast ballots show them) and by what their ballot does among these three: the order or tie it puts each pair of them in. A coalition is so the voters of one type making one kind of move in the race that matters (burial of a rival, compromise, levelling, push-over); changes outside the three fall into one coalition per type.
+- **The counterfactual.** The coalition goes home (its members cast their sincere ballots), everyone else keeps theirs. A member's gain is their expected utility with the ballots as cast minus that with the coalition at home, as a share of their utility range.
+- **Two counts.** By polls of the cast ballots, the same polls with and without the coalition, of the size that makes them deviate from the true count as much as the voters assume (`--poll-error`), and by the true count of all ballots. A voter whose gain in the polls is none or negative is a false positive; those with none (the move changes no poll's result) are told apart from those whose move backfires. The true count shows whether the move changed the result itself, which most moves do not: no single result hangs on them.
+- **Kinds of move.** Each voter's move is also described by what their ballot does to their own three leading places, written as a weak order with 1 for the one they like most: `1>3>2` buries their second, `2>1>3` compromises, `1=2>3` levels their second up, `1>2=3` levels the other two down, `1>2>3` changes something outside the three. This says which kinds of move are false positives without naming kinds in advance.
+- **How many polls.** A small gain shows in few polls, so with few polls a move that gains a little looks like one that gains nothing: with 20 polls Score's voters with no gain were 24%, with 600 under 1%. 500 polls (the default) settle it to a point or two.
+- **Not covered.** Whether a more honest ballot than the sincere one would have done as well (levelling instead of a reversal; within the engine's own moves `common.honest_first` sees to that), and coalitions across types.
+
 ### Details
 
 - **Proposals** (one small change to a ballot; `strategy.mutate`; the ranking groups' random search, and the discovery of individual voters):
