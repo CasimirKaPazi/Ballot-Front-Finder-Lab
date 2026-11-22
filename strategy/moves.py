@@ -1,6 +1,7 @@
 """Moves: how a voter changes their ballot, as a sequence of steps naming candidates, and the ballot
-that follows (render). Used by the individual voters (individual.py, pooled.py) and by the tests that check the
-moves against the naive exaggerations and push-over of the ranking-group model (_naive, _push). (Until
+that follows (render). Used by the individual voters (individual.py, pooled.py, inertia.py); the naive
+moves and push-over (_naive, _push) are the same for every format and include the naive exaggerations
+and push-over of the ranking-group model (ballots.py, used by --engine groups), which the tests check. (Until
 2026-10-31 also an experimental engine of moves shared within audiences, run.py --moves 1.)
 
 - A voter applies a move to their own utilities and casts the ballot that follows from them in the
@@ -33,38 +34,28 @@ NOTHING = {"approval", "app_run", "rank", "trunc", "trunc3"}  # bottom level -> 
 
 
 def _naive(ballot, A, B):
-    """Today's naive exaggerations (ballots.py, _exag_*), as moves: A the leader preferred, B the other."""
-    split = (("upto", A), ("below", A))
-    ranking = [(("top", A), ("bottom", B)), (("top", A),), (("bottom", B),)]
-    known = {
-        "fav": [(("top", A),)], "fav_run": [(("top", A),)],
-        "approval": [split], "app_run": [split],
-        "score": [(("upto", A), ("downfrom", B)), split], "grade3": [(("upto", A), ("downfrom", B)), split],
-        "scorecut": [(("upto", A), ("downfrom", B)), split],
-        "score_run": [(("upto", A), ("downfrom", B)), split],
-        "strict": ranking,
-        "rank": ranking + [(("below", A),), (("top", A), ("below", A))],
-        "weak": [(("upto", A), ("bottom", B)), (("upto", A),), (("top", A), ("bottom", B)), (("bottom", B),),
-                 (("below", A),), (("top", A), ("below", A))],
-        "trunc": [(("below", A),), (("below", A), ("top", A))],
-        "trunc3": [(("top", A), ("bottom", B)), (("below", A),)],
-        "veto": [(("bottom", B),)],
-    }
-    # formats of add-ons: the ranking moves, and the levels as for scores
-    return known.get(ballot, ranking + [(("upto", A), ("downfrom", B)), split])
+    """The naive moves for A, the leader preferred, against B, the other: the same for every ballot format
+    (since 2026-11-22). Which of them a format can express is up to render: approval collapses them to
+    who is approved, a strict ranking breaks the ties they make, scores keep them, a one-name ballot
+    keeps the top. Before, each format had its own list (scores only the levelling moves, rankings
+    only the reversals), so that score voters could not try compromise or burial and an ordinal method
+    gave different results on score ballots than on rankings with ties, though both express the same.
+        compromise and burial    top A; bottom B; both; below A (nothing below A); top A and below A
+                                 (in either order: truncated rankings render them differently)
+        levelling                upto A (tied with everyone liked at least as much); upto A and bottom
+                                 B; upto A and downfrom B; upto A and below A (A and above, else nothing)
+    (ballot: kept for the callers; the list does not depend on it.)"""
+    return [(("top", A), ("bottom", B)), (("top", A),), (("bottom", B),), (("below", A),),
+            (("top", A), ("below", A)), (("below", A), ("top", A)), (("upto", A),), (("upto", A), ("bottom", B)),
+            (("upto", A), ("downfrom", B)), (("upto", A), ("below", A))]
 
 
 def _push(ballot, A, B, X):
-    """Today's push-over (ballots.py, _push_*), as a move: the ballot for A against B, X supported too."""
-    if ballot == "veto":
-        return None
-    if ballot in ("fav", "fav_run"):
-        return (("top", X),)
-    if ballot in ("approval", "app_run", "score", "grade3", "score_run", "scorecut"):
-        return (("upto", A), ("below", A), ("top", X))
-    if ballot == "trunc":
-        return (("below", A), ("top", X))
-    return (("top", A), ("bottom", B), ("top", X))       # rankings, with ties, at most 3
+    """Push-over: the ballot for A against B, with X, the next place, supported too; in both forms, the
+    ranking one (A top, B bottom, X above all) and the levelling one (A and above tied at the top,
+    nothing below A, X at the top), for every format (render expresses what the format can).
+    (ballot: kept for the callers.)"""
+    return [(("top", A), ("bottom", B), ("top", X)), (("upto", A), ("below", A), ("top", X))]
 
 
 def apply(U, move):
@@ -171,11 +162,40 @@ def render(method, U0, move, sincere_rows, lazy, appr):
         a = sup if levelled else a & ~low
         Sc = np.where(flat, methods.MAXS, Sc)
         return cut_join(Sc, a | flat)
+    if name in ("score", "grade3"):                        # a reversal the move makes stays one on the scale
+        X = _strict(X, move, 2 if name == "grade3" else methods.MAXS)
     if name in ("score", "grade3", "score_run"):          # everything at one level: the top grade to all
         top = 2 if name == "grade3" else methods.MAXS
         X = np.where(flat, top * C if marks else top, X)
     if marks:                                              # two-round: the voter's own runoff part
         X = np.floor_divide(X, C) * C + np.mod(sincere_rows, C)
+    return X
+
+
+def _strict(X, move, top):
+    """Score ballots: the steps that put a candidate strictly above or below others (top, bottom, above)
+    keep doing so after the scores are rounded. The move places the candidate only a hair beyond the
+    others (NUDGE), which rounding to the scale would turn into a tie: then the candidate takes the
+    end of the scale and the others it should pass give up one level (as far as the scale allows).
+    Applied step by step, so a later step wins, as in apply."""
+    X = np.array(X, dtype=float)
+    for st in move:
+        kind = st[0]
+        if kind == "top":
+            c = st[1]
+            others = np.arange(X.shape[1]) != c
+            X[:, others] = np.minimum(X[:, others], top - 1)
+            X[:, c] = top
+        elif kind == "bottom":
+            c = st[1]
+            others = np.arange(X.shape[1]) != c
+            X[:, others] = np.maximum(X[:, others], 1)
+            X[:, c] = 0
+        elif kind == "above":
+            a, b = st[1], st[2]
+            tie = X[:, a] <= X[:, b]
+            X[:, b] = np.where(tie & (X[:, b] >= top), top - 1, X[:, b])
+            X[:, a] = np.where(tie, np.minimum(X[:, b] + 1, top), X[:, a])
     return X
 
 

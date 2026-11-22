@@ -133,9 +133,7 @@ class InertiaEngine:
                         vH = u[mem] @ chances(H)
                         moves = list(mv._naive(method.ballot, A, Bo))
                         if third is not None:
-                            p = mv._push(method.ballot, A, Bo, third)
-                            if p is not None:
-                                moves.append(p)
+                            moves += mv._push(method.ballot, A, Bo, third)
                         lazy, appr = mv.own_params(mem)
                         for m in dict.fromkeys(moves):
                             Xm = mv.render(method, u[mem], m, sincere[mem], lazy, appr)

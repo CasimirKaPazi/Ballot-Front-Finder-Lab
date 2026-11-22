@@ -854,9 +854,11 @@ for _t in range(60):
         _today = {_key(_fix(x)) for x in _b.exaggerate(_u[0], _A, _Bo)}
         _new = {_key(_mvm.render(_m, _u, mv, _sin, 0.0, 0.5)[0]) for mv in _mvm._naive(_bn, _A, _Bo)}
         assert _today <= _new, (_bn, _u, _A, _Bo)
-        if _b.pushover is not None:
-            assert _key(_fix(_b.pushover(_u[0], _A, _Bo, _X))) == _key(
-                _mvm.render(_m, _u, _mvm._push(_bn, _A, _Bo, _X), _sin, 0.0, 0.5)[0]), (_bn, "push")
+        # the group model's push-over is one of the two forms (not on score ballots, where the moves put X
+        # one level above A and its supporters, the group model ties X with them)
+        if _b.pushover is not None and _bn not in ("score", "grade3"):
+            assert _key(_fix(_b.pushover(_u[0], _A, _Bo, _X))) in {
+                _key(_mvm.render(_m, _u, _p, _sin, 0.0, 0.5)[0]) for _p in _mvm._push(_bn, _A, _Bo, _X)}, (_bn, "push")
 # rated ballots keep the voter's own intensities: same ranking, different scores
 _us = np.array([[1.0, 0.8, 0.3, 0.0], [1.0, 0.4, 0.2, 0.0]])
 _xs = _mvm.render(METHODS["Score"], _us, (("upto", 0), ("downfrom", 3)), METHODS["Score"].sincere(_us, 0.0), 0.0, 0.5)

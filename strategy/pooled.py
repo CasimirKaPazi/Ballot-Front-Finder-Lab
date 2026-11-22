@@ -96,9 +96,7 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
         Bo = places[1] if A == places[0] else places[0]
         moves = list(mv._naive(method.ballot, A, Bo))
         if len(places) > 2:
-            p = mv._push(method.ballot, A, Bo, places[2])
-            if p is not None:
-                moves.append(p)
+            moves += mv._push(method.ballot, A, Bo, places[2])
         lib = memory.setdefault("library", {}).setdefault(key, [])
         moves = list(dict.fromkeys(moves + lib))
         lazy, appr = mv.own_params(mem)

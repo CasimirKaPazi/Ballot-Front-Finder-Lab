@@ -24,6 +24,10 @@ orders of the same electorate):
                  and those with one, by how narrow its closest head-to-head win is (below and above
                  the median of these elections, as a share of the voters)
 
+With --from-honest, everything but the order is known: all honest ballots are on the table from the
+start, and the voters in turn replace their own with their best answer to all the others as they then
+stand (those before them already changed, those after still honest), as if the count ended there.
+
 Usage (from the lab's folder):
     python tools/sequential.py --elections 200 --methods Plurality Approval Score IRV Schulze
     python tools/sequential.py --elections 100 --orders 3 --methods Plurality IRV
@@ -61,15 +65,15 @@ def move_list(ballot, C):
             out += [tuple(m) for m in mv._naive(ballot, A, B)]
             for X in range(C):
                 if X not in (A, B):
-                    p = mv._push(ballot, A, B, X)
-                    if p is not None:
-                        out.append(tuple(p))
+                    out += [tuple(p) for p in mv._push(ballot, A, B, X)]
     return list(dict.fromkeys(out))
 
 
-def sequential(m, u, S, order, moves):
+def sequential(m, u, S, order, moves, from_honest=False):
     """The ballots cast one at a time in the order; returns the ballots and who cast another than their
-    honest one."""
+    honest one. from_honest: every honest ballot is on the table from the start, and each voter in turn
+    replaces their own with their best answer to all the others as they stand (those before them
+    already changed, those after still honest)."""
     n, C = u.shape
     cast = np.empty((0, C))
     B = S.copy()
@@ -78,12 +82,19 @@ def sequential(m, u, S, order, moves):
         lazy, appr = mv.own_params(np.array([v]))
         rows = [S[v]] + [mv.render(m, u[v:v + 1], mo, S[v:v + 1], lazy, appr)[0] for mo in moves]
         rows = np.unique(np.array(rows, float), axis=0)
-        best, best_eu = S[v], float(m.tally(np.vstack([cast, S[v:v + 1]])) @ u[v])
+        if from_honest:
+            def count(r):
+                X = B.copy()
+                X[v] = r
+                return X
+        else:
+            count = lambda r: np.vstack([cast, r[None]])
+        best, best_eu = S[v], float(m.tally(count(S[v])) @ u[v])
         tol = 1e-12 * (np.ptp(u[v]) + 1e-300)
         for r in rows:
             if np.array_equal(r, S[v]):
                 continue
-            eu = float(m.tally(np.vstack([cast, r[None]])) @ u[v])
+            eu = float(m.tally(count(r)) @ u[v])
             if eu > best_eu + tol:
                 best, best_eu = r, eu
         B[v] = best
@@ -97,6 +108,9 @@ def main():
     ap.add_argument("--elections", type=int, default=100)
     ap.add_argument("--methods", nargs="+", default=["Plurality", "Approval", "Score", "IRV", "Schulze"])
     ap.add_argument("--orders", type=int, default=1, help="random orders per electorate (2+: how much the order matters)")
+    ap.add_argument("--from-honest", action="store_true",
+                    help="all honest ballots are known from the start; voters in turn replace their own with "
+                         "their best answer to all the others as they stand: only the order is unknown")
     ap.add_argument("--voters", type=int, default=99)
     ap.add_argument("--cands", type=int, default=6)
     ap.add_argument("--seed", type=int, default=0)
@@ -146,7 +160,7 @@ def main():
             rows[name]["h"].append(election_row(u, m.honest(u), m_cand))
             Ps = []
             for k, order in enumerate(orders):
-                B, st = sequential(m, u, S, order, moves[(m.ballot, C)])
+                B, st = sequential(m, u, S, order, moves[(m.ballot, C)], a.from_honest)
                 P = m.tally(B)
                 Ps.append(P)
                 rows[name]["s"].append(election_row(u, P, m_cand))
@@ -156,7 +170,7 @@ def main():
         set_candidates(None)
         print(f"\r{e + 1}/{a.elections} elections, {time.time() - t0:.0f} s", end="", file=sys.stderr, flush=True)
     print(file=sys.stderr)
-    print(f"Sequential voting: {a.elections} elections, {a.orders} order(s) each, {a.voters} voters, "
+    print(f"Sequential voting{' from the honest ballots' if a.from_honest else ''}: {a.elections} elections, {a.orders} order(s) each, {a.voters} voters, "
           f"{a.cands} candidates, seed {a.seed}. ~: sequential ballots.")
     head = f"{'method':<16}{'VSE':>7}{'WME':>7}{'VSE~':>7}{'WME~':>7}{'CE':>7}{'CE~':>7}{'strat':>7}  by fifth of the order"
     if a.orders > 1:
