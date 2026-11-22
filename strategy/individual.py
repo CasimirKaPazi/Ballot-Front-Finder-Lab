@@ -39,7 +39,7 @@ import numpy as np
 import methods
 from ballots import BALLOTS
 from . import moves as mv
-from .common import IndividualVoters, judge, trust, aims  # noqa: F401 (aims: for the tests)
+from .common import IndividualVoters, judge, trust, aims, honest_first  # noqa: F401 (aims: for the tests)
 from .polls import poll_totals
 
 
@@ -472,7 +472,7 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
                                                                    # a harmful move look good
     # The most valuable move, made if its value (gain over the sincere ballot, as a share of the voter's
     # utility range) exceeds the voter's cost of voting insincerely
-    best = np.argmax(EU, axis=0)                                   # ties: the first (sincere first)
+    best = honest_first(method, EU, options, u[V], sincere[V], span[V])   # ties: the most honest
     value = (EU[best, np.arange(len(V))] - EU[0]) / span[V]
     best = np.where(value > threshold[V], best, 0)
     for j, X in enumerate(options):

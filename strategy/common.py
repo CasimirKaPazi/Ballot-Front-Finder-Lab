@@ -69,3 +69,34 @@ class _PollChances:
     """What judge needs of a reading: the winner chances of the round's polls."""
     def __init__(self, P):
         self.P = P
+
+
+def honest_first(method, EU, ballots, U, sincere, span):
+    """The move each voter makes among equally valuable ones: per voter (columns of EU, rows: the options,
+    the sincere ballot first), the most valuable option; where several promise the same (within 1e-9 of
+    the voter's utility range), the most sincere of them (strategy.measures.sincerity: the fewest and
+    smallest reversals), then the one saying most (fidelity), then the first. A voter does not reverse a
+    preference, or level one, where it buys nothing over a more honest ballot (since 2026-11-22: with
+    the same moves for every format, a compromise or burial often promises exactly what levelling
+    does, and the first in the list would win).
+    ballots: per option the ballots of the voters (rows as the columns of EU); sincere: their sincere
+    ballots; span: their utility ranges."""
+    from .measures import sincerity, fidelity
+    best = np.argmax(EU, axis=0)
+    top = EU.max(axis=0)
+    tied = EU >= top[None] - 1e-9 * span[None]
+    multi = np.flatnonzero(tied.sum(axis=0) > 1)
+    if not len(multi):
+        return best
+    cache = {}
+    for i in multi:
+        opts = np.flatnonzero(tied[:, i])
+        keys = []
+        for j in opts:
+            if j not in cache:
+                X = ballots[j]
+                cache[j] = (sincerity(method, X, U), fidelity(method, X, U, sincere))
+            s, f = cache[j]
+            keys.append((-round(float(s[i]), 9), -round(float(f[i]), 9), int(j)))
+        best[i] = min(keys)[2]
+    return best

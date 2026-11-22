@@ -5,7 +5,7 @@ round's polls again (answer_pooled); each voter then decides alone. strategy.rou
 import numpy as np
 
 from . import moves as mv
-from .common import IndividualVoters, judge, aims, _PollChances
+from .common import IndividualVoters, judge, aims, honest_first, _PollChances
 from .polls import poll_totals, _widened, _leaders
 
 
@@ -56,7 +56,8 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
       against their type's sincere ballots (as a share of their utility range), its promise over the
       polls as they are weighted by their type's trust in it (type_trust: the judgements of all its
       members who made it, common.judge), and makes the most valuable move if that exceeds their cost
-      (threshold), else votes sincerely.
+      (threshold), else votes sincerely. Among moves promising the same, the most honest
+      (common.honest_first).
     Every voter of a type counts in its change, strategic or not: discovery does not know who follows.
     Returns the new ballots and the voters who vote strategically this round."""
     n, C = u.shape
@@ -144,7 +145,8 @@ def answer_pooled(method, count, u, B, sincere, polls_T, places, *, threshold, s
                 continue
             rho = type_trust(tr, mem, aims(moves[j - 1]))       # once per move: the type's lessons
             EU[j] = before + np.where(gain > 0, rho * gain, gain)
-        best = np.argmax(EU, axis=0)
+        rows = np.flatnonzero(sel)                          # equal promises: the most honest (honest_first)
+        best = honest_first(method, EU, [sincere[V]] + [X[rows] for X in Xs], U, sincere[V], span[V])
         promised = {j: Ps[j - 1] for j in range(1, len(EU))}
         value = (EU[best, np.arange(len(V))] - EU[0]) / span[V]
         best = np.where(value > threshold[V], best, 0)
