@@ -955,6 +955,8 @@ print("previous field ok")
 # Compositions (compose.py, docs/compositions.md): written as compositions, Smith//Score, ESR, MMWV+Score
 # and Minimax give exactly the hand-written methods, their polls included
 import compose as _cp
+_methods_before_compose = set(METHODS)                # restored after the composition tests
+_composed_group_before = _methods_mod.COMPOSED_GROUP in _methods_mod.GROUPS
 import re as _re
 _src = open(_methods_mod.__file__).read().split("\n")         # the "# composed: ..." comments in methods.py
 _comps = {}
@@ -1135,13 +1137,14 @@ with _tf.TemporaryDirectory() as _d:
         _f.write('from compose import composed, smith\nMETHODS = {"My Smith//Score": composed(smith >> "Score")}\n')
     _methods_mod._load_addons(_d)
 assert np.allclose(METHODS["My Smith//Score"].tally(_Bs), METHODS["Smith//Score"].tally(_Bs))
-for _k in [k for k, m in list(METHODS.items())                                 # the method list as before
-           if "composition" in m.__dict__ and k not in _methods_mod.BUILTIN_COMPOSED]:
+# the method list as before: only the methods these tests added go (not those of the add-ons in addons/)
+for _k in [k for k in list(METHODS) if k not in _methods_before_compose]:
     METHODS.pop(_k); _methods_mod.ADDONS.pop(_k, None)
     for _g in _methods_mod.GROUPS.values():
         if _k in _g:
             _g.remove(_k)
-_methods_mod.GROUPS.pop(_methods_mod.COMPOSED_GROUP, None)
+if not _composed_group_before:
+    _methods_mod.GROUPS.pop(_methods_mod.COMPOSED_GROUP, None)
 print("compositions ok")
 # Laziness in the runoff of two-round ballots: a lazy voter who cares only about A and B ranks just
 # them in the runoff part, so a runoff between C and D gets no vote from them
