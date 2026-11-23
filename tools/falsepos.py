@@ -28,6 +28,7 @@ Usage (from the lab's folder; flags after -- go to run.py's parser, so any condi
     python tools/falsepos.py --elections 300 --measure-error 1      # polls with their sampling error only
     python tools/falsepos.py --elections 300 --share engine         # a quarter of each coalition goes home
     python tools/falsepos.py --elections 300 --view engine          # polls as the engines read them
+    python tools/falsepos.py --elections 300 --against seen         # against the ballots the voters' polls were of
 Writes nothing; prints the table.
 """
 import argparse
@@ -58,6 +59,9 @@ def main():
                     help="the share of a coalition that goes home (1: all of it; 'engine': the run's --coordination)")
     ap.add_argument("--view", choices=["count", "engine"], default="count",
                     help="polls counted by the method itself (count) or as the engines read them (engine: the poll view)")
+    ap.add_argument("--against", choices=["cast", "seen"], default="cast",
+                    help="the others' ballots a move is judged against: as cast (cast), or those of the round "
+                         "before, which the voters' polls were of (seen)")
     ap.add_argument("--measure-error", type=float, default=None,
                     help="how far the measure's polls deviate, as --poll-error (default: the run's --poll-error)")
     argv = sys.argv[1:]
@@ -81,22 +85,31 @@ def main():
     run.ensure(a.methods)                          # compositions registered
     names = {id(run.METHODS[x]): x for x in a.methods}
 
+    seen = {}
+
     def fidelity(m, B, uf, honest):            # run's fidelity, called once per learned row: measure there
         name = names[id(m)]
+        if a.against == "seen" and rounds > 1 and name not in seen:
+            seen[name] = B.copy()              # the round before: what the last round's polls were of
+            return orig(m, B, uf, honest)
+        base = None if a.against == "cast" else seen.pop(name, honest)
         r = false_positives(m, B, honest, uf, np.random.default_rng([p["seed"], now["e"], zlib.crc32(name.encode())]),
-                            samples=a.polls, poll_size=p["poll_size"], poll_error=err, share=share, view=a.view)
+                            samples=a.polls, poll_size=p["poll_size"], poll_error=err, share=share, view=a.view,
+                            base=base)
         acc.setdefault(name, []).append(r)
         return orig(m, B, uf, honest)
     run.fidelity = fidelity
     t0 = time.time()
     for k, e in enumerate(range(a.first, a.first + a.elections)):
         now["e"] = e
-        run.one_election({"sc": sc, "p": p, "e": e, "rounds": [rounds], "names": a.methods,
+        seen.clear()
+        run.one_election({"sc": sc, "p": p, "e": e, "rounds": [rounds - 1, rounds] if a.against == "seen" and rounds > 1
+                          else [rounds], "names": a.methods,
                           "participation": False, "manipulation": False, "dummy": None})
         print(f"\r{k + 1}/{a.elections} elections, {time.time() - t0:.0f} s", end="", file=sys.stderr, flush=True)
     print(file=sys.stderr)
     print(f"False positives of strategy: elections {a.first}..{a.first + a.elections - 1}, {a.polls} polls per "
-          f"coalition (poll error {err:g}), {share:g} of each coalition home, polls read by {a.view}, run.py {' '.join(rest) or 'defaults'} (engine {p['engine']}, {rounds} rounds). "
+          f"coalition (poll error {err:g}), {share:g} of each coalition home, polls read by {a.view}, against the others' ballots {'as cast' if a.against == 'cast' else 'of the round before'}, run.py {' '.join(rest) or 'defaults'} (engine {p['engine']}, {rounds} rounds). "
           f"Shares of the voters who changed their ballot, pooled over the elections; changed: of all voters.")
     print(f"{'method':<18}{'changed':>8}{'fp':>7}{'none':>7}{'hurt':>7}{'gain':>8}{'help':>8}{'hurt':>7}{'coal':>6}")
     print(f"{'':<18}{'':>8}{'(polls)':>21}{'':>8}{'(exact)':>15}")

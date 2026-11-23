@@ -470,6 +470,14 @@ def answer(method, count, u, B, sincere, reading, *, threshold, followers, memor
             gain = EU[j] - before
             EU[j] = before + np.where(gain > 0, rho * gain, gain)  # trust discounts promises, never makes
                                                                    # a harmful move look good
+    # No move buries the voter's own favourite among the places (bottom or downfrom it): the strategies
+    # offer the burial of every place to every voter, and the arithmetic can promise a gain for burying
+    # one's favourite, down to an empty ballot (found 2026-11-23, tools/falsepos.py)
+    fav = np.array(places)[np.argmax(u[V][:, places], axis=1)]
+    for j in range(1, len(options)):
+        own = np.array([any(st[0] in ("bottom", "downfrom") and st[1] == fav[i] for st in (keys[j][i] or ()))
+                        for i in range(len(V))])
+        EU[j] = np.where(own, -np.inf, EU[j])
     # The most valuable move, made if its value (gain over the sincere ballot, as a share of the voter's
     # utility range) exceeds the voter's cost of voting insincerely
     best = honest_first(method, EU, options, u[V], sincere[V], span[V])   # ties: the most honest

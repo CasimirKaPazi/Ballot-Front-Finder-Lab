@@ -19,7 +19,7 @@ def weak_order(values, labels):
     return out
 
 
-def false_positives(method, B, sincere, u, rng, samples=500, poll_size=0, poll_error=2.0, share=1.0, view="count"):
+def false_positives(method, B, sincere, u, rng, samples=500, poll_size=0, poll_error=2.0, share=1.0, view="count", base=None):
     """Whether strategy pays the voters who use it, judged on the ballots as they were cast (a diagnostic,
     the same for every engine, format and move; docs/model.md, Checking strategy: false positives).
     Who acts together: the voters whose ballot differs from their sincere one are grouped into
@@ -62,10 +62,16 @@ def false_positives(method, B, sincere, u, rng, samples=500, poll_size=0, poll_e
     preferences and transfers), on polls of poll_size voters scaled up, deviations x poll_error. The
     difference between the two views is the part of the false positives that comes from voters
     reading polls through the poll view, not from the ballots having moved.
+    base: the others' ballots (default: B, the ballots as cast). Given the ballots of the round
+    before (the ones the voters' polls were taken of), each coalition's move is judged against what
+    the voters saw when they made it: the others keep their ballots of that round, the coalition
+    casts B or goes home, and the leading places are those of that round's polls. The difference
+    from the default is the part of the false positives that comes from everyone moving at once.
     Not covered: whether a more honest ballot than the sincere one would have done as well
     (levelling instead of a reversal), and coalitions across types."""
     from .polls import default_poll_size, poll_totals, _leaders, _smaller, _widened
     B, sincere, u = np.asarray(B, float), np.asarray(sincere, float), np.asarray(u, float)
+    O = B if base is None else np.asarray(base, float)          # the others' ballots
     n, C = u.shape
     changed = np.any(B != sincere, axis=1)
     nan = float("nan")
@@ -80,7 +86,7 @@ def false_positives(method, B, sincere, u, rng, samples=500, poll_size=0, poll_e
     widened = {}
     if view == "engine":
         pm = method.poll_view()
-        F, tot, WF = poll_totals(pm, B, polls, n, m)
+        F, tot, WF = poll_totals(pm, O, polls, n, m)
         dev = poll_error * (WF - tot)
 
         def winners_at(j):
@@ -89,13 +95,13 @@ def false_positives(method, B, sincere, u, rng, samples=500, poll_size=0, poll_e
             return widened[j]
 
         def mean_polls(X):
-            rows = np.flatnonzero(np.any(X != B, axis=1))
+            rows = np.flatnonzero(np.any(X != O, axis=1))
             D = (pm.features(X[rows]) - F[rows]).sum(axis=0) if len(rows) else 0.0
             return pm.decide_many(tot + dev + D, C).mean(axis=0)
     elif view == "count":
         def winners_at(j):
             if j not in widened:
-                widened[j] = np.array([method.tally(B[idx]) for idx in _smaller(polls, j, rng, n)])
+                widened[j] = np.array([method.tally(O[idx]) for idx in _smaller(polls, j, rng, n)])
             return widened[j]
 
         def mean_polls(X):
@@ -113,16 +119,22 @@ def false_positives(method, B, sincere, u, rng, samples=500, poll_size=0, poll_e
         kind = tuple(int(np.sign(round(vB[v, i] - vB[v, j], 9))) for i, j in pairs)
         coal.setdefault((tuple(order[v]), kind), []).append(v)
 
-    P_exact, P_polls = method.tally(B), mean_polls(B)
+    if base is None:
+        P_exact, P_polls = method.tally(B), mean_polls(B)
     g_exact, g_polls = np.zeros(n), np.zeros(n)
 
     def home(G):                                   # the ballots with (a share of) coalition G at home
-        X = B.copy()
+        X = O.copy()
+        X[G] = B[G]
         H = G if share >= 1 else G[rng.random(len(G)) < share]
         X[H] = sincere[H]
         return X
     for G in coal.values():
         G = np.array(G)
+        if base is not None:                       # the others as they were: the coalition's move alone
+            X = O.copy()
+            X[G] = B[G]
+            P_exact, P_polls = method.tally(X), mean_polls(X)
         if share >= 1:
             X = home(G)
             P_e, P_p = method.tally(X), mean_polls(X)
