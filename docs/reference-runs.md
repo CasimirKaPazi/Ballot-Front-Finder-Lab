@@ -39,7 +39,7 @@ python sweep.py --strategic 0.5 1 --adaptive 0 --elections 2000 --methods extend
 python sweep.py --coordination 0 0.1 0.5 --elections 2000 --methods extended --out $R/coordination        # 5.7
 python sweep.py --honesty 0.1 1 --elections 2000 --methods extended --out $R/honesty                     # 4
 python sweep.py --poll-error 1 4 --elections 2000 --methods extended --out $R/poll-error                   # 4
-python sweep.py --samples 10 20 --elections 2000 --methods extended --out $R/samples                      # 6
+python sweep.py --samples 5 20 --elections 2000 --methods extended --out $R/samples                      # 6
 python sweep.py --rounds 1 2 4 5 --elections 2000 --methods extended --out $R/rounds                       # 2.7 (one run)
 python run.py --start previous --elections 2000 --methods extended --out $R/lockin                         # 2.4
 python sweep.py --campaign 0 1 --engine arithmetic --strategic 0 1 --elections 2000 --methods extended --out $R/campaigns   # 14
@@ -83,7 +83,7 @@ What each part answers:
 | coordination | individual voters expecting nobody but themselves (0), a tenth or half of their camp to vote as they do, instead of a quarter (the base) |
 | honesty | the cost of voting insincerely up to a tenth or the whole of a voter's utility range instead of 0.3: about twice and a third as much strategy |
 | poll-error | voters treating polls as exactly as precise as their sampling error (1) or four times less precise (4), instead of twice: the poll error sets how flat the chances are, and so how much a move gains |
-| samples | 10 and 20 polls per round instead of 5, each with the same spread. With pooled discovery the voters' picture of the chances becomes finer: with few polls each move's value is a coarse estimate, and voters taking the best of several such values overreact to lucky ones (journal, 2026-11-06). The base keeps 5 on purpose, since overreacting to noisy information is part of what methods must withstand; this test shows which methods are sensitive to it. |
+| samples | 5 and 20 polls per round instead of 10, each with the same spread. With pooled discovery the voters' picture of the chances becomes finer with more polls: with few polls each move's value is a coarse estimate, and voters taking the best of several such values overreact to lucky ones (journal, 2026-11-06, 2026-11-23). The base has 10 since 2026-11-23 (5 before); 5 shows which methods are sensitive to overreacting to noisy information, 20 how far 10 is from settled results. |
 | rounds | one, two, four and five poll rounds (three in the base), all from one run: does the result settle, now that voters judge their moves from round to round? |
 | lockin | the first poll from a previous election's strategic result (its ballots carried over to a field that can differ): can the electorate leave a strategic state? |
 | campaigns | candidates recommending moves to their audience, with adaptive and with all voters strategic: how much coordination by campaigns changes. Campaigns need the arithmetic (`--response arithmetic`), so the test brings its own baseline without campaigns (campaign 0), with adaptive and with all voters strategic |

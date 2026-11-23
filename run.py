@@ -937,8 +937,8 @@ def parser():
                          "are drawn apart from the voters, and those two move them")
     ap.add_argument("--rounds", type=int, default=3,
                     help="poll rounds before the vote (0 = everyone votes sincerely); see strategy/__init__.py")
-    ap.add_argument("--samples", type=int, default=5,
-                    help="polls per round (they stand for the uncertainty; 10 until 2026-10-26)")
+    ap.add_argument("--samples", type=int, default=10,
+                    help="polls per round (they stand for the uncertainty; 5 from 2026-10-26 to 2026-11-23)")
     ap.add_argument("--poll-size", type=int, default=0,
                     help="voters per poll (0 = half the electorate, rounded to an odd number)")
     ap.add_argument("--search", type=int, default=None,
