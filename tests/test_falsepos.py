@@ -33,4 +33,10 @@ assert _rf["fp"] == 1 and _rf["fp_hurt"] == 1 and _rf["exact_hurt"] == 1, _rf
 assert _rf["patterns"] == {"3>1=2": (1, 1, _rf["gain"])}, _rf["patterns"]   # their own last first
 from strategy.falsepos import weak_order as _wo
 assert _wo([3, 1, 3], "123") == "1=3>2" and _wo([0, 2, 1], "123") == "2>3>1" and _wo([1], "1") == "1"
+_Bf = _Sf.copy()                       # half of the compromisers home: still a gain on average
+_Bf[-2:] = _Sf[4]
+_rf = _fpos(_Mf, _Bf, _Sf, _uf, np.random.default_rng(0), poll_error=1, share=0.5)
+assert _rf["fp"] == 0 and 0 < _rf["exact_gain"] < 0.5, _rf
+_rf = _fpos(_Mf, _Bf, _Sf, _uf, np.random.default_rng(0), poll_error=1, view="engine")   # as engines read polls
+assert _rf["fp"] == 0 and np.isclose(_rf["exact_gain"], 0.5), _rf
 print("false positives ok")

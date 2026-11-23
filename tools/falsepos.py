@@ -26,6 +26,8 @@ Usage (from the lab's folder; flags after -- go to run.py's parser, so any condi
     python tools/falsepos.py --elections 300
     python tools/falsepos.py --elections 300 --methods Score Borda -- --strategic 1 --engine arithmetic
     python tools/falsepos.py --elections 300 --measure-error 1      # polls with their sampling error only
+    python tools/falsepos.py --elections 300 --share engine         # a quarter of each coalition goes home
+    python tools/falsepos.py --elections 300 --view engine          # polls as the engines read them
 Writes nothing; prints the table.
 """
 import argparse
@@ -52,6 +54,10 @@ def main():
     ap.add_argument("--first", type=int, default=0, help="the number of the first election")
     ap.add_argument("--methods", nargs="+", default=DEFAULT)
     ap.add_argument("--polls", type=int, default=500, help="polls of the cast ballots per coalition (500)")
+    ap.add_argument("--share", default="1",
+                    help="the share of a coalition that goes home (1: all of it; 'engine': the run's --coordination)")
+    ap.add_argument("--view", choices=["count", "engine"], default="count",
+                    help="polls counted by the method itself (count) or as the engines read them (engine: the poll view)")
     ap.add_argument("--measure-error", type=float, default=None,
                     help="how far the measure's polls deviate, as --poll-error (default: the run's --poll-error)")
     argv = sys.argv[1:]
@@ -69,6 +75,7 @@ def main():
                   cands_vote=int(p.get("cands_vote", 0)))      # as run.simulate
     rounds = int(p.get("rounds", 3))
     err = p["poll_error"] if a.measure_error is None else a.measure_error
+    share = float(p["coordination"]) if a.share == "engine" else float(a.share)
     orig = run.fidelity
     acc, now = {}, {}
     run.ensure(a.methods)                          # compositions registered
@@ -77,7 +84,7 @@ def main():
     def fidelity(m, B, uf, honest):            # run's fidelity, called once per learned row: measure there
         name = names[id(m)]
         r = false_positives(m, B, honest, uf, np.random.default_rng([p["seed"], now["e"], zlib.crc32(name.encode())]),
-                            samples=a.polls, poll_size=p["poll_size"], poll_error=err)
+                            samples=a.polls, poll_size=p["poll_size"], poll_error=err, share=share, view=a.view)
         acc.setdefault(name, []).append(r)
         return orig(m, B, uf, honest)
     run.fidelity = fidelity
@@ -89,7 +96,7 @@ def main():
         print(f"\r{k + 1}/{a.elections} elections, {time.time() - t0:.0f} s", end="", file=sys.stderr, flush=True)
     print(file=sys.stderr)
     print(f"False positives of strategy: elections {a.first}..{a.first + a.elections - 1}, {a.polls} polls per "
-          f"coalition (poll error {err:g}), run.py {' '.join(rest) or 'defaults'} (engine {p['engine']}, {rounds} rounds). "
+          f"coalition (poll error {err:g}), {share:g} of each coalition home, polls read by {a.view}, run.py {' '.join(rest) or 'defaults'} (engine {p['engine']}, {rounds} rounds). "
           f"Shares of the voters who changed their ballot, pooled over the elections; changed: of all voters.")
     print(f"{'method':<18}{'changed':>8}{'fp':>7}{'none':>7}{'hurt':>7}{'gain':>8}{'help':>8}{'hurt':>7}{'coal':>6}")
     print(f"{'':<18}{'':>8}{'(polls)':>21}{'':>8}{'(exact)':>15}")

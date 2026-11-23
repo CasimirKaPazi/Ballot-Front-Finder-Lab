@@ -19,7 +19,7 @@ def weak_order(values, labels):
     return out
 
 
-def false_positives(method, B, sincere, u, rng, samples=500, poll_size=0, poll_error=2.0):
+def false_positives(method, B, sincere, u, rng, samples=500, poll_size=0, poll_error=2.0, share=1.0, view="count"):
     """Whether strategy pays the voters who use it, judged on the ballots as they were cast (a diagnostic,
     the same for every engine, format and move; docs/model.md, Checking strategy: false positives).
     Who acts together: the voters whose ballot differs from their sincere one are grouped into
@@ -49,9 +49,22 @@ def false_positives(method, B, sincere, u, rng, samples=500, poll_size=0, poll_e
     pattern being what the ballot does to the voter's own three (weak_order, 1 = the one of the three
     they like most: "1>3>2" buries their second, "2>1>3" compromises, "1=2>3" levels, "1>2>3" changes
     something else). Shares are nan when nobody changed. The share with no gain depends on the
-    number of polls (a small gain shows in few of them): about 500 are needed for it to settle. Not covered: whether a more honest ballot than the sincere one
-    would have done as well (levelling instead of a reversal), and coalitions across types."""
-    from .polls import default_poll_size, _leaders, _smaller
+    number of polls (a small gain shows in few of them): about 500 are needed for it to settle.
+    share: the share of a coalition that goes home, each member at random with that chance, drawn
+    afresh for every poll (and for each of up to 100 true counts): 1 (the default) sends the whole
+    coalition home; the engine's --coordination (0.25) asks what the pooled engine assumes when it
+    values a move, that a quarter of a type follows it. A smaller share gives smaller gains (the
+    sign is what tells a false positive).
+    view: how the polls are counted. "count" (the default): the method's own count of each sampled
+    poll (for every method alike; the samples are made smaller by poll_error**2 to widen them).
+    "engine": as the engines see a poll: the method's poll view (Method.poll_view: the method itself
+    where it is counted from totals a poll publishes, else its stand-in, e.g. IRV estimated from first
+    preferences and transfers), on polls of poll_size voters scaled up, deviations x poll_error. The
+    difference between the two views is the part of the false positives that comes from voters
+    reading polls through the poll view, not from the ballots having moved.
+    Not covered: whether a more honest ballot than the sincere one would have done as well
+    (levelling instead of a reversal), and coalitions across types."""
+    from .polls import default_poll_size, poll_totals, _leaders, _smaller, _widened
     B, sincere, u = np.asarray(B, float), np.asarray(sincere, float), np.asarray(u, float)
     n, C = u.shape
     changed = np.any(B != sincere, axis=1)
@@ -61,14 +74,34 @@ def false_positives(method, B, sincere, u, rng, samples=500, poll_size=0, poll_e
     if not changed.any():
         return out
     m = min(n, poll_size if poll_size > 0 else default_poll_size(n))
-    m = max(1, min(m, int(round(m / poll_error ** 2)))) if poll_error > 0 else m
+    if view == "count":
+        m = max(1, min(m, int(round(m / poll_error ** 2)))) if poll_error > 0 else m
     polls = np.stack([rng.choice(n, m, replace=False) for _ in range(samples)])
     widened = {}
+    if view == "engine":
+        pm = method.poll_view()
+        F, tot, WF = poll_totals(pm, B, polls, n, m)
+        dev = poll_error * (WF - tot)
 
-    def winners_at(j):
-        if j not in widened:
-            widened[j] = np.array([method.tally(B[idx]) for idx in _smaller(polls, j, rng, n)])
-        return widened[j]
+        def winners_at(j):
+            if j not in widened:
+                widened[j] = pm.decide_many(_widened(tot, dev, j), C)
+            return widened[j]
+
+        def mean_polls(X):
+            rows = np.flatnonzero(np.any(X != B, axis=1))
+            D = (pm.features(X[rows]) - F[rows]).sum(axis=0) if len(rows) else 0.0
+            return pm.decide_many(tot + dev + D, C).mean(axis=0)
+    elif view == "count":
+        def winners_at(j):
+            if j not in widened:
+                widened[j] = np.array([method.tally(B[idx]) for idx in _smaller(polls, j, rng, n)])
+            return widened[j]
+
+        def mean_polls(X):
+            return np.mean([method.tally(X[idx]) for idx in polls], axis=0)
+    else:
+        raise ValueError(f"view must be 'count' or 'engine', not {view!r}")
     places = [c for c in _leaders(winners_at, C, 3) if c is not None]
     span = u.max(axis=1) - u.min(axis=1)
     span = np.where(span > 1e-12, span, 1.0)
@@ -80,16 +113,25 @@ def false_positives(method, B, sincere, u, rng, samples=500, poll_size=0, poll_e
         kind = tuple(int(np.sign(round(vB[v, i] - vB[v, j], 9))) for i, j in pairs)
         coal.setdefault((tuple(order[v]), kind), []).append(v)
 
-    def mean_polls(X):
-        return np.mean([method.tally(X[idx]) for idx in polls], axis=0)
     P_exact, P_polls = method.tally(B), mean_polls(B)
     g_exact, g_polls = np.zeros(n), np.zeros(n)
+
+    def home(G):                                   # the ballots with (a share of) coalition G at home
+        X = B.copy()
+        H = G if share >= 1 else G[rng.random(len(G)) < share]
+        X[H] = sincere[H]
+        return X
     for G in coal.values():
         G = np.array(G)
-        X = B.copy()
-        X[G] = sincere[G]
-        g_exact[G] = u[G] @ (P_exact - method.tally(X)) / span[G]
-        g_polls[G] = u[G] @ (P_polls - mean_polls(X)) / span[G]
+        if share >= 1:
+            X = home(G)
+            P_e, P_p = method.tally(X), mean_polls(X)
+        else:
+            P_e = np.mean([method.tally(home(G)) for _ in range(min(samples, 100))], axis=0)
+            P_p = (np.mean([method.tally(home(G)[idx]) for idx in polls], axis=0) if view == "count" else
+                   np.mean([mean_polls(home(G)) for _ in range(min(samples, 100))], axis=0))
+        g_exact[G] = u[G] @ (P_exact - P_e) / span[G]
+        g_polls[G] = u[G] @ (P_polls - P_p) / span[G]
     labels = "123"[:len(places)]
     pat = {}
     for v in np.flatnonzero(changed):
