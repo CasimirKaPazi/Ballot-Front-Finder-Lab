@@ -263,6 +263,7 @@ python compare.py output/falloff --pairs "ESR:Score" "Score runoff:Minimax"
 | `tools/regression.py`, `tools/regression.csv` | Regression check: a few tiny fixed runs compared with the stored reference (see Checking changes) |
 | `tools/show_electorates.py` | Plots and numbers of the electorates a model draws, without methods: example elections, dimensionality, steepness, utilities, Condorcet winner (see [model.md](model.md), Looking at the electorates) |
 | `tools/response_check.py`, `tools/response_check.md` | Diagnostic of the arithmetic engine: its response to a move against the poll counted again, per method, and the table of its last run |
+| `tools/information.py` | What a method's ballots and count can carry, from its definition alone: ballots, count vectors, vertices of the ballot polytope, rank of the count, central symmetry, the Equality Criterion (the file's head says how it finds them and what the marks mean); `tests/test_information.py` checks it against known answers |
 | `docs/` | The documentation (listed in README.md): model, methods, analysis, running, the add-on tutorial and the development journal |
 
 ## Checking changes
