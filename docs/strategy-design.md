@@ -1,6 +1,6 @@
 # Strategy: Design Note for the Next Engine
 
-Status: a proposal under discussion (2026-11-10, revised 2026-11-11 and 2026-11-12), implemented as an experimental engine (`--engine inertia`, strategy/inertia.py; measurements below). The model below is the revision of 2026-11-12; the first version (rules with cutoffs) is summarised under What Changed. The existing engines stay for comparison. The engine in use is described in [model.md](model.md) (Individual voters); this note says what is wrong with it, proposes one principle to replace its separate motivations, and lists what is still open.
+Status: a proposal under discussion (2026-11-10, revised 2026-11-11 and 2026-11-12), implemented as an experimental engine (`--engine inertia`, strategy/inertia.py; measurements below). The model below is the revision of 2026-11-12; the first version (rules with cutoffs) is summarised under What Changed. The existing engines stay for comparison. Since 2026-11-28 the experimental engine is no longer developed and is to be removed: it had the most false positives of all engines ([roadmap.md](roadmap.md), Strategy; journal, 2026-11-23). This note stays as a record of the design and its measurements. The engine in use is described in [model.md](model.md) (Individual voters); this note says what is wrong with it, proposes one principle to replace its separate motivations, and lists what is still open.
 
 ## Why a New Design
 
